@@ -8,7 +8,8 @@ add_library(ct::render ALIAS ct_render)
 target_include_directories(ct_render PUBLIC include)
 target_link_libraries(ct_render
     PUBLIC ct::core
-    PRIVATE SDL3::SDL3 volk::volk GPUOpen::VulkanMemoryAllocator vk-bootstrap::vk-bootstrap)
+    PRIVATE SDL3::SDL3 Vulkan::Headers volk::volk GPUOpen::VulkanMemoryAllocator
+            vk-bootstrap::vk-bootstrap)
 target_compile_definitions(ct_render PRIVATE
     VK_NO_PROTOTYPES
     VMA_STATIC_VULKAN_FUNCTIONS=0

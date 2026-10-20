@@ -33,6 +33,10 @@ endif()
 
 if(CROFTECH_BUILD_CLIENT)
     find_package(SDL3 CONFIG REQUIRED)
+    # Vulkan headers come from vcpkg. Stop volk falling back to $VULKAN_SDK/include, which differs
+    # between machines; the SDK is only used for glslc.
+    set(VOLK_PULL_IN_VULKAN OFF)
+    find_package(VulkanHeaders CONFIG REQUIRED)
     find_package(volk CONFIG REQUIRED)
     find_package(VulkanMemoryAllocator CONFIG REQUIRED)
     find_package(vk-bootstrap CONFIG REQUIRED)
