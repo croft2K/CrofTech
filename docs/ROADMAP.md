@@ -42,7 +42,8 @@ In order; each step builds, tests and commits on its own.
    The engine ships defaults; a game overrides them (movement tuning, rules, weapons), and a level or
    game mode can override the game. The client and editor take `--game <name>`.
 2. **Dear ImGui with docking**, plus a developer console (cvars) and a basic netgraph-style
-   overlay (frame time, tick time, speed).
+   overlay (frame time, tick time, speed). *Done: config files and the console share one set of
+   console variables; ImGui is drawn by our own Vulkan pass.*
 3. **Level format.** A text, diff-friendly level file (brushes, entities, properties) with a loader
    and saver, and a TrenchBroom `.map` importer for blockout until our brush tools exist.
 4. **Component schema.** Each component declares its fields once; the declaration drives the editor

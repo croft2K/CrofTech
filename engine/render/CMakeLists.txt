@@ -1,6 +1,10 @@
 add_library(ct_render STATIC
     include/croftech/render/Renderer.h
     src/Renderer.cpp
+    src/ShaderModule.cpp
+    src/ShaderModule.h
+    src/UiRenderer.cpp
+    src/UiRenderer.h
     src/VmaImplementation.cpp
 )
 add_library(ct::render ALIAS ct_render)
@@ -9,7 +13,7 @@ target_include_directories(ct_render PUBLIC include)
 target_link_libraries(ct_render
     PUBLIC ct::core
     PRIVATE SDL3::SDL3 Vulkan::Headers volk::volk GPUOpen::VulkanMemoryAllocator
-            vk-bootstrap::vk-bootstrap)
+            vk-bootstrap::vk-bootstrap imgui::imgui)
 target_compile_definitions(ct_render PRIVATE
     VK_NO_PROTOTYPES
     VMA_STATIC_VULKAN_FUNCTIONS=0
@@ -23,7 +27,7 @@ target_compile_options(ct_render PRIVATE -Wno-missing-designated-field-initializ
 # Shaders compile to SPIR-V next to the executables.
 set(shader_output_dir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders)
 set(shader_outputs)
-foreach(shader world.vert world.frag)
+foreach(shader world.vert world.frag ui.vert ui.frag)
     set(source ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader})
     set(output ${shader_output_dir}/${shader}.spv)
     add_custom_command(

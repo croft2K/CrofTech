@@ -6,4 +6,5 @@ add_subdirectory(client)
 
 if(CROFTECH_BUILD_CLIENT)
     add_subdirectory(render)
+    add_subdirectory(devui)
 endif()

@@ -16,6 +16,13 @@
             "vulkan"
           ]
         },
+        {
+          "name": "imgui",
+          "features": [
+            "docking-experimental",
+            "sdl3-binding"
+          ]
+        },
         "vk-bootstrap",
         "volk",
         "vulkan-memory-allocator"

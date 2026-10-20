@@ -3,15 +3,21 @@
 // The simulation runs on its own thread at 128 Hz. Every frame this thread sends the latest input,
 // then draws the player's view interpolated between the two most recent ticks. The camera angles
 // come straight from the mouse, so looking around never waits for a tick.
+//
+// Settings are console variables: config files set them (and reload when saved), and so does the
+// developer console, opened with the key below Esc.
 
 #include "WorldMesh.h"
 
 #include "croftech/client/SimThread.h"
 #include "croftech/core/Angle.h"
-#include "croftech/core/ConfigFile.h"
+#include "croftech/core/Console.h"
 #include "croftech/core/Content.h"
 #include "croftech/core/Log.h"
 #include "croftech/core/Profile.h"
+#include "croftech/devui/ConsoleWindow.h"
+#include "croftech/devui/DevUi.h"
+#include "croftech/devui/StatsOverlay.h"
 #include "croftech/level/TestLevels.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/sim/CollisionWorld.h"
@@ -25,11 +31,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
-#include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -39,16 +46,11 @@ using Clock = std::chrono::steady_clock;
 const std::filesystem::path kSourceDirectory = CROFTECH_SOURCE_DIR;
 constexpr float kDegreesPerMouseCount = 0.022f; // Quake's m_yaw, so sensitivities carry over
 constexpr auto kReloadInterval = std::chrono::milliseconds(250);
-constexpr auto kTitleInterval = std::chrono::milliseconds(250);
-
-struct ClientSettings {
-    float sensitivity = 3.0f;
-    float fovDegrees = 100.0f;
-};
 
 struct CommandLine {
     std::string game = "sandbox";
-    int frameLimit = -1; // quit after this many frames, for automated smoke runs
+    int frameLimit = -1;              // quit after this many frames, for automated smoke runs
+    std::vector<std::string> execute; // console commands run after the config files load
 };
 
 CommandLine parseCommandLine(int argc, char** argv) {
@@ -59,47 +61,49 @@ CommandLine parseCommandLine(int argc, char** argv) {
             commandLine.game = argv[++i];
         } else if (option == "--frames") {
             commandLine.frameLimit = std::atoi(argv[++i]);
+        } else if (option == "--exec") {
+            commandLine.execute.emplace_back(argv[++i]);
         }
     }
     return commandLine;
 }
 
-// Every layer is applied over the built-in defaults, so deleting a line undoes it.
-std::optional<ct::MovementSettings> reloadMovement(ct::LayeredConfig& config) {
-    const auto layers = config.reloadIfChanged();
-    if (!layers) {
-        return std::nullopt;
-    }
-    ct::MovementSettings settings;
-    for (const ct::LayeredConfig::Layer& layer : *layers) {
-        for (const std::string& problem : ct::applyMovementConfig(layer.entries, settings)) {
-            ct::logWarning("{}: {}", layer.path.string(), problem);
-        }
-    }
-    return settings;
+struct ClientCVars {
+    const ct::CVar& sensitivity;
+    const ct::CVar& fov;
+    const ct::CVar& showStats;
+};
+
+ClientCVars registerClientCVars(ct::Console& console) {
+    return {
+        console.add(ct::CVar::makeFloat("client.sensitivity", 3.0f, 0.01f, 100.0f,
+                                        "degrees turned per mouse count = 0.022 x sensitivity")),
+        console.add(ct::CVar::makeFloat(
+            "client.fov", 100.0f, 60.0f, 140.0f,
+            "horizontal field of view in degrees at 16:9; wider screens see more")),
+        console.add(ct::CVar::makeBool("client.show_stats", true,
+                                       "frame rate, tick cost and speed overlay")),
+    };
 }
 
-std::optional<ClientSettings> reloadClient(ct::LayeredConfig& config) {
-    const auto layers = config.reloadIfChanged();
+// A config file whose settings are the console variables under one prefix.
+struct ConfigFile {
+    ct::LayeredConfig layers;
+    std::string prefix;
+    std::string name;
+};
+
+void reloadConfig(ct::Console& console, ConfigFile& file, bool announce) {
+    const auto layers = file.layers.reloadIfChanged();
     if (!layers) {
-        return std::nullopt;
+        return;
     }
-    ClientSettings settings;
-    for (const ct::LayeredConfig::Layer& layer : *layers) {
-        for (const ct::ConfigEntry& entry : layer.entries) {
-            float value = 0.0f;
-            const bool parsed = ct::parseFloat(entry.value, value);
-            if (entry.key == "sensitivity" && parsed && value > 0.0f) {
-                settings.sensitivity = value;
-            } else if (entry.key == "fov" && parsed && value >= 60.0f && value <= 140.0f) {
-                settings.fovDegrees = value;
-            } else {
-                ct::logWarning("{}: line {}: unknown setting or invalid value '{} {}'",
-                               layer.path.string(), entry.line, entry.key, entry.value);
-            }
-        }
+    for (const std::string& problem : console.applyConfig(file.prefix, *layers)) {
+        ct::logWarning("{}", problem);
     }
-    return settings;
+    if (announce) {
+        ct::logInfo("{} reloaded", file.name);
+    }
 }
 
 ct::Vec3 lerp(ct::Vec3 a, ct::Vec3 b, float t) { return a + (b - a) * t; }
@@ -121,6 +125,21 @@ int main(int argc, char** argv) {
     content.addLayer(game->root / "content");
     ct::logInfo("Game: {}", game->title);
 
+    ct::Console console;
+    ct::registerMovementCVars(console);
+    const ClientCVars client = registerClientCVars(console);
+    std::vector<ConfigFile> configFiles;
+    configFiles.push_back({ct::LayeredConfig(content, "config/movement.cfg"),
+                           std::string(ct::kMovementCVarPrefix), "movement.cfg"});
+    configFiles.push_back(
+        {ct::LayeredConfig(content, "config/client.cfg"), "client.", "client.cfg"});
+    for (ConfigFile& file : configFiles) {
+        reloadConfig(console, file, false);
+    }
+    for (const std::string& commands : commandLine.execute) {
+        console.execute(commands);
+    }
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         ct::logError("SDL: {}", SDL_GetError());
         return EXIT_FAILURE;
@@ -134,25 +153,26 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
+    auto devUi = std::make_unique<ct::DevUi>(window);
     std::unique_ptr<ct::Renderer> renderer =
         ct::Renderer::create(window, std::filesystem::path(SDL_GetBasePath()) / "shaders", error);
     if (!renderer) {
         ct::logError("renderer: {}", error);
+        devUi.reset();
         SDL_DestroyWindow(window);
         SDL_Quit();
         return EXIT_FAILURE;
     }
+    ct::ConsoleWindow consoleWindow(console);
+    ct::StatsOverlay stats;
 
     const ct::Level level = ct::makeMovementTestLevel();
     const ct::CollisionWorld collision(level.brushes);
     const ct::WorldMesh mesh = ct::buildWorldMesh(level);
     renderer->setWorldMesh(mesh.vertices, mesh.indices);
 
-    ct::LayeredConfig movementFile(content, "config/movement.cfg");
-    ct::LayeredConfig clientFile(content, "config/client.cfg");
-    ct::MovementSettings movement = reloadMovement(movementFile).value_or(ct::MovementSettings{});
-    ClientSettings client = reloadClient(clientFile).value_or(ClientSettings{});
-
+    ct::MovementSettings movement = ct::movementSettingsFromCVars(console);
+    std::uint64_t seenChanges = console.changeCount();
     const ct::SpawnPoint& spawn = level.spawnPoints.front();
     auto initial = std::make_unique<ct::State>();
     const ct::EntityId player = ct::spawnPlayer(initial->world, movement, spawn, 0);
@@ -160,24 +180,37 @@ int main(int argc, char** argv) {
     initial.reset();
     sim.start();
 
+    bool running = true;
+    console.addCommand("quit", "Exit the game",
+                       [&running](std::span<const std::string>) { running = false; });
+
     float yaw = ct::angleToRadians(spawn.yaw);
     float pitch = 0.0f;
     const float maxPitch = ct::angleToRadians(ct::kMaxPitch);
-    bool mouseCaptured = true;
-    SDL_SetWindowRelativeMouseMode(window, true);
+    bool mouseCaptured = false;
+    const auto captureMouse = [&](bool capture) {
+        mouseCaptured = capture;
+        SDL_SetWindowRelativeMouseMode(window, capture);
+        devUi->setMouseCaptured(capture);
+    };
+    captureMouse(true);
 
     Clock::time_point nextReload = Clock::now() + kReloadInterval;
-    Clock::time_point nextTitle = Clock::now() + kTitleInterval;
-    int framesSinceTitle = 0;
+    Clock::time_point lastFrame = Clock::now();
     int frameCount = 0;
     float horizontalSpeed = 0.0f;
 
-    bool running = true;
     while (running) {
         CT_PROFILE_FRAME();
 
         SDL_Event event;
+        bool consoleKeyPressed = false;
         while (SDL_PollEvent(&event)) {
+            // The console key only opens and closes the console; it never types into it.
+            if (event.type == SDL_EVENT_TEXT_INPUT && consoleKeyPressed) {
+                continue;
+            }
+            devUi->processEvent(event);
             switch (event.type) {
             case SDL_EVENT_QUIT:
                 running = false;
@@ -185,26 +218,35 @@ int main(int argc, char** argv) {
             case SDL_EVENT_MOUSE_MOTION:
                 if (mouseCaptured) {
                     const float radiansPerCount =
-                        kDegreesPerMouseCount * client.sensitivity * (ct::kPi / 180.0f);
+                        kDegreesPerMouseCount * client.sensitivity.asFloat() * (ct::kPi / 180.0f);
                     yaw -= event.motion.xrel * radiansPerCount;
                     pitch -= event.motion.yrel * radiansPerCount;
                 }
                 break;
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_ESCAPE && !event.key.repeat) {
-                    mouseCaptured = !mouseCaptured;
-                    SDL_SetWindowRelativeMouseMode(window, mouseCaptured);
+                if (event.key.repeat) {
+                    break;
+                }
+                if (event.key.scancode == SDL_SCANCODE_GRAVE) {
+                    consoleKeyPressed = true;
+                    consoleWindow.setOpen(!consoleWindow.isOpen());
+                    captureMouse(!consoleWindow.isOpen());
+                } else if (event.key.key == SDLK_ESCAPE) {
+                    if (consoleWindow.isOpen()) {
+                        consoleWindow.setOpen(false);
+                        captureMouse(true);
+                    } else {
+                        captureMouse(!mouseCaptured);
+                    }
                 }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
-                if (!mouseCaptured) {
-                    mouseCaptured = true;
-                    SDL_SetWindowRelativeMouseMode(window, true);
+                if (!mouseCaptured && !consoleWindow.isOpen()) {
+                    captureMouse(true);
                 }
                 break;
             case SDL_EVENT_WINDOW_FOCUS_LOST:
-                mouseCaptured = false;
-                SDL_SetWindowRelativeMouseMode(window, false);
+                captureMouse(false);
                 break;
             default:
                 break;
@@ -231,15 +273,14 @@ int main(int argc, char** argv) {
         const Clock::time_point now = Clock::now();
         if (now >= nextReload) {
             nextReload = now + kReloadInterval;
-            if (std::optional<ct::MovementSettings> reloaded = reloadMovement(movementFile)) {
-                movement = *reloaded;
-                sim.setMovementSettings(movement);
-                ct::logInfo("movement.cfg reloaded");
+            for (ConfigFile& file : configFiles) {
+                reloadConfig(console, file, true);
             }
-            if (std::optional<ClientSettings> reloaded = reloadClient(clientFile)) {
-                client = *reloaded;
-                ct::logInfo("client.cfg reloaded");
-            }
+        }
+        if (console.changeCount() != seenChanges) {
+            seenChanges = console.changeCount();
+            movement = ct::movementSettingsFromCVars(console);
+            sim.setMovementSettings(movement);
         }
 
         ct::Vec3 eye;
@@ -260,33 +301,34 @@ int main(int argc, char** argv) {
             }
         });
 
+        stats.add({std::chrono::duration<float, std::milli>(now - lastFrame).count(),
+                   sim.lastStepMilliseconds(), horizontalSpeed});
+        lastFrame = now;
+
+        devUi->beginFrame();
+        if (client.showStats.asBool()) {
+            stats.draw();
+        }
+        consoleWindow.draw();
+        const ImDrawData* ui = devUi->endFrame();
+
         ct::Camera camera;
         camera.position = eye;
         camera.yawRadians = yaw;
         camera.pitchRadians = pitch;
-        camera.horizontalFovRadians16x9 = client.fovDegrees * (ct::kPi / 180.0f);
-        renderer->drawFrame(camera);
+        camera.horizontalFovRadians16x9 = client.fov.asFloat() * (ct::kPi / 180.0f);
+        renderer->drawFrame(camera, ui);
 
         ++frameCount;
-        ++framesSinceTitle;
-        if (now >= nextTitle) {
-            const float seconds =
-                std::chrono::duration<float>(now - (nextTitle - kTitleInterval)).count();
-            const std::string title =
-                std::format("{}  |  {:.0f} fps  |  {:.2f} m/s  |  tick {:.3f} ms", game->title,
-                            static_cast<float>(framesSinceTitle) / seconds, horizontalSpeed,
-                            sim.lastStepMilliseconds());
-            SDL_SetWindowTitle(window, title.c_str());
-            nextTitle = now + kTitleInterval;
-            framesSinceTitle = 0;
-        }
         if (commandLine.frameLimit >= 0 && frameCount >= commandLine.frameLimit) {
             running = false;
         }
     }
 
+    console.removeCommand("quit");
     sim.stop();
-    renderer.reset();
+    renderer.reset(); // before the ImGui context it serves
+    devUi.reset();
     SDL_DestroyWindow(window);
     SDL_Quit();
     return EXIT_SUCCESS;

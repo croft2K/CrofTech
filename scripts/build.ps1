@@ -20,7 +20,8 @@ if (-not $env:VSCMD_VER) {
     $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath
     if (-not $vsPath) { throw 'No Visual Studio install with the C++ Clang tools was found.' }
     $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
-    cmd /c "`"$vcvars`" >nul && set" | ForEach-Object {
+    # vcvars can print harmless errors; with output redirected, PowerShell 5.1 would treat them as fatal.
+    cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
         if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] }
     }
 }

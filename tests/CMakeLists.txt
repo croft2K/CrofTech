@@ -2,7 +2,9 @@ add_executable(ct_unit_tests
     unit/Main.cpp
     unit/core/AngleTests.cpp
     unit/core/ConfigFileTests.cpp
+    unit/core/ConsoleTests.cpp
     unit/core/ContentTests.cpp
+    unit/core/CVarTests.cpp
     unit/core/HashTests.cpp
     unit/level/BrushGeometryTests.cpp
     unit/sim/CollisionWorldTests.cpp

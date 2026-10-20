@@ -1,5 +1,8 @@
 #include "croftech/render/Renderer.h"
 
+#include "ShaderModule.h"
+#include "UiRenderer.h"
+
 #include "croftech/core/Log.h"
 #include "croftech/core/Matrix.h"
 #include "croftech/core/Profile.h"
@@ -17,7 +20,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
-#include <fstream>
 #include <vector>
 
 namespace ct {
@@ -49,21 +51,6 @@ struct FrameResources {
 struct PushConstants {
     Mat4 viewProjection;
 };
-
-std::vector<std::uint32_t> readSpirv(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        return {};
-    }
-    const std::streamsize size = file.tellg();
-    if (size <= 0 || size % 4 != 0) {
-        return {};
-    }
-    std::vector<std::uint32_t> words(static_cast<std::size_t>(size) / 4);
-    file.seekg(0);
-    file.read(reinterpret_cast<char*>(words.data()), size);
-    return file ? words : std::vector<std::uint32_t>{};
-}
 
 // World is Z up. View space is right-handed and looks down -Z; the projection is reverse-Z with an
 // infinite far plane (depth 1 at the near plane, 0 at infinity) and flips Y for Vulkan.
@@ -120,6 +107,8 @@ struct Renderer::Impl {
     Buffer indexBuffer;
     std::uint32_t indexCount = 0;
 
+    UiRenderer ui;
+
     Impl() = default;
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
@@ -132,7 +121,8 @@ struct Renderer::Impl {
     bool createPipeline(const std::filesystem::path& shaderDirectory, std::string& error);
     Buffer createHostBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage);
     void destroyBuffer(Buffer& buffer);
-    void recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex, const Camera& camera);
+    void recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex, const Camera& camera,
+                     const ImDrawData* uiData);
 };
 
 bool Renderer::Impl::init(SDL_Window* sdlWindow, const std::filesystem::path& shaderDirectory,
@@ -259,7 +249,9 @@ bool Renderer::Impl::init(SDL_Window* sdlWindow, const std::filesystem::path& sh
         }
     }
 
-    return createSwapchain(error) && createPipeline(shaderDirectory, error);
+    return createSwapchain(error) && createPipeline(shaderDirectory, error) &&
+           ui.init(device.device, allocator, kFramesInFlight, swapchain.image_format, kDepthFormat,
+                   shaderDirectory, error);
 }
 
 bool Renderer::Impl::createSwapchain(std::string& error) {
@@ -357,23 +349,10 @@ void Renderer::Impl::destroySwapchainResources() {
 
 bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory,
                                     std::string& error) {
-    const auto loadModule = [&](const char* name) {
-        const std::vector<std::uint32_t> code = readSpirv(shaderDirectory / name);
-        VkShaderModule module = VK_NULL_HANDLE;
-        if (code.empty()) {
-            error = "missing shader " + (shaderDirectory / name).string();
-            return module;
-        }
-        const VkShaderModuleCreateInfo info{
-            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = code.size() * sizeof(std::uint32_t),
-            .pCode = code.data(),
-        };
-        vkCreateShaderModule(device.device, &info, nullptr, &module);
-        return module;
-    };
-    const VkShaderModule vertexShader = loadModule("world.vert.spv");
-    const VkShaderModule fragmentShader = loadModule("world.frag.spv");
+    const VkShaderModule vertexShader =
+        loadShaderModule(device.device, shaderDirectory / "world.vert.spv", error);
+    const VkShaderModule fragmentShader =
+        loadShaderModule(device.device, shaderDirectory / "world.frag.spv", error);
     const auto destroyModules = [&] {
         vkDestroyShaderModule(device.device, vertexShader, nullptr);
         vkDestroyShaderModule(device.device, fragmentShader, nullptr);
@@ -527,12 +506,13 @@ void Renderer::Impl::destroyBuffer(Buffer& buffer) {
 }
 
 void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
-                                 const Camera& camera) {
+                                 const Camera& camera, const ImDrawData* uiData) {
     const VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     vkBeginCommandBuffer(cmd, &beginInfo);
+    ui.prepare(cmd, frameIndex, uiData);
 
     const std::array toRender{
         VkImageMemoryBarrier2{
@@ -611,6 +591,7 @@ void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
         vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
     }
+    ui.draw(cmd, frameIndex, uiData);
 
     vkCmdEndRendering(cmd);
 
@@ -645,6 +626,7 @@ Renderer::Impl::~Impl() {
         return;
     }
     vkDeviceWaitIdle(device.device);
+    ui.destroy();
     destroyBuffer(vertexBuffer);
     destroyBuffer(indexBuffer);
     vkDestroyPipeline(device.device, pipeline, nullptr);
@@ -696,7 +678,7 @@ void Renderer::setWorldMesh(std::span<const WorldVertex> vertices,
     }
 }
 
-void Renderer::drawFrame(const Camera& camera) {
+void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui) {
     CT_PROFILE_ZONE();
     Impl& r = *m_impl;
     const VkDevice device = r.device.device;
@@ -737,7 +719,7 @@ void Renderer::drawFrame(const Camera& camera) {
 
     vkResetFences(device, 1, &frame.inFlight);
     vkResetCommandPool(device, frame.commandPool, 0);
-    r.recordFrame(frame.commandBuffer, imageIndex, camera);
+    r.recordFrame(frame.commandBuffer, imageIndex, camera, ui);
 
     const VkSemaphoreSubmitInfo waitInfo{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,

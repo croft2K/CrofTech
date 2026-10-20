@@ -20,17 +20,25 @@ Linux: `cmake --workflow --preset linux-debug` (also `linux-release`, `linux-asa
 Run tests only: `ctest --preset windows-debug`. Build output goes to `build/<preset>/`; every
 executable and the compiled shaders land in `build/<preset>/bin/`.
 
-Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--frames N]` (`--frames`
-quits after N frames, for automated smoke runs).
+Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--frames N] [--exec "cmds"]`
+(`--frames` quits after N frames, for automated smoke runs; `--exec` runs console commands once
+the config files have loaded). In the client, the key below Esc opens the developer console.
 
 CrofTech is an engine; games are built on it. Each game lives in `games/<name>/` with a `game.cfg`
 (title) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
 Config files merge setting by setting (a game lists only what it changes); other files are taken
 whole from the highest layer that has them (`ct::ContentPaths`, `ct::LayeredConfig`). Development
-builds read content from the source tree and reload config whenever it is saved. Debug builds enable the Vulkan validation layer; treat any
-validation error it prints as a bug.
+builds read content from the source tree and reload config whenever it is saved. Debug builds
+enable the Vulkan validation layer; treat any validation error it prints as a bug.
 
-Windows presets include the client (vcpkg feature `client`: SDL3, volk, VMA, vk-bootstrap) and need
+Settings are console variables (`ct::CVar`, owned by a `ct::Console`). Each config file maps to a
+prefix: the `gravity` line of `config/movement.cfg` is the variable `movement.gravity`. Loading a
+file resets its prefix to defaults and applies the layers (`Console::applyConfig`), so the file,
+the console and `--exec` all change the same values. Code reads values through the `const CVar&`
+that `Console::add` returns, and polls `Console::changeCount()` to react to changes.
+
+Windows presets include the client (vcpkg feature `client`: SDL3, volk, VMA, vk-bootstrap, Dear
+ImGui with docking and its SDL3 backend) and need
 the Vulkan SDK for `glslc`. Linux presets build only the engine, server-side code and tests.
 Dependencies come from vcpkg in manifest mode (`vcpkg.json`, pinned by `builtin-baseline`).
 
@@ -39,12 +47,14 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
 
 ## Layout and dependency rules
 
-    engine/core      math, angles, hashing, asserts, logging, config files, profiling
+    engine/core      math, angles, hashing, asserts, logging, config files, console variables,
+                     profiling
     engine/level     level data: brushes, spawn points, brush geometry, test levels (core)
     engine/sim       ECS world, components, collision, movement        (core, level)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    simulation thread; later prediction, interpolation (sim, platform)
-    engine/render    Vulkan renderer (Windows client builds only)      (core)
+    engine/render    Vulkan renderer, incl. Dear ImGui drawing (Windows client only)  (core)
+    engine/devui     Dear ImGui context, developer console, stats overlay  (core)
     engine/net       bitstream, transport, channels, crypto, protocol  (M6)
     engine/server    sessions, input buffers, lag compensation          (M6-M7)
     game/            weapons, damage, rules (simulation systems)
@@ -59,6 +69,8 @@ Each module is a CMake target `ct_<module>` (alias `ct::<module>`) with public h
 - `sim` and `game` never depend on `render`, `platform`, audio or wall-clock time.
 - `server` and the dedicated server never link `render`.
 - `render` reads simulation state; it never writes it.
+- Dear ImGui is drawn by our own Vulkan code in `render` (`UiRenderer`), not ImGui's Vulkan
+  backend, which links the system Vulkan loader and would clash with volk.
 
 Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct_add_test`.
 

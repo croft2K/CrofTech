@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 
+struct ImDrawData;
 struct SDL_Window;
 
 namespace ct {
@@ -27,6 +28,8 @@ struct Camera {
 };
 
 // Vulkan renderer. Reads presentation data only; it never sees or writes simulation state.
+// It also draws Dear ImGui output (see ct::DevUi): create it after the ImGui context and destroy it
+// before, because it hands texture state back to ImGui on shutdown.
 class Renderer {
 public:
     // Returns null and sets error on failure. Shaders are loaded from shaderDirectory.
@@ -38,7 +41,8 @@ public:
 
     void setWorldMesh(std::span<const WorldVertex> vertices,
                       std::span<const std::uint32_t> indices);
-    void drawFrame(const Camera& camera);
+    // ui (may be null) is this frame's ImGui::GetDrawData(), drawn over the world.
+    void drawFrame(const Camera& camera, const ImDrawData* ui = nullptr);
 
     struct Impl;
     // Use create(). Impl is only defined inside the renderer, so nothing else can build one.
