@@ -37,7 +37,7 @@ Each milestone ends in something playable.
 
 In order; each step builds, tests and commits on its own.
 
-1. **Engine/game split.** CrofTech becomes an engine that games are built on. Each game lives in
+1. **Engine/game split.** *Done: `games/sandbox/`, layered content, `--game`.* CrofTech becomes an engine that games are built on. Each game lives in
    `games/<name>/` with its own content (config, levels, assets) and, later, its own gameplay code.
    The engine ships defaults; a game overrides them (movement tuning, rules, weapons), and a level or
    game mode can override the game. The client and editor take `--game <name>`.

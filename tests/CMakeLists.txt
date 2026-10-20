@@ -2,6 +2,7 @@ add_executable(ct_unit_tests
     unit/Main.cpp
     unit/core/AngleTests.cpp
     unit/core/ConfigFileTests.cpp
+    unit/core/ContentTests.cpp
     unit/core/HashTests.cpp
     unit/level/BrushGeometryTests.cpp
     unit/sim/CollisionWorldTests.cpp
@@ -9,7 +10,9 @@ add_executable(ct_unit_tests
     unit/sim/WorldTests.cpp
 )
 target_link_libraries(ct_unit_tests PRIVATE ct::sim doctest::doctest)
-target_compile_definitions(ct_unit_tests PRIVATE CROFTECH_CONTENT_DIR="${PROJECT_SOURCE_DIR}/content")
+target_compile_definitions(ct_unit_tests PRIVATE
+    CROFTECH_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    CROFTECH_CONTENT_DIR="${PROJECT_SOURCE_DIR}/content")
 ct_apply_defaults(ct_unit_tests)
 ct_add_test(ct_unit_tests)
 

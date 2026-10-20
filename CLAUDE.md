@@ -20,9 +20,14 @@ Linux: `cmake --workflow --preset linux-debug` (also `linux-release`, `linux-asa
 Run tests only: `ctest --preset windows-debug`. Build output goes to `build/<preset>/`; every
 executable and the compiled shaders land in `build/<preset>/bin/`.
 
-Run the client: `build\windows-debug\bin\croftech.exe` (`--frames N` quits after N frames, for
-automated smoke runs). It reads `content/config/movement.cfg` and `client.cfg` from the source tree
-and reloads them whenever they are saved. Debug builds enable the Vulkan validation layer; treat any
+Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--frames N]` (`--frames`
+quits after N frames, for automated smoke runs).
+
+CrofTech is an engine; games are built on it. Each game lives in `games/<name>/` with a `game.cfg`
+(title) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
+Config files merge setting by setting (a game lists only what it changes); other files are taken
+whole from the highest layer that has them (`ct::ContentPaths`, `ct::LayeredConfig`). Development
+builds read content from the source tree and reload config whenever it is saved. Debug builds enable the Vulkan validation layer; treat any
 validation error it prints as a bug.
 
 Windows presets include the client (vcpkg feature `client`: SDL3, volk, VMA, vk-bootstrap) and need
@@ -44,7 +49,8 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/server    sessions, input buffers, lag compensation          (M6-M7)
     game/            weapons, damage, rules (simulation systems)
     apps/            client (croftech.exe); later dedicated_server, editor, levelc
-    content/         config files and, later, levels and assets
+    content/         engine default content (config; later levels and assets)
+    games/<name>/    a game: game.cfg, content/ overrides, later its gameplay code
     tests/           unit/, sim/ (headless), fuzz/
 
 Each module is a CMake target `ct_<module>` (alias `ct::<module>`) with public headers under

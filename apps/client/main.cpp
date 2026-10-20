@@ -9,6 +9,7 @@
 #include "croftech/client/SimThread.h"
 #include "croftech/core/Angle.h"
 #include "croftech/core/ConfigFile.h"
+#include "croftech/core/Content.h"
 #include "croftech/core/Log.h"
 #include "croftech/core/Profile.h"
 #include "croftech/level/TestLevels.h"
@@ -29,14 +30,13 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
-#include <vector>
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
 
-const std::filesystem::path kContentDirectory = CROFTECH_CONTENT_DIR;
+// Development builds run straight from the source tree, so config edits hot-reload in place.
+const std::filesystem::path kSourceDirectory = CROFTECH_SOURCE_DIR;
 constexpr float kDegreesPerMouseCount = 0.022f; // Quake's m_yaw, so sensitivities carry over
 constexpr auto kReloadInterval = std::chrono::milliseconds(250);
 constexpr auto kTitleInterval = std::chrono::milliseconds(250);
@@ -46,76 +46,60 @@ struct ClientSettings {
     float fovDegrees = 100.0f;
 };
 
-// A config file that is re-read whenever it changes on disk.
-class WatchedFile {
-public:
-    explicit WatchedFile(std::filesystem::path path) : m_path(std::move(path)) {}
-
-    // Returns the contents on the first call and whenever the file has changed since.
-    std::optional<std::string> readIfChanged() {
-        std::error_code error;
-        const auto writeTime = std::filesystem::last_write_time(m_path, error);
-        if (error || (m_loaded && writeTime == m_lastWrite)) {
-            return std::nullopt;
-        }
-        std::optional<std::string> text = ct::readTextFile(m_path);
-        if (text) {
-            m_lastWrite = writeTime;
-            m_loaded = true;
-        }
-        return text;
-    }
-
-    const std::filesystem::path& path() const { return m_path; }
-
-private:
-    std::filesystem::path m_path;
-    std::filesystem::file_time_type m_lastWrite{};
-    bool m_loaded = false;
+struct CommandLine {
+    std::string game = "sandbox";
+    int frameLimit = -1; // quit after this many frames, for automated smoke runs
 };
 
-// Settings missing from the file fall back to their defaults, so deleting a line undoes it.
-std::optional<ct::MovementSettings> reloadMovement(WatchedFile& file) {
-    const std::optional<std::string> text = file.readIfChanged();
-    if (!text) {
+CommandLine parseCommandLine(int argc, char** argv) {
+    CommandLine commandLine;
+    for (int i = 1; i + 1 < argc; ++i) {
+        const std::string_view option(argv[i]);
+        if (option == "--game") {
+            commandLine.game = argv[++i];
+        } else if (option == "--frames") {
+            commandLine.frameLimit = std::atoi(argv[++i]);
+        }
+    }
+    return commandLine;
+}
+
+// Every layer is applied over the built-in defaults, so deleting a line undoes it.
+std::optional<ct::MovementSettings> reloadMovement(ct::LayeredConfig& config) {
+    const auto layers = config.reloadIfChanged();
+    if (!layers) {
         return std::nullopt;
     }
     ct::MovementSettings settings;
-    const std::vector<ct::ConfigEntry> entries = ct::parseConfig(*text);
-    for (const std::string& problem : ct::applyMovementConfig(entries, settings)) {
-        ct::logWarning("{}: {}", file.path().filename().string(), problem);
+    for (const ct::LayeredConfig::Layer& layer : *layers) {
+        for (const std::string& problem : ct::applyMovementConfig(layer.entries, settings)) {
+            ct::logWarning("{}: {}", layer.path.string(), problem);
+        }
     }
     return settings;
 }
 
-std::optional<ClientSettings> reloadClient(WatchedFile& file) {
-    const std::optional<std::string> text = file.readIfChanged();
-    if (!text) {
+std::optional<ClientSettings> reloadClient(ct::LayeredConfig& config) {
+    const auto layers = config.reloadIfChanged();
+    if (!layers) {
         return std::nullopt;
     }
     ClientSettings settings;
-    for (const ct::ConfigEntry& entry : ct::parseConfig(*text)) {
-        float value = 0.0f;
-        const bool parsed = ct::parseFloat(entry.value, value);
-        if (entry.key == "sensitivity" && parsed && value > 0.0f) {
-            settings.sensitivity = value;
-        } else if (entry.key == "fov" && parsed && value >= 60.0f && value <= 140.0f) {
-            settings.fovDegrees = value;
-        } else {
-            ct::logWarning("{}: line {}: unknown setting or invalid value '{} {}'",
-                           file.path().filename().string(), entry.line, entry.key, entry.value);
+    for (const ct::LayeredConfig::Layer& layer : *layers) {
+        for (const ct::ConfigEntry& entry : layer.entries) {
+            float value = 0.0f;
+            const bool parsed = ct::parseFloat(entry.value, value);
+            if (entry.key == "sensitivity" && parsed && value > 0.0f) {
+                settings.sensitivity = value;
+            } else if (entry.key == "fov" && parsed && value >= 60.0f && value <= 140.0f) {
+                settings.fovDegrees = value;
+            } else {
+                ct::logWarning("{}: line {}: unknown setting or invalid value '{} {}'",
+                               layer.path.string(), entry.line, entry.key, entry.value);
+            }
         }
     }
     return settings;
-}
-
-int parseFrameLimit(int argc, char** argv) {
-    for (int i = 1; i + 1 < argc; ++i) {
-        if (std::string_view(argv[i]) == "--frames") {
-            return std::atoi(argv[i + 1]);
-        }
-    }
-    return -1;
 }
 
 ct::Vec3 lerp(ct::Vec3 a, ct::Vec3 b, float t) { return a + (b - a) * t; }
@@ -123,14 +107,26 @@ ct::Vec3 lerp(ct::Vec3 a, ct::Vec3 b, float t) { return a + (b - a) * t; }
 } // namespace
 
 int main(int argc, char** argv) {
-    const int frameLimit = parseFrameLimit(argc, argv);
+    const CommandLine commandLine = parseCommandLine(argc, argv);
+
+    std::string error;
+    const std::optional<ct::GameManifest> game =
+        ct::loadGameManifest(kSourceDirectory / "games", commandLine.game, error);
+    if (!game) {
+        ct::logError("{}", error);
+        return EXIT_FAILURE;
+    }
+    ct::ContentPaths content;
+    content.addLayer(kSourceDirectory / "content");
+    content.addLayer(game->root / "content");
+    ct::logInfo("Game: {}", game->title);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         ct::logError("SDL: {}", SDL_GetError());
         return EXIT_FAILURE;
     }
     SDL_Window* window =
-        SDL_CreateWindow("CrofTech", 1600, 900,
+        SDL_CreateWindow(game->title.c_str(), 1600, 900,
                          SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (window == nullptr) {
         ct::logError("window: {}", SDL_GetError());
@@ -138,7 +134,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    std::string error;
     std::unique_ptr<ct::Renderer> renderer =
         ct::Renderer::create(window, std::filesystem::path(SDL_GetBasePath()) / "shaders", error);
     if (!renderer) {
@@ -153,8 +148,8 @@ int main(int argc, char** argv) {
     const ct::WorldMesh mesh = ct::buildWorldMesh(level);
     renderer->setWorldMesh(mesh.vertices, mesh.indices);
 
-    WatchedFile movementFile(kContentDirectory / "config" / "movement.cfg");
-    WatchedFile clientFile(kContentDirectory / "config" / "client.cfg");
+    ct::LayeredConfig movementFile(content, "config/movement.cfg");
+    ct::LayeredConfig clientFile(content, "config/client.cfg");
     ct::MovementSettings movement = reloadMovement(movementFile).value_or(ct::MovementSettings{});
     ClientSettings client = reloadClient(clientFile).value_or(ClientSettings{});
 
@@ -278,14 +273,14 @@ int main(int argc, char** argv) {
             const float seconds =
                 std::chrono::duration<float>(now - (nextTitle - kTitleInterval)).count();
             const std::string title =
-                std::format("CrofTech  |  {:.0f} fps  |  {:.2f} m/s  |  tick {:.3f} ms",
+                std::format("{}  |  {:.0f} fps  |  {:.2f} m/s  |  tick {:.3f} ms", game->title,
                             static_cast<float>(framesSinceTitle) / seconds, horizontalSpeed,
                             sim.lastStepMilliseconds());
             SDL_SetWindowTitle(window, title.c_str());
             nextTitle = now + kTitleInterval;
             framesSinceTitle = 0;
         }
-        if (frameLimit >= 0 && frameCount >= frameLimit) {
+        if (commandLine.frameLimit >= 0 && frameCount >= commandLine.frameLimit) {
             running = false;
         }
     }
