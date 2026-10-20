@@ -1,6 +1,8 @@
 add_library(ct_core STATIC
+    include/croftech/core/Angle.h
     include/croftech/core/Assert.h
     include/croftech/core/Hash.h
+    include/croftech/core/Math.h
     include/croftech/core/Profile.h
     src/Assert.cpp
 )

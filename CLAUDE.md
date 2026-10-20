@@ -25,8 +25,9 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
 
 ## Layout and dependency rules
 
-    engine/core      math, containers, hashing, asserts, profiling   (depends on nothing)
-    engine/sim       ECS world, component schema, movement, collision (core only)
+    engine/core      math, angles, hashing, asserts, profiling       (depends on nothing)
+    engine/level     level data: brushes, spawn points, brush geometry (core only)
+    engine/sim       ECS world, components, collision, movement        (core, level)
     engine/net       bitstream, transport, channels, crypto, protocol
     engine/server    sessions, input buffers, lag compensation, relevancy
     engine/client    prediction, reconciliation, interpolation, presentation state
@@ -53,6 +54,12 @@ Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct
   never iterate an unordered container in simulation code. RNG is seeded and stored in the state.
 - Floats: no fast-math; FMA contraction is disabled build-wide (`-ffp-contract=off`). Do not
   re-enable it or add `/fp:fast`.
+- No `std::sin`/`std::cos`/`std::atan2` etc. in simulation code: their results differ between
+  platforms, and the Linux server must match Windows clients. Use `ct::sinCos` (core/Angle.h) and
+  `+ - * / sqrt` only. Angles in the simulation are 16-bit turn fractions, as in `UserCmd`.
+- Components must have no padding (they are hashed as raw bytes); each has a `sizeof` check.
+  Register every new component pool in `forEachPool` (sim/World.h).
+- Units are metres and seconds, Z up. Movement tuning lives in `MovementSettings`.
 - Components are trivially copyable plain structs with no pointers. Refer to other entities by
   generation-checked `EntityId`, never by pointer.
 - Presentation state (particles, sounds, ragdolls, view-model animation) lives outside the
