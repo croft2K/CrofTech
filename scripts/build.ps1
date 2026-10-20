@@ -10,6 +10,11 @@ $vcpkgRoot = [Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'User')
 if (-not $vcpkgRoot) { $vcpkgRoot = $env:VCPKG_ROOT }
 if (-not $vcpkgRoot) { throw 'VCPKG_ROOT is not set. Clone and bootstrap vcpkg, then set VCPKG_ROOT.' }
 
+# Shells opened before the Vulkan SDK was installed don't have VULKAN_SDK yet.
+if (-not $env:VULKAN_SDK) {
+    $env:VULKAN_SDK = [Environment]::GetEnvironmentVariable('VULKAN_SDK', 'Machine')
+}
+
 if (-not $env:VSCMD_VER) {
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath

@@ -7,6 +7,20 @@
     "doctest"
   ],
   "features": {
+    "client": {
+      "description": "Client and renderer: window, input and Vulkan",
+      "dependencies": [
+        {
+          "name": "sdl3",
+          "features": [
+            "vulkan"
+          ]
+        },
+        "vk-bootstrap",
+        "volk",
+        "vulkan-memory-allocator"
+      ]
+    },
     "profiling": {
       "description": "Tracy profiler client",
       "dependencies": [

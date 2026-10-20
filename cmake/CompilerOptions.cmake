@@ -28,6 +28,9 @@ function(ct_apply_defaults target)
         endif()
         if(CROFTECH_SANITIZE)
             target_compile_options(${target} PRIVATE -fsanitize=address)
+            # vcpkg libraries are built without ASan; the STL's container annotations must match
+            # across everything linked together, so they are turned off.
+            target_compile_definitions(${target} PRIVATE _DISABLE_STL_ANNOTATION)
             # CMake invokes the linker directly, so the clang driver never adds the ASan runtime.
             target_link_options(${target} PRIVATE
                 "/LIBPATH:${CT_ASAN_RUNTIME_DIR}"

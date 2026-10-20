@@ -25,6 +25,13 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
 
+      # The client build compiles shaders with glslc from the Vulkan SDK.
+      - uses: humbletim/install-vulkan-sdk@v1.2
+        if: runner.os == 'Windows'
+        with:
+          version: latest
+          cache: true
+
       # Runs after msvc-dev-cmd so VCPKG_ROOT points at this pinned clone, not Visual Studio's copy.
       - uses: lukka/run-vcpkg@v11
         with:

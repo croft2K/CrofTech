@@ -17,7 +17,16 @@ Windows (any shell; the script loads the Visual Studio environment and keeps you
 
 Linux: `cmake --workflow --preset linux-debug` (also `linux-release`, `linux-asan` with UBSan).
 
-Run tests only: `ctest --preset windows-debug`. Build output goes to `build/<preset>/`.
+Run tests only: `ctest --preset windows-debug`. Build output goes to `build/<preset>/`; every
+executable and the compiled shaders land in `build/<preset>/bin/`.
+
+Run the client: `build\windows-debug\bin\croftech.exe` (`--frames N` quits after N frames, for
+automated smoke runs). It reads `content/config/movement.cfg` and `client.cfg` from the source tree
+and reloads them whenever they are saved. Debug builds enable the Vulkan validation layer; treat any
+validation error it prints as a bug.
+
+Windows presets include the client (vcpkg feature `client`: SDL3, volk, VMA, vk-bootstrap) and need
+the Vulkan SDK for `glslc`. Linux presets build only the engine, server-side code and tests.
 Dependencies come from vcpkg in manifest mode (`vcpkg.json`, pinned by `builtin-baseline`).
 
 Before finishing any change: `windows-debug` and `windows-asan` must build with zero warnings
@@ -25,16 +34,17 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
 
 ## Layout and dependency rules
 
-    engine/core      math, angles, hashing, asserts, profiling       (depends on nothing)
-    engine/level     level data: brushes, spawn points, brush geometry (core only)
+    engine/core      math, angles, hashing, asserts, logging, config files, profiling
+    engine/level     level data: brushes, spawn points, brush geometry, test levels (core)
     engine/sim       ECS world, components, collision, movement        (core, level)
-    engine/net       bitstream, transport, channels, crypto, protocol
-    engine/server    sessions, input buffers, lag compensation, relevancy
-    engine/client    prediction, reconciliation, interpolation, presentation state
-    engine/render    Vulkan, render graph
-    engine/platform  SDL3 window/input, sockets, timers
+    engine/platform  precise timers; later sockets                     (core)
+    engine/client    simulation thread; later prediction, interpolation (sim, platform)
+    engine/render    Vulkan renderer (Windows client builds only)      (core)
+    engine/net       bitstream, transport, channels, crypto, protocol  (M6)
+    engine/server    sessions, input buffers, lag compensation          (M6-M7)
     game/            weapons, damage, rules (simulation systems)
-    apps/            client, dedicated_server, editor, levelc
+    apps/            client (croftech.exe); later dedicated_server, editor, levelc
+    content/         config files and, later, levels and assets
     tests/           unit/, sim/ (headless), fuzz/
 
 Each module is a CMake target `ct_<module>` (alias `ct::<module>`) with public headers under

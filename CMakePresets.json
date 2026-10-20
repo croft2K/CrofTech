@@ -20,7 +20,8 @@
       "architecture": { "value": "x64", "strategy": "external" },
       "cacheVariables": {
         "CMAKE_CXX_COMPILER": "clang-cl",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
+        "VCPKG_MANIFEST_FEATURES": "client"
       }
     },
     {
@@ -58,7 +59,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CROFTECH_PROFILE": "ON",
-        "VCPKG_MANIFEST_FEATURES": "profiling"
+        "VCPKG_MANIFEST_FEATURES": "client;profiling"
       }
     },
     {

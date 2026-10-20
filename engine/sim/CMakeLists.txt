@@ -3,11 +3,13 @@ add_library(ct_sim STATIC
     include/croftech/sim/ComponentPool.h
     include/croftech/sim/Components.h
     include/croftech/sim/EntityId.h
+    include/croftech/sim/MovementConfig.h
     include/croftech/sim/PlayerMovement.h
     include/croftech/sim/Simulation.h
     include/croftech/sim/UserCmd.h
     include/croftech/sim/World.h
     src/CollisionWorld.cpp
+    src/MovementConfig.cpp
     src/PlayerMovement.cpp
     src/Simulation.cpp
 )
