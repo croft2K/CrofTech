@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "croftech",
+  "version-semver": "0.1.0",
+  "builtin-baseline": "69a1a33b4ba2b21e392c17e215ff637290778a97",
+  "dependencies": [
+    "doctest"
+  ],
+  "features": {
+    "profiling": {
+      "description": "Tracy profiler client",
+      "dependencies": [
+        "tracy"
+      ]
+    }
+  }
+}

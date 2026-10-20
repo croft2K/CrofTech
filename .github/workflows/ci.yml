@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.preset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2025, preset: windows-debug }
+          - { os: windows-2025, preset: windows-asan }
+          - { os: ubuntu-24.04, preset: linux-debug }
+          - { os: ubuntu-24.04, preset: linux-asan }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: lukka/get-cmake@latest
+
+      # Puts clang-cl, the MSVC libraries and the Windows SDK on PATH.
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      # Runs after msvc-dev-cmd so VCPKG_ROOT points at this pinned clone, not Visual Studio's copy.
+      - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 69a1a33b4ba2b21e392c17e215ff637290778a97
+
+      - name: Configure, build and test
+        run: cmake --workflow --preset ${{ matrix.preset }}
