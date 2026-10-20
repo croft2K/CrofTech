@@ -104,8 +104,11 @@ void CollisionWorld::clipToBrush(const CollisionBrush& brush, Vec3 start, Vec3 e
             continue;
         }
         if (startDistance > endDistance) {
+            // Starting closer than the epsilon gives a negative fraction, which can be below the
+            // -1 sentinel when the move is short; clamping keeps such hits from being ignored, so
+            // creeping into a wall a little each tick stops at the surface.
             const float fraction =
-                (startDistance - kSurfaceEpsilon) / (startDistance - endDistance);
+                std::max((startDistance - kSurfaceEpsilon) / (startDistance - endDistance), 0.0f);
             if (fraction > enterFraction) {
                 enterFraction = fraction;
                 hitNormal = plane.normal;

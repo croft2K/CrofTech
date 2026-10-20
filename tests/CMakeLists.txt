@@ -25,6 +25,7 @@ add_executable(ct_sim_tests
     sim/MovementTests.cpp
     sim/SimHarness.h
     sim/SimThreadTests.cpp
+    sim/SlidingTests.cpp
 )
 target_link_libraries(ct_sim_tests PRIVATE ct::client ct::sim doctest::doctest)
 ct_apply_defaults(ct_sim_tests)

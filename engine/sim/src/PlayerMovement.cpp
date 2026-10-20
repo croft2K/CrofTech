@@ -18,6 +18,8 @@ constexpr float kOverbounce = 1.001f;
 constexpr float kGroundProbeDistance = 0.01f;
 // Moving away from the ground faster than this (along its normal) means we have left it.
 constexpr float kLeaveGroundSpeed = 0.25f;
+// Upward speed added to ground moves, as a fraction of the speed (see groundMoveVelocity).
+constexpr float kGroundLift = 0.001f;
 
 struct Ground {
     bool onGround = false;
@@ -52,6 +54,26 @@ Vec3 clipAgainstSurface(Vec3 velocity, Vec3 normal, float minGroundNormalZ) {
         return clipVelocity(velocity, normalize(Vec3{normal.x, normal.y, 0.0f}));
     }
     return clipped;
+}
+
+// Tilts the velocity onto walkable ground, keeping its horizontal direction and its speed (so
+// slopes don't slow walking). Clipping along the ground's normal instead would also turn it towards
+// running across the slope, and that turn would build up every tick.
+Vec3 tiltOntoGround(Vec3 velocity, Vec3 normal) {
+    if (normal.z <= 0.0f) {
+        return velocity;
+    }
+    const float speed = length(velocity);
+    const Vec3 tilted{velocity.x, velocity.y,
+                      -(normal.x * velocity.x + normal.y * velocity.y) / normal.z};
+    return normalize(tilted) * speed;
+}
+
+// The velocity for a ground move: tilted onto the ground, plus a slight lift so the move never runs
+// exactly parallel to a slope. Rounding would then put some ends a hair closer to the surface than
+// the start, and the trace would stop dead. Sticking to the ground afterwards removes the lift.
+Vec3 groundMoveVelocity(Vec3 velocity, Vec3 normal) {
+    return tiltOntoGround(velocity, normal) + Vec3{0.0f, 0.0f, length(velocity) * kGroundLift};
 }
 
 void applyFriction(const MovementSettings& settings, Vec3& velocity) {
@@ -197,8 +219,7 @@ void stickToGround(const CollisionWorld& world, const MovementSettings& settings
         position, position - Vec3{0.0f, 0.0f, settings.stepHeight}, settings.halfExtents);
     if (!down.startSolid && down.fraction < 1.0f && down.normal.z >= settings.minGroundNormalZ) {
         position = down.endPosition;
-        const float speed = length(velocity);
-        velocity = normalize(clipVelocity(velocity, down.normal)) * speed;
+        velocity = tiltOntoGround(velocity, down.normal);
     }
 }
 
@@ -240,9 +261,7 @@ void movePlayer(const CollisionWorld& world, const MovementSettings& settings, c
         velocity = normalize(velocity) * groundSpeed;
         applyFriction(settings, velocity);
         accelerate(velocity, wishDirection, wishSpeed, wishSpeed, settings.groundAcceleration);
-        // Tilt the velocity along the ground but keep its speed, so slopes don't slow walking.
-        const float speed = length(velocity);
-        velocity = normalize(clipVelocity(velocity, ground.normal)) * speed;
+        velocity = groundMoveVelocity(velocity, ground.normal);
         groundMove(world, settings, ground, position, velocity);
         stickToGround(world, settings, position, velocity);
     } else {
@@ -256,8 +275,13 @@ void movePlayer(const CollisionWorld& world, const MovementSettings& settings, c
     }
 
     ground = findGround(world, settings, position, velocity);
-    if (ground.onGround && !jumped && velocity.z < 0.0f) {
-        velocity.z = 0.0f;
+    // Landing stops movement into the ground. Only that part goes: zeroing all downward speed
+    // would also tip a player walking down a slope off it.
+    if (ground.onGround && !jumped) {
+        const float into = dot(velocity, ground.normal);
+        if (into < 0.0f) {
+            velocity -= ground.normal * into;
+        }
     }
     motion.flags = (ground.onGround ? kPlayerOnGround : 0u) | (jumpHeld ? kPlayerJumpHeld : 0u);
 }
