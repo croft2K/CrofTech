@@ -74,7 +74,10 @@ In order; each step builds, tests and commits on its own.
       on the grid stay exact. Faces are built by clipping plane by plane, and the limit rose from
       64 to 512 faces per brush.*
 7. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
-   transport, with the network conditioner for latency and loss.
+   transport, with the network conditioner for latency and loss. *Done (2026-10-21):
+   `engine/net` (fuzzed protocol, LoopbackLink with latency, jitter and loss), `engine/server`,
+   `LocalGame`; the client plays through it too (`net.fake_*` settings); F5 in the editor. Full
+   snapshots and no client prediction until M6, so play under latency feels delayed.*
 8. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
    need player collision against moving brushes), wired in the inspector.
 9. **Saves, checkpoints and play from here.**

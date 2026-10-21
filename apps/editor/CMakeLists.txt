@@ -4,8 +4,10 @@ add_executable(croftech_editor
     LevelViewport.cpp
     LevelViewport.h
     main.cpp
+    PlaySession.cpp
+    PlaySession.h
 )
-target_link_libraries(croftech_editor PRIVATE ct_app_common ct::editor ct::devui ct::render
+target_link_libraries(croftech_editor PRIVATE ct_app_common ct::client ct::editor ct::devui ct::render
                                               ct::sim ct::level imgui::imgui SDL3::SDL3)
 target_compile_definitions(croftech_editor PRIVATE CROFTECH_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 

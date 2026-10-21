@@ -12,6 +12,7 @@
 // Levels are found by name through the content layers (levels/<name>.level, then a TrenchBroom
 // levels/<name>.map), or by path. The game's start_map loads first; the map command switches.
 
+#include "PlayerInput.h"
 #include "WorldMesh.h"
 
 #include "croftech/client/LocalGame.h"
@@ -50,7 +51,6 @@ using Clock = std::chrono::steady_clock;
 
 // Development builds run straight from the source tree, so config edits hot-reload in place.
 const std::filesystem::path kSourceDirectory = CROFTECH_SOURCE_DIR;
-constexpr float kDegreesPerMouseCount = 0.022f; // Quake's m_yaw, so sensitivities carry over
 constexpr auto kReloadInterval = std::chrono::milliseconds(250);
 
 struct CommandLine {
@@ -274,16 +274,14 @@ int main(int argc, char** argv) {
     std::uint64_t seenChanges = console.changeCount();
 
     std::unique_ptr<ct::LocalGame> localGame;
-    float yaw = 0.0f;
-    float pitch = 0.0f;
+    ct::PlayerLook look;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
         localGame.reset();
         const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level);
         renderer->setWorldMesh(mesh.vertices, mesh.indices);
         localGame = std::make_unique<ct::LocalGame>(prepared.level.brushes, prepared.spawns,
                                                     movement, client.linkConditions());
-        yaw = ct::angleToRadians(prepared.spawns.front().yaw);
-        pitch = 0.0f;
+        look = {ct::angleToRadians(prepared.spawns.front().yaw), 0.0f};
         ct::logInfo("Level: {} ({} brushes, {} entities)", prepared.name,
                     prepared.level.brushes.size(), prepared.level.entities.size());
     };
@@ -292,7 +290,6 @@ int main(int argc, char** argv) {
     console.addCommand("quit", "Exit the game",
                        [&running](std::span<const std::string>) { running = false; });
 
-    const float maxPitch = ct::angleToRadians(ct::kMaxPitch);
     bool mouseCaptured = false;
     const auto captureMouse = [&](bool capture) {
         mouseCaptured = capture;
@@ -329,10 +326,7 @@ int main(int argc, char** argv) {
                 break;
             case SDL_EVENT_MOUSE_MOTION:
                 if (mouseCaptured) {
-                    const float radiansPerCount =
-                        kDegreesPerMouseCount * client.sensitivity.asFloat() * (ct::kPi / 180.0f);
-                    yaw -= event.motion.xrel * radiansPerCount;
-                    pitch -= event.motion.yrel * radiansPerCount;
+                    look.turn(event.motion.xrel, event.motion.yrel, client.sensitivity.asFloat());
                 }
                 break;
             case SDL_EVENT_KEY_DOWN:
@@ -364,22 +358,8 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        yaw = std::remainder(yaw, 2.0f * ct::kPi);
-        pitch = std::clamp(pitch, -maxPitch, maxPitch);
-
-        ct::UserCmd cmd;
-        cmd.yaw = static_cast<std::uint16_t>(ct::radiansToAngle(yaw));
-        cmd.pitch = static_cast<std::int16_t>(ct::radiansToAngle(pitch));
-        if (mouseCaptured) {
-            const bool* keys = SDL_GetKeyboardState(nullptr);
-            const auto axis = [&](SDL_Scancode positive, SDL_Scancode negative) {
-                return static_cast<std::int8_t>((keys[positive] ? 127 : 0) -
-                                                (keys[negative] ? 127 : 0));
-            };
-            cmd.forward = axis(SDL_SCANCODE_W, SDL_SCANCODE_S);
-            cmd.side = axis(SDL_SCANCODE_D, SDL_SCANCODE_A);
-            cmd.buttons = keys[SDL_SCANCODE_SPACE] ? ct::kButtonJump : 0;
-        }
+        const ct::UserCmd cmd =
+            ct::makeUserCmd(look, mouseCaptured ? SDL_GetKeyboardState(nullptr) : nullptr);
         const Clock::time_point now = Clock::now();
         localGame->update(cmd, now);
 
@@ -430,8 +410,8 @@ int main(int argc, char** argv) {
 
         ct::Camera camera;
         camera.position = eye;
-        camera.yawRadians = yaw;
-        camera.pitchRadians = pitch;
+        camera.yawRadians = look.yaw;
+        camera.pitchRadians = look.pitch;
         camera.horizontalFovRadians16x9 = client.fov.asFloat() * (ct::kPi / 180.0f);
         renderer->drawFrame(camera, ui);
 

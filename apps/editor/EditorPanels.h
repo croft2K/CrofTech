@@ -17,6 +17,7 @@ struct MenuRequests {
     bool quit = false;
     bool frameSelection = false;
     bool addPlayerSpawn = false;
+    bool play = false;
 };
 
 // The editor's panels: menu bar, tool bar (over the 3D view), hierarchy (every brush and entity)
@@ -26,7 +27,8 @@ class EditorPanels {
 public:
     MenuRequests drawMenuBar(EditorDocument& document, EditorSettings& settings,
                              LevelViewport& viewport);
-    void drawToolbar(LevelViewport& viewport, EditorSettings& settings, const ViewRect& view);
+    // True when Play was clicked.
+    bool drawToolbar(LevelViewport& viewport, EditorSettings& settings, const ViewRect& view);
     void drawHierarchy(EditorDocument& document);
     void drawInspector(EditorDocument& document, const EditorSettings& settings);
 

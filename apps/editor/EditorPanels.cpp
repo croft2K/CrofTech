@@ -154,6 +154,24 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         requests.addPlayerSpawn = ImGui::MenuItem("Player spawn");
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Play")) {
+        requests.play = ImGui::MenuItem("Play level", "F5");
+        ImGui::SetItemTooltip("Run the level as it is now, without saving it; Esc stops");
+        ImGui::SeparatorText("Network conditions");
+        LinkConditions& conditions = settings.playConditions;
+        const float width = ImGui::GetFontSize() * 12.0f;
+        ImGui::SetNextItemWidth(width);
+        ImGui::SliderFloat("Latency (ms)", &conditions.latencyMilliseconds, 0.0f, 500.0f, "%.0f");
+        ImGui::SetNextItemWidth(width);
+        ImGui::SliderFloat("Jitter (ms)", &conditions.jitterMilliseconds, 0.0f, 200.0f, "%.0f");
+        ImGui::SetNextItemWidth(width);
+        ImGui::SliderFloat("Packet loss (%)", &conditions.lossPercent, 0.0f, 50.0f, "%.1f");
+        ImGui::TextDisabled("Each way; the round trip is twice the latency.");
+        if (ImGui::MenuItem("Perfect network", nullptr, false, !(conditions == LinkConditions{}))) {
+            conditions = {};
+        }
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("View")) {
         requests.frameSelection = ImGui::MenuItem("Frame selection", "F", false, hasSelection);
         ImGui::Separator();
@@ -208,10 +226,10 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
     return requests;
 }
 
-void EditorPanels::drawToolbar(LevelViewport& viewport, EditorSettings& settings,
+bool EditorPanels::drawToolbar(LevelViewport& viewport, EditorSettings& settings,
                                const ViewRect& view) {
     if (view.width <= 0.0f || view.height <= 0.0f) {
-        return;
+        return false;
     }
     const float padding = ImGui::GetStyle().WindowPadding.x;
     ImGui::SetNextWindowPos({view.x + padding, view.y + padding});
@@ -222,7 +240,7 @@ void EditorPanels::drawToolbar(LevelViewport& viewport, EditorSettings& settings
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking;
     if (!ImGui::Begin("Tools", nullptr, kFlags)) {
         ImGui::End();
-        return;
+        return false;
     }
     const auto toolButton = [](const std::string& label, bool active, const char* hint) {
         if (active) {
@@ -257,10 +275,15 @@ void EditorPanels::drawToolbar(LevelViewport& viewport, EditorSettings& settings
             viewport.setTool(EditorTool::Draw);
         }
     }
+    // Play stands apart at the end.
+    ImGui::SameLine(0.0f, ImGui::GetFontSize());
+    const bool play =
+        toolButton("Play (F5)", false, "Run the level as it is now, without saving it; Esc stops");
     if (drawing) {
         drawShapeSettings(settings);
     }
     ImGui::End();
+    return play;
 }
 
 void EditorPanels::drawShapeSettings(EditorSettings& settings) {

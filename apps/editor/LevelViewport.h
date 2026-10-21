@@ -7,6 +7,7 @@
 #include "croftech/editor/EditorDocument.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/editor/Shapes.h"
+#include "croftech/net/LoopbackLink.h"
 
 #include <array>
 #include <cstddef>
@@ -46,6 +47,8 @@ struct EditorSettings {
     Vec3 playerHalfExtents{0.4f, 0.4f, 0.9f};
     // Vertex tool handles behind a surface are hidden in 3D panes, and can't be picked there.
     bool hideHandlesBehindSurfaces = true;
+    // How the in-memory link behaves in play-in-editor.
+    LinkConditions playConditions;
 
     float grid() const { return kGridSizes[gridIndex]; }
     double rotationStep() const { return kRotationSteps[rotationIndex]; }
