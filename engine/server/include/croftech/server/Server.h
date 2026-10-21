@@ -16,7 +16,8 @@
 namespace ct {
 
 // The authority for one game: it owns the level and the simulation, and clients reach it only
-// through packets on their transports. A client says hello and gets a player at a spawn point;
+// through packets on their transports. A client says hello and gets a player at the spawn point
+// furthest from the others;
 // its inputs drive that player; after every tick each client is sent a snapshot of the state.
 // Malformed packets are dropped and counted, never trusted.
 //
@@ -24,9 +25,8 @@ namespace ct {
 class Server {
 public:
     // Players start at the start point if there is one (play from here, in the editor), and
-    // otherwise take the level's spawns in turn, so then the level must have one.
-    Server(const Level& level, const MovementSettings& movement,
-           std::optional<SpawnPoint> start = {});
+    // otherwise at the level's spawns, so then the level must have one.
+    Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start = {});
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
 
@@ -45,9 +45,7 @@ public:
     void restore(const State& state);
 
     // Applied from the next tick.
-    void setMovementSettings(const MovementSettings& movement) {
-        m_simulation.setMovementSettings(movement);
-    }
+    void setSettings(const GameSettings& settings) { m_simulation.setSettings(settings); }
     const State& state() const { return *m_current; }
     // The state as of the last checkpoint a player reached (StateSave bytes), and how many have
     // been reached, for the game to keep as a save.
@@ -72,13 +70,11 @@ private:
     void handlePacket(Connection& connection, std::span<const std::byte> packet);
     void join(Connection& connection);
     void leave(Connection& connection);
-    const SpawnPoint& nextSpawn();
+    EntityId spawn(std::uint32_t slot);
     EntityId playerOfSlot(std::uint32_t slot) const;
 
     GameLevel m_level;
     Simulation m_simulation;
-    std::optional<SpawnPoint> m_start;
-    std::size_t m_nextSpawn = 0;
     std::uint32_t m_timeline = 0; // see SnapshotMessage
     std::uint32_t m_checkpointCount = 0;
     std::vector<std::byte> m_checkpointState;

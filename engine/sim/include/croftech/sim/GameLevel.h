@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -14,7 +15,16 @@
 namespace ct {
 
 // The logic classes the simulation runs (level/EntityClasses.h describes them for editors).
-enum class LogicClass : std::uint8_t { None, Trigger, Checkpoint, Relay, Counter, Timer, Mover };
+enum class LogicClass : std::uint8_t {
+    None,
+    Trigger,
+    Checkpoint,
+    Hurt,
+    Relay,
+    Counter,
+    Timer,
+    Mover,
+};
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
 // level is built, rather than compared as text each tick.
@@ -56,11 +66,15 @@ inline constexpr std::uint32_t kMaxLevelLogicEntities = kMaxEntities / 2;
 // Inputs delivered in one tick at most, which stops wiring that loops with no delay from hanging
 // the server.
 inline constexpr std::uint32_t kMaxInputDeliveriesPerTick = 4096;
+// Anything this far below the lowest point of the level has fallen out of the world.
+inline constexpr float kOutOfWorldDepth = 64.0f;
 
 // Everything about a level that play doesn't change, built once when it loads: collision for the
 // world and for each brush entity, the settings of each logic entity with its outputs resolved to
 // the entities and inputs they reach, the spawn points, and the state play starts from. It is
 // shared by every tick and never part of the state.
+//
+// A start point replaces the level's spawns, for play from here in the editor.
 class GameLevel {
 public:
     struct Target {
@@ -78,14 +92,15 @@ public:
         LogicClass logicClass = LogicClass::None;
         EntityId id; // in the starting state; invalid if the entity isn't simulated
         std::span<const Output> outputs;
-        const CollisionWorld* model = nullptr; // its brushes: triggers, checkpoints, movers
+        const CollisionWorld* model = nullptr; // its brushes: volumes and movers
 
         // Settings, read from the level through EntityClasses with every value clamped to its
         // range, so play never sees one the editor wouldn't allow.
         bool once = false;               // trigger
-        bool startEnabled = true;        // trigger, checkpoint, relay
+        bool startEnabled = true;        // trigger, checkpoint, hurt, relay
         std::uint32_t count = 1;         // counter
-        std::uint32_t intervalTicks = 1; // timer
+        std::uint32_t intervalTicks = 1; // timer; hurt, between hits
+        std::int32_t damage = 0;         // hurt, each hit
         bool repeat = true;              // timer
         bool startOn = false;            // timer
 
@@ -107,7 +122,7 @@ public:
         }
     };
 
-    explicit GameLevel(const Level& level);
+    explicit GameLevel(const Level& level, std::optional<SpawnPoint> start = {});
     GameLevel(const GameLevel&) = delete;
     GameLevel& operator=(const GameLevel&) = delete;
 
@@ -115,6 +130,8 @@ public:
     // Movers have their own models, which CollisionScene places.
     const CollisionWorld& collision() const { return m_collision; }
     std::span<const SpawnPoint> spawns() const { return m_spawns; }
+    // Feet below this have fallen out of the world.
+    float killHeight() const { return m_killHeight; }
     // Null if index isn't an entity of the level.
     const Entity* entity(std::uint32_t index) const {
         return index < m_entities.size() ? &m_entities[index] : nullptr;
@@ -130,9 +147,11 @@ private:
     void readEntity(const Level& level, std::uint32_t index);
     void resolveOutputs(const Level& level);
     void spawnLogic();
+    void findKillHeight(const Level& level);
 
     CollisionWorld m_collision;
     std::vector<SpawnPoint> m_spawns;
+    float m_killHeight = 0.0f;
     std::vector<Entity> m_entities;
     std::vector<std::unique_ptr<CollisionWorld>> m_models;
     std::vector<Output> m_outputs;

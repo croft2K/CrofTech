@@ -13,8 +13,10 @@
 // levels/<name>.map), or by path. The game's start_map loads first; the map command switches.
 //
 // F5 saves and F9 loads the newest save (the save and load commands take names); reaching a
-// checkpoint saves too. Saves go in the user's folder for the game, never in its content.
+// checkpoint saves too. Saves go in the user's folder for the game, never in its content. After
+// dying, fire respawns.
 
+#include "GameHud.h"
 #include "PlayerInput.h"
 #include "SaveFiles.h"
 #include "WorldMesh.h"
@@ -32,6 +34,7 @@
 #include "croftech/level/LevelFile.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
+#include "croftech/sim/GameSettings.h"
 #include "croftech/sim/MovementConfig.h"
 
 #include <SDL3/SDL.h>
@@ -226,11 +229,13 @@ int main(int argc, char** argv) {
     ct::logInfo("Game: {}", game->title);
 
     ct::Console console;
-    ct::registerMovementCVars(console);
+    ct::registerGameCVars(console);
     const ClientCVars client = registerClientCVars(console);
     std::vector<ConfigFile> configFiles;
     configFiles.push_back({ct::LayeredConfig(content, "config/movement.cfg"),
                            std::string(ct::kMovementCVarPrefix), "movement.cfg"});
+    configFiles.push_back({ct::LayeredConfig(content, "config/rules.cfg"),
+                           std::string(ct::kRulesCVarPrefix), "rules.cfg"});
     configFiles.push_back(
         {ct::LayeredConfig(content, "config/client.cfg"), "client.", "client.cfg"});
     for (ConfigFile& file : configFiles) {
@@ -355,10 +360,11 @@ int main(int argc, char** argv) {
     // The inspector reads a copy, so the simulation thread is never held up by drawing.
     const auto inspectedState = std::make_unique<ct::State>();
 
-    ct::MovementSettings movement = ct::movementSettingsFromCVars(console);
+    ct::GameSettings settings = ct::gameSettingsFromCVars(console);
     std::uint64_t seenChanges = console.changeCount();
 
     ct::PlayerLook look;
+    ct::GameHud hud;
     std::uint32_t seenTimeline = 0;
     std::optional<PreparedLevel> enteredLevel;
     std::vector<std::uint32_t> moverParts; // the level entity of each moving part of the mesh
@@ -370,7 +376,8 @@ int main(int argc, char** argv) {
         moverParts = mesh.partEntities;
         moverOffsets.assign(moverParts.size(), {});
         localGame =
-            std::make_unique<ct::LocalGame>(prepared.level, movement, client.linkConditions());
+            std::make_unique<ct::LocalGame>(prepared.level, settings, client.linkConditions());
+        hud = {};
         seenTimeline = 0;
         currentLevelHash = ct::levelContentHash(prepared.level);
         for (const std::string& warning : localGame->level().warnings()) {
@@ -479,8 +486,8 @@ int main(int argc, char** argv) {
         }
         if (console.changeCount() != seenChanges) {
             seenChanges = console.changeCount();
-            movement = ct::movementSettingsFromCVars(console);
-            localGame->setMovementSettings(movement);
+            settings = ct::gameSettingsFromCVars(console);
+            localGame->setSettings(settings);
             localGame->setConditions(client.linkConditions());
         }
 
@@ -489,8 +496,11 @@ int main(int argc, char** argv) {
                 tell("Checkpoint");
             }
         }
-        // After a load, look the way the loaded player faces.
-        if (localGame->timeline() != seenTimeline && localGame->latestState() != nullptr) {
+        // After a load or a respawn, look the way the player faces.
+        const bool respawned =
+            hud.update(localGame->latestState(), localGame->player(), settings.rules, now);
+        if ((localGame->timeline() != seenTimeline || respawned) &&
+            localGame->latestState() != nullptr) {
             seenTimeline = localGame->timeline();
             if (const ct::Transform* transform =
                     localGame->latestState()->world.transforms.get(localGame->player())) {
@@ -520,6 +530,8 @@ int main(int argc, char** argv) {
         lastFrame = now;
 
         devUi->beginFrame();
+        const ImGuiViewport* screen = ImGui::GetMainViewport();
+        hud.draw(screen->Pos.x, screen->Pos.y, screen->Size.x, screen->Size.y, now);
         if (client.showStats.asBool()) {
             stats.draw();
         }

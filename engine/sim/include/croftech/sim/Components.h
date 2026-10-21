@@ -61,14 +61,19 @@ static_assert(describesEveryByte(Schema<PlayerMotion>::value));
 // Marks an entity as driven by the input command in this slot of the InputSet.
 struct PlayerControl {
     std::uint32_t inputSlot = 0;
+    std::uint32_t buttons = 0; // held last tick, to tell a press from a hold
 };
 
 template <>
 struct Schema<PlayerControl> {
+    static constexpr std::array<std::string_view, 3> kButtonNames{"jump", "attack", "crouch"};
     static constexpr FieldInfo kFields[] = {
         CT_FIELD(PlayerControl, inputSlot)
             .withDescription("Which player's input drives this")
             .withRange(0, kMaxPlayers - 1),
+        CT_FIELD(PlayerControl, buttons)
+            .withFlagNames(kButtonNames)
+            .withDescription("Buttons held last tick"),
     };
     static constexpr TypeSchema value{"player_control", sizeof(PlayerControl), kFields};
 };

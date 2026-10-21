@@ -37,7 +37,9 @@ UserCmd makeUserCmd(const PlayerLook& look, const bool* keys) {
         };
         cmd.forward = axis(SDL_SCANCODE_W, SDL_SCANCODE_S);
         cmd.side = axis(SDL_SCANCODE_D, SDL_SCANCODE_A);
-        cmd.buttons = keys[SDL_SCANCODE_SPACE] ? kButtonJump : 0;
+        const bool fire = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
+        cmd.buttons = static_cast<std::uint16_t>((keys[SDL_SCANCODE_SPACE] ? kButtonJump : 0u) |
+                                                 (fire ? kButtonAttack : 0u));
     }
     return cmd;
 }

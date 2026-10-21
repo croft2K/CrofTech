@@ -6,15 +6,34 @@
 #include "croftech/core/Hash.h"
 #include "croftech/core/Profile.h"
 #include "croftech/sim/CollisionScene.h"
+#include "croftech/sim/Damage.h"
 #include "croftech/sim/GameLevel.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <span>
 
 namespace ct {
+namespace {
 
-Simulation::Simulation(const GameLevel& level, const MovementSettings& movement)
-    : m_level(&level), m_movement(movement) {}
+// Puts a player on the spawn point as if just arrived: standing still, unhurt.
+void placePlayer(World& world, const GameSettings& settings, const SpawnPoint& spawn, EntityId id) {
+    const Vec3 centre =
+        spawn.feetPosition +
+        Vec3{0.0f, 0.0f, settings.movement.halfExtents.z + CollisionWorld::kSurfaceEpsilon};
+    *world.transforms.get(id) = {centre, spawn.yaw, 0};
+    *world.playerMotions.get(id) = {};
+    Health health;
+    health.health = settings.rules.startHealth;
+    health.armour = settings.rules.startArmour;
+    *world.healths.get(id) = health;
+}
+
+} // namespace
+
+Simulation::Simulation(const GameLevel& level, const GameSettings& settings)
+    : m_level(&level), m_settings(settings) {}
 
 void Simulation::step(const State& prev, const InputSet& inputs, State& next) const {
     CT_PROFILE_ZONE();
@@ -27,36 +46,90 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     LevelLogic logic(*m_level, next);
     logic.deliverPendingInputs();
     logic.runTimers();
-    logic.runMovers(m_movement);
-
-    const CollisionScene scene(*m_level, world);
-    const std::span<const EntityId> controlled = world.playerControls.entities();
-    const std::span<const PlayerControl> controls = world.playerControls.components();
-    for (std::size_t i = 0; i < controlled.size(); ++i) {
-        const std::uint32_t slot = controls[i].inputSlot;
-        Transform* transform = world.transforms.get(controlled[i]);
-        PlayerMotion* motion = world.playerMotions.get(controlled[i]);
-        if (slot >= kMaxPlayers || transform == nullptr || motion == nullptr) {
-            continue;
-        }
-        movePlayer(scene, m_movement, inputs.commands[slot], *transform, *motion);
-    }
-    logic.activateMovers(m_movement);
-    logic.updateTriggers(m_movement);
+    logic.runMovers(m_settings.movement);
+    movePlayers(CollisionScene(*m_level, world), inputs, next);
+    logic.activateMovers(m_settings.movement);
+    logic.updateTriggers(m_settings.movement);
+    logic.runHurtVolumes(m_settings);
 }
 
-EntityId spawnPlayer(World& world, const MovementSettings& movement, const SpawnPoint& spawn,
+void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs,
+                             State& state) const {
+    World& world = state.world;
+    const MovementSettings& movement = m_settings.movement;
+    const std::span<const EntityId> controlled = world.playerControls.entities();
+    const std::span<PlayerControl> controls = world.playerControls.components();
+    for (std::size_t i = 0; i < controlled.size(); ++i) {
+        const EntityId id = controlled[i];
+        PlayerControl& control = controls[i];
+        Transform* transform = world.transforms.get(id);
+        PlayerMotion* motion = world.playerMotions.get(id);
+        if (control.inputSlot >= kMaxPlayers || transform == nullptr || motion == nullptr) {
+            continue;
+        }
+        UserCmd cmd = inputs.commands[control.inputSlot];
+        const std::uint32_t pressed = cmd.buttons & ~control.buttons;
+        control.buttons = cmd.buttons;
+
+        if (const Health* health = world.healths.get(id); health != nullptr && isDead(*health)) {
+            if ((pressed & (kButtonAttack | kButtonJump)) != 0 &&
+                canRespawn(*health, m_settings.rules, state.tick)) {
+                if (const SpawnPoint* spawn = chooseSpawnPoint(*m_level, world, id)) {
+                    placePlayer(world, m_settings, *spawn, id);
+                    // A jump that respawned doesn't also jump.
+                    motion->flags = (cmd.buttons & kButtonJump) != 0 ? kPlayerJumpHeld : 0u;
+                }
+                continue;
+            }
+            // The dead drop where they fell, and stop once out of the world.
+            if (transform->position.z - movement.halfExtents.z < m_level->killHeight()) {
+                continue;
+            }
+            cmd = UserCmd{transform->yaw, transform->pitch, 0, 0, 0};
+        }
+        movePlayer(scene, movement, cmd, *transform, *motion);
+        if (transform->position.z - movement.halfExtents.z < m_level->killHeight()) {
+            kill(state, id, DamageKind::OutOfWorld);
+        }
+    }
+}
+
+EntityId spawnPlayer(World& world, const GameSettings& settings, const SpawnPoint& spawn,
                      std::uint32_t inputSlot) {
     const EntityId id = world.entities.create();
     if (!id.isValid()) {
         return id;
     }
-    const Vec3 centre = spawn.feetPosition +
-                        Vec3{0.0f, 0.0f, movement.halfExtents.z + CollisionWorld::kSurfaceEpsilon};
-    world.transforms.add(id, {centre, spawn.yaw, 0});
+    world.transforms.add(id, {});
     world.playerMotions.add(id, {});
-    world.playerControls.add(id, {inputSlot});
+    world.playerControls.add(id, {inputSlot, 0});
+    world.healths.add(id, {});
+    placePlayer(world, settings, spawn, id);
     return id;
+}
+
+const SpawnPoint* chooseSpawnPoint(const GameLevel& level, const World& world, EntityId except) {
+    const SpawnPoint* best = nullptr;
+    float bestDistance = -1.0f;
+    for (const SpawnPoint& spawn : level.spawns()) {
+        float nearest = std::numeric_limits<float>::max();
+        const std::span<const EntityId> players = world.playerControls.entities();
+        for (const EntityId player : players) {
+            const Transform* transform = world.transforms.get(player);
+            const Health* health = world.healths.get(player);
+            if (player == except || transform == nullptr ||
+                (health != nullptr && isDead(*health))) {
+                continue;
+            }
+            const Vec3 offset = transform->position - spawn.feetPosition;
+            nearest = std::min(nearest, dot(offset, offset));
+        }
+        if (nearest > bestDistance) {
+            best = &spawn;
+            bestDistance = nearest;
+        }
+    }
+    return best;
 }
 
 std::uint64_t hashState(const State& state) {

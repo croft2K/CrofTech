@@ -1,6 +1,7 @@
 #pragma once
 
 #include "croftech/sim/GameLevel.h"
+#include "croftech/sim/GameSettings.h"
 #include "croftech/sim/LogicComponents.h"
 #include "croftech/sim/PlayerMovement.h"
 #include "croftech/sim/World.h"
@@ -31,6 +32,8 @@ public:
     void activateMovers(const MovementSettings& movement);
     // Players going into and out of triggers and reaching checkpoints, after they have moved.
     void updateTriggers(const MovementSettings& movement);
+    // Hurt volumes hurt what is inside them, each thing at most once per interval.
+    void runHurtVolumes(const GameSettings& settings);
 
 private:
     struct Queued {

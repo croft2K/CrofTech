@@ -25,11 +25,11 @@ std::unique_ptr<ct::State> makeBusyState() {
     auto state = std::make_unique<ct::State>(sim.state());
     for (std::uint32_t slot = 0; slot < 3; ++slot) {
         const float x = static_cast<float>(slot) * 2.0f;
-        ct::spawnPlayer(state->world, sim.movement(), {{x, 0.0f, 0.0f}, 0}, slot);
+        ct::spawnPlayer(state->world, sim.settings(), {{x, 0.0f, 0.0f}, 0}, slot);
     }
     state->world.destroy(state->world.playerControls.entities()[1]);
 
-    ct::Simulation simulation(sim.level(), sim.movement());
+    ct::Simulation simulation(sim.level(), sim.settings());
     ct::InputSet inputs;
     inputs.commands[0].forward = 127;
     inputs.commands[0].buttons = ct::kButtonJump;
@@ -83,7 +83,7 @@ TEST_CASE("a saved state loads back identical and plays on identically") {
     CHECK(ct::saveState(*loaded) == bytes);
 
     const ct::GameLevel level(ct::Level{{ct::test::floorBrush()}, {}});
-    ct::Simulation simulation(level, ct::MovementSettings{});
+    ct::Simulation simulation(level, ct::GameSettings{});
     ct::InputSet inputs;
     inputs.commands[2].forward = 127;
     inputs.commands[2].buttons = ct::kButtonJump;

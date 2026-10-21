@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GameHud.h"
 #include "PlayerInput.h"
 
 #include "croftech/client/LocalGame.h"
@@ -26,14 +27,14 @@ public:
     // Starts at the level's player spawn, or with from, where that camera is (play from here).
     // Null, with error saying why, if the level can't be played: without from, it needs a player
     // spawn.
-    static std::unique_ptr<PlaySession> start(const Level& level, const MovementSettings& movement,
+    static std::unique_ptr<PlaySession> start(const Level& level, const GameSettings& settings,
                                               const LinkConditions& conditions,
                                               const std::optional<Camera>& from,
                                               std::string& error);
 
     // Without from, the level must have a player spawn.
-    PlaySession(const Level& level, const MovementSettings& movement,
-                const LinkConditions& conditions, const std::optional<Camera>& from);
+    PlaySession(const Level& level, const GameSettings& settings, const LinkConditions& conditions,
+                const std::optional<Camera>& from);
 
     void look(float countsX, float countsY);
     // Once a frame. keys is the keyboard state, or null while the mouse is not captured.
@@ -43,6 +44,7 @@ public:
     Camera camera() const;
     // Horizontal speed, metres per second.
     float speed() const { return m_speed; }
+    const GameHud& hud() const { return m_hud; }
     const LocalGame& game() const { return m_game; }
 
     // Saves made during play are kept until it stops: quick saves, and checkpoints reached.
@@ -56,8 +58,10 @@ public:
 private:
     void tell(std::string text, Clock::time_point now);
 
+    GameSettings m_settings;
     LocalGame m_game;
     PlayerLook m_look;
+    GameHud m_hud;
     std::uint32_t m_timeline = 0;
     std::vector<std::byte> m_lastSave;
     std::string m_notice;

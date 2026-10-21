@@ -11,18 +11,20 @@ namespace ct::test {
 // Runs a headless simulation of a level, with players spawned wherever a test wants them.
 class SimHarness {
 public:
-    explicit SimHarness(std::vector<Brush> brushes, MovementSettings movement = {})
-        : SimHarness(Level{std::move(brushes), {}}, movement) {}
+    explicit SimHarness(std::vector<Brush> brushes, MovementSettings movement = {},
+                        RulesSettings rules = {})
+        : SimHarness(Level{std::move(brushes), {}}, movement, rules) {}
 
-    explicit SimHarness(const Level& level, MovementSettings movement = {})
-        : m_level(level), m_simulation(m_level, movement),
+    explicit SimHarness(const Level& level, MovementSettings movement = {},
+                        RulesSettings rules = {})
+        : m_level(level), m_simulation(m_level, GameSettings{movement, rules}),
           m_current(std::make_unique<State>(m_level.startState())),
           m_next(std::make_unique<State>()) {}
 
     // The first player spawned is the one transform() and motion() describe.
     EntityId spawn(Vec3 feetPosition, std::uint16_t yaw = 0, std::uint32_t inputSlot = 0) {
-        const EntityId id = spawnPlayer(m_current->world, m_simulation.movementSettings(),
-                                        {feetPosition, yaw}, inputSlot);
+        const EntityId id =
+            spawnPlayer(m_current->world, m_simulation.settings(), {feetPosition, yaw}, inputSlot);
         if (!m_player.isValid()) {
             m_player = id;
         }
@@ -55,11 +57,12 @@ public:
     State& state() { return *m_current; }
     const Transform& transform() const { return *m_current->world.transforms.get(m_player); }
     const PlayerMotion& motion() const { return *m_current->world.playerMotions.get(m_player); }
+    const Health& health() const { return *m_current->world.healths.get(m_player); }
+    Health& health() { return *m_current->world.healths.get(m_player); }
     bool onGround() const { return (motion().flags & kPlayerOnGround) != 0; }
-    float feetZ() const {
-        return transform().position.z - m_simulation.movementSettings().halfExtents.z;
-    }
-    const MovementSettings& movement() const { return m_simulation.movementSettings(); }
+    float feetZ() const { return transform().position.z - movement().halfExtents.z; }
+    const GameSettings& settings() const { return m_simulation.settings(); }
+    const MovementSettings& movement() const { return settings().movement; }
 
 private:
     GameLevel m_level;

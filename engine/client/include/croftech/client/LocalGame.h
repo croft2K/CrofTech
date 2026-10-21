@@ -24,20 +24,21 @@ public:
     using Clock = std::chrono::steady_clock;
 
     // The player starts at the start point if given, otherwise at the level's player spawn.
-    LocalGame(const Level& level, const MovementSettings& movement,
+    LocalGame(const Level& level, const GameSettings& settings,
               const LinkConditions& conditions = {}, std::optional<SpawnPoint> start = {});
     ~LocalGame();
     LocalGame(const LocalGame&) = delete;
     LocalGame& operator=(const LocalGame&) = delete;
 
     void setConditions(const LinkConditions& conditions) { m_link.setConditions(conditions); }
-    void setMovementSettings(const MovementSettings& movement);
+    void setSettings(const GameSettings& settings);
 
     // Once a frame: sends the player's command and reads the snapshots that have arrived.
     void update(const UserCmd& command, Clock::time_point now);
 
     // Where the player's eyes are, drawn between the two newest snapshots by how long ago the
-    // newest arrived. Nullopt until the server has let the player in.
+    // newest arrived; they sink to the floor when the player dies. Nullopt until the server has
+    // let the player in.
     std::optional<Vec3> eyePosition(Clock::time_point now) const;
     // How far the mover made from the level entity has moved, drawn between snapshots the same
     // way; zero until known.
@@ -66,7 +67,7 @@ private:
     // How far from the previous snapshot towards the newest to draw, 0 to 1.
     float blend(Clock::time_point now) const;
 
-    MovementSettings m_movement;
+    GameSettings m_settings;
     LoopbackLink m_link;
     Server m_server;
     ServerThread m_thread;

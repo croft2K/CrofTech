@@ -26,13 +26,12 @@ std::optional<SpawnPoint> spawnAt(const std::optional<Camera>& camera,
 
 } // namespace
 
-std::unique_ptr<PlaySession> PlaySession::start(const Level& level,
-                                                const MovementSettings& movement,
+std::unique_ptr<PlaySession> PlaySession::start(const Level& level, const GameSettings& settings,
                                                 const LinkConditions& conditions,
                                                 const std::optional<Camera>& from,
                                                 std::string& error) {
     if (from) {
-        return std::make_unique<PlaySession>(level, movement, conditions, from);
+        return std::make_unique<PlaySession>(level, settings, conditions, from);
     }
     std::optional<std::vector<SpawnPoint>> spawns = readSpawnPoints(level, error);
     if (!spawns) {
@@ -43,12 +42,12 @@ std::unique_ptr<PlaySession> PlaySession::start(const Level& level,
                             kPlayerSpawnClass);
         return nullptr;
     }
-    return std::make_unique<PlaySession>(level, movement, conditions, std::nullopt);
+    return std::make_unique<PlaySession>(level, settings, conditions, std::nullopt);
 }
 
-PlaySession::PlaySession(const Level& level, const MovementSettings& movement,
+PlaySession::PlaySession(const Level& level, const GameSettings& settings,
                          const LinkConditions& conditions, const std::optional<Camera>& from)
-    : m_game(level, movement, conditions, spawnAt(from, movement)),
+    : m_settings(settings), m_game(level, settings, conditions, spawnAt(from, settings.movement)),
       m_look{from ? PlayerLook{from->yawRadians, from->pitchRadians}
                   : PlayerLook{angleToRadians(m_game.level().spawns().front().yaw), 0.0f}} {}
 
@@ -62,8 +61,10 @@ void PlaySession::update(const bool* keys, Clock::time_point now) {
         m_lastSave = std::move(*checkpoint);
         tell("Checkpoint", now);
     }
-    // After a load, look the way the loaded player faces.
-    if (m_game.timeline() != m_timeline && m_game.latestState() != nullptr) {
+    // After a load or a respawn, look the way the player faces.
+    const bool respawned =
+        m_hud.update(m_game.latestState(), m_game.player(), m_settings.rules, now);
+    if ((m_game.timeline() != m_timeline || respawned) && m_game.latestState() != nullptr) {
         m_timeline = m_game.timeline();
         if (const Transform* transform =
                 m_game.latestState()->world.transforms.get(m_game.player())) {

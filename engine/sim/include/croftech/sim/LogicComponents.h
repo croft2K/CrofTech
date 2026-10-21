@@ -11,11 +11,10 @@
 
 namespace ct {
 
-// Components of the logic entities placed in levels (triggers, checkpoints, relays, counters,
-// timers, movers)
-// and of the inputs on their way between them. What a level sets (a counter's target, a timer's
-// interval, the wiring) is static and stays in the GameLevel; only what changes during play is
-// here, so it is saved, rewound and sent like any other state.
+// Components of the logic entities placed in levels (triggers, checkpoints, hurt volumes, relays,
+// counters, timers, movers) and of the inputs on their way between them. What a level sets (a
+// counter's target, a timer's interval, the wiring) is static and stays in the GameLevel; only what
+// changes during play is here, so it is saved, rewound and sent like any other state.
 
 // The entity of the level file this entity was made from, which is how systems find its settings
 // and outputs in the GameLevel. States can come from untrusted saves, so the index is checked
@@ -75,6 +74,20 @@ struct Schema<Checkpoint> {
     static constexpr TypeSchema value{"checkpoint", sizeof(Checkpoint), kFields};
 };
 static_assert(describesEveryByte(Schema<Checkpoint>::value));
+
+// A hurt volume, such as lava or a kill pit.
+struct Hurt {
+    std::uint32_t flags = 0;
+};
+
+template <>
+struct Schema<Hurt> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Hurt, flags).withFlagNames(kLogicFlagNames),
+    };
+    static constexpr TypeSchema value{"hurt", sizeof(Hurt), kFields};
+};
+static_assert(describesEveryByte(Schema<Hurt>::value));
 
 struct Relay {
     std::uint32_t flags = 0;

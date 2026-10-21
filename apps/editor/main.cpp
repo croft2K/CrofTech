@@ -23,6 +23,7 @@
 #include "croftech/editor/EditorActions.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
+#include "croftech/sim/GameSettings.h"
 #include "croftech/sim/MovementConfig.h"
 
 #include <SDL3/SDL.h>
@@ -71,18 +72,23 @@ CommandLine parseCommandLine(int argc, char** argv) {
     return commandLine;
 }
 
-// The game's movement settings: the player size spawn markers show, and how play-in-editor moves.
-ct::MovementSettings loadMovementSettings(const ct::ContentPaths& content) {
+// The game's settings: the player size spawn markers show, and how play-in-editor plays.
+ct::GameSettings loadGameSettings(const ct::ContentPaths& content) {
     ct::Console console;
-    ct::registerMovementCVars(console);
-    ct::LayeredConfig config(content, "config/movement.cfg");
-    if (const auto layers = config.reloadIfChanged()) {
-        for (const std::string& problem :
-             console.applyConfig(std::string(ct::kMovementCVarPrefix), *layers)) {
-            ct::logWarning("{}", problem);
+    ct::registerGameCVars(console);
+    const std::pair<const char*, std::string_view> files[] = {
+        {"config/movement.cfg", ct::kMovementCVarPrefix},
+        {"config/rules.cfg", ct::kRulesCVarPrefix},
+    };
+    for (const auto& [file, prefix] : files) {
+        ct::LayeredConfig config(content, file);
+        if (const auto layers = config.reloadIfChanged()) {
+            for (const std::string& problem : console.applyConfig(std::string(prefix), *layers)) {
+                ct::logWarning("{}", problem);
+            }
         }
     }
-    return ct::movementSettingsFromCVars(console);
+    return ct::gameSettingsFromCVars(console);
 }
 
 ct::Camera startingCamera(const ct::Level& level) {
@@ -181,6 +187,7 @@ std::optional<ct::Vec3> nudgeShortcut(const std::pair<ct::Vec3, ct::Vec3>& axes)
 // What play-in-editor shows over the game: how to stop, and how the game is doing.
 void drawPlayBanner(const ct::PlaySession& play, bool captured, const ct::EditorSettings& settings,
                     const ct::EditorDocument& document, const ct::ViewRect& view) {
+    play.hud().draw(view.x, view.y, view.width, view.height, ct::PlaySession::Clock::now());
     const float padding = ImGui::GetStyle().WindowPadding.x;
     ImGui::SetNextWindowPos({view.x + padding, view.y + padding});
     ImGui::SetNextWindowBgAlpha(0.7f);
@@ -251,9 +258,9 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    const ct::MovementSettings movement = loadMovementSettings(content);
+    const ct::GameSettings gameSettings = loadGameSettings(content);
     ct::EditorSettings settings;
-    settings.playerHalfExtents = movement.halfExtents;
+    settings.playerHalfExtents = gameSettings.movement.halfExtents;
     ct::LevelViewport viewport(startingCamera(*level));
     ct::EditorDocument document(std::move(*level), *levelPath);
     ct::logInfo("Editing {} ({} brushes, {} entities)", levelPath->string(),
@@ -327,7 +334,7 @@ int main(int argc, char** argv) {
             }
             from = *camera;
         }
-        play = ct::PlaySession::start(document.level(), movement, settings.playConditions, from,
+        play = ct::PlaySession::start(document.level(), gameSettings, settings.playConditions, from,
                                       playError);
         if (!play) {
             ct::logError("Can't play: {}", playError);

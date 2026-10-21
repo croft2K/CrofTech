@@ -40,6 +40,9 @@ LogicClass logicClassOf(std::string_view className) {
     if (className == "checkpoint") {
         return LogicClass::Checkpoint;
     }
+    if (className == "hurt") {
+        return LogicClass::Hurt;
+    }
     if (className == "relay") {
         return LogicClass::Relay;
     }
@@ -55,11 +58,12 @@ LogicClass logicClassOf(std::string_view className) {
     return LogicClass::None;
 }
 
-// Classes whose brushes are a model of their own rather than world geometry: triggers and
-// checkpoints are volumes players walk through, and movers collide where they have moved to.
+// Classes whose brushes are a model of their own rather than world geometry: triggers,
+// checkpoints and hurt volumes are volumes players walk through, and movers collide where they
+// have moved to.
 bool hasModel(LogicClass logicClass) {
     return logicClass == LogicClass::Trigger || logicClass == LogicClass::Checkpoint ||
-           logicClass == LogicClass::Mover;
+           logicClass == LogicClass::Hurt || logicClass == LogicClass::Mover;
 }
 
 bool isStatic(const Level& level, const Brush& brush) {
@@ -117,10 +121,12 @@ std::string_view logicInputName(LogicInput input) {
     return kInputNames[static_cast<std::size_t>(input)];
 }
 
-GameLevel::GameLevel(const Level& level)
+GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start)
     : m_collision(staticBrushes(level)), m_entities(level.entities.size()) {
     std::string error;
-    if (std::optional<std::vector<SpawnPoint>> spawns = readSpawnPoints(level, error)) {
+    if (start) {
+        m_spawns.push_back(*start);
+    } else if (std::optional<std::vector<SpawnPoint>> spawns = readSpawnPoints(level, error)) {
         m_spawns = std::move(*spawns);
     } else {
         m_warnings.push_back(error);
@@ -146,6 +152,31 @@ GameLevel::GameLevel(const Level& level)
     }
     resolveOutputs(level);
     spawnLogic();
+    findKillHeight(level);
+}
+
+void GameLevel::findKillHeight(const Level& level) {
+    float lowest = 0.0f;
+    bool any = false;
+    const auto lower = [&](float z) {
+        lowest = any ? std::min(lowest, z) : z;
+        any = true;
+    };
+    for (const Brush& brush : level.brushes) {
+        // Movers can carry their brushes lower than they are built.
+        float drop = 0.0f;
+        if (brush.entity < m_entities.size() &&
+            m_entities[brush.entity].logicClass == LogicClass::Mover) {
+            drop = std::min(m_entities[brush.entity].move.z, 0.0f);
+        }
+        for (const Vec3& corner : brush.vertices) {
+            lower(corner.z + drop);
+        }
+    }
+    for (const SpawnPoint& spawn : m_spawns) {
+        lower(spawn.feetPosition.z);
+    }
+    m_killHeight = lowest - kOutOfWorldDepth;
 }
 
 void GameLevel::readEntity(const Level& level, std::uint32_t index) {
@@ -171,6 +202,13 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index) {
     case LogicClass::Checkpoint:
     case LogicClass::Relay:
         entity.startEnabled = !flagProperty(levelEntity, *entityClass, "start_disabled");
+        break;
+    case LogicClass::Hurt:
+        entity.startEnabled = !flagProperty(levelEntity, *entityClass, "start_disabled");
+        entity.damage =
+            static_cast<std::int32_t>(clampedCount(levelEntity, *entityClass, "damage"));
+        entity.intervalTicks =
+            std::max(secondsToTicks(clampedNumber(levelEntity, *entityClass, "interval")), 1u);
         break;
     case LogicClass::Counter:
         entity.count = clampedCount(levelEntity, *entityClass, "count");
@@ -301,6 +339,9 @@ void GameLevel::spawnLogic() {
             break;
         case LogicClass::Checkpoint:
             world.checkpoints.add(entity.id, {enabled, 0});
+            break;
+        case LogicClass::Hurt:
+            world.hurts.add(entity.id, {enabled});
             break;
         case LogicClass::Relay:
             world.relays.add(entity.id, {enabled});

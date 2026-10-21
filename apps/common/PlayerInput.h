@@ -20,7 +20,7 @@ struct PlayerLook {
 };
 
 // The command for this frame: the look angles, plus WASD and Space from the keyboard state
-// (SDL_GetKeyboardState) when keys is not null.
+// (SDL_GetKeyboardState) and fire from the left mouse button, when keys is not null.
 UserCmd makeUserCmd(const PlayerLook& look, const bool* keys);
 
 } // namespace ct

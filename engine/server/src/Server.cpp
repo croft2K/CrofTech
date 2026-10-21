@@ -12,18 +12,16 @@
 
 namespace ct {
 
-Server::Server(const Level& level, const MovementSettings& movement,
-               std::optional<SpawnPoint> start)
-    : m_level(level), m_simulation(m_level, movement), m_start(start),
+Server::Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start)
+    : m_level(level, start), m_simulation(m_level, settings),
       m_current(std::make_unique<State>(m_level.startState())), m_next(std::make_unique<State>()) {
-    CT_ASSERT(m_start || !m_level.spawns().empty());
+    CT_ASSERT(!m_level.spawns().empty());
 }
 
-const SpawnPoint& Server::nextSpawn() {
-    if (m_start) {
-        return *m_start;
-    }
-    return m_level.spawns()[m_nextSpawn++ % m_level.spawns().size()];
+EntityId Server::spawn(std::uint32_t slot) {
+    const SpawnPoint* spawn = chooseSpawnPoint(m_level, m_current->world);
+    CT_ASSERT(spawn != nullptr);
+    return spawnPlayer(m_current->world, m_simulation.settings(), *spawn, slot);
 }
 
 void Server::addConnection(Transport& transport) {
@@ -98,7 +96,7 @@ void Server::join(Connection& connection) {
     // A loaded save may already have this slot's player, waiting for someone to take it over.
     EntityId player = playerOfSlot(slot);
     if (!player.isValid()) {
-        player = spawnPlayer(m_current->world, m_simulation.movementSettings(), nextSpawn(), slot);
+        player = spawn(slot);
     }
     if (!player.isValid()) {
         return;
@@ -127,7 +125,7 @@ void Server::restore(const State& state) {
     World& world = m_current->world;
 
     // One whole player per slot stays; any others (a second for a slot, a slot out of range, a
-    // player missing components) are removed.
+    // player missing components) are removed. Saves from before players had health get it.
     std::array<bool, kMaxPlayers> kept{};
     std::array<EntityId, kMaxEntities> unwanted{};
     std::size_t unwantedCount = 0;
@@ -138,6 +136,12 @@ void Server::restore(const State& state) {
         const bool whole = world.transforms.has(id) && world.playerMotions.has(id);
         if (slot < kMaxPlayers && whole && !kept[slot]) {
             kept[slot] = true;
+            if (!world.healths.has(id)) {
+                Health health;
+                health.health = m_simulation.settings().rules.startHealth;
+                health.armour = m_simulation.settings().rules.startArmour;
+                world.healths.add(id, health);
+            }
         } else {
             unwanted[unwantedCount++] = id;
         }
@@ -151,8 +155,7 @@ void Server::restore(const State& state) {
         }
         connection.player = playerOfSlot(*connection.slot);
         if (!connection.player.isValid()) {
-            connection.player =
-                spawnPlayer(world, m_simulation.movementSettings(), nextSpawn(), *connection.slot);
+            connection.player = spawn(*connection.slot);
         }
     }
 }

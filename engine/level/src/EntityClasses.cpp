@@ -48,6 +48,14 @@ constexpr SignalInfo kCheckpointEvents[] = {
     {"on_reached", "The first player came into it, and the game was saved"},
 };
 
+constexpr PropertyInfo kHurtProperties[] = {
+    kName,
+    {"damage", Count, "10", "Damage each hit; armour takes its usual share", 1.0f, 100000.0f},
+    {"interval", Number, "0.5", "Seconds between hits while something stays inside", 0.0078125f,
+     60.0f},
+    kStartDisabled,
+};
+
 constexpr PropertyInfo kRelayProperties[] = {
     kOrigin,
     kName,
@@ -128,6 +136,12 @@ constexpr EntityClassInfo kClasses[] = {
      EntityShape::Brush, kTriggerProperties, kTriggerEvents, kSwitchInputs},
     {"checkpoint", "An invisible volume that saves the game the first time a player comes into it",
      EntityShape::Brush, kCheckpointProperties, kCheckpointEvents, kSwitchInputs},
+    {"hurt",
+     "An invisible volume that hurts whatever is inside it: lava, slime, kill pits",
+     EntityShape::Brush,
+     kHurtProperties,
+     {},
+     kSwitchInputs},
     {"relay", "Passes a trigger input on to its outputs, unless switched off", EntityShape::Point,
      kRelayProperties, kRelayEvents, kRelayInputs},
     {"counter", "Fires an event after a number of add inputs", EntityShape::Point,
@@ -144,6 +158,8 @@ constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"},
 constexpr PresetProperty kLiftPreset[] = {{"activate", "stand"}, {"speed", "2"}, {"wait", "3"}};
 constexpr PresetProperty kPlatformPreset[] = {
     {"speed", "2"}, {"wait", "1"}, {"loop", "1"}, {"start_moving", "1"}};
+
+constexpr PresetProperty kKillPreset[] = {{"damage", "100000"}};
 
 constexpr EntityPreset kPresets[] = {
     {"Door",
@@ -181,6 +197,20 @@ constexpr EntityPreset kPresets[] = {
      {},
      false,
      {4.0f, 4.0f, 2.0f}},
+    {"Hurt",
+     "Hurts whatever is inside it, every half second: lava, slime",
+     "hurt",
+     {},
+     {},
+     false,
+     {4.0f, 4.0f, 1.0f}},
+    {"Kill",
+     "Kills whatever comes into it: a bottomless pit",
+     "hurt",
+     kKillPreset,
+     {},
+     false,
+     {4.0f, 4.0f, 1.0f}},
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,

@@ -37,6 +37,9 @@ Vec3 brushColor(const Level& level, std::size_t index) {
         if (className == "checkpoint") {
             return {0.20f, 0.65f, 0.30f};
         }
+        if (className == "hurt") {
+            return {0.75f, 0.10f, 0.12f};
+        }
     }
     return kPalette[index % kPalette.size()];
 }
@@ -67,9 +70,9 @@ WorldMesh buildWorldMesh(const Level& level, MeshPurpose purpose) {
     }
     for (std::size_t brushIndex = 0; brushIndex < level.brushes.size(); ++brushIndex) {
         const Brush& brush = level.brushes[brushIndex];
-        // Triggers and checkpoints are invisible volumes; movers are parts of their own.
+        // Triggers, checkpoints and hurt volumes are invisible; movers are parts of their own.
         if (!isClass(level, brush, "trigger") && !isClass(level, brush, "checkpoint") &&
-            !isClass(level, brush, "mover")) {
+            !isClass(level, brush, "hurt") && !isClass(level, brush, "mover")) {
             addBrush(mesh, level, brushIndex);
         }
     }

@@ -10,6 +10,7 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
@@ -205,4 +206,38 @@ TEST_CASE("reaching a checkpoint keeps a save of that moment") {
     REQUIRE(player != nullptr);
     CHECK(player->position.x > 2.5f);
     CHECK(player->position.x < 3.0f);
+}
+
+TEST_CASE("players restored from saves made before health get the starting health") {
+    Session session;
+    session.run({}, 2);
+    const auto saved = std::make_unique<ct::State>(session.server.state());
+    saved->world.healths.remove(session.client.player());
+    session.server.restore(*saved);
+    const ct::Health* health = session.server.state().world.healths.get(session.client.player());
+    REQUIRE(health != nullptr);
+    CHECK(health->health == ct::RulesSettings{}.startHealth);
+}
+
+TEST_CASE("a second player joins at the spawn point furthest from the first") {
+    ct::Level level = ct::test::floorLevel();
+    level.entities.push_back(ct::makePlayerSpawn({30.0f, 0.0f, 0.0f}, 0.0f));
+    Session session({}, level);
+    ct::LoopbackLink second(ct::LinkConditions{}, 6);
+    session.server.addConnection(second.serverEnd());
+    ct::ClientConnection other(second.clientEnd());
+    for (int i = 0; i < 3; ++i) {
+        session.client.sendInput({}, session.now);
+        other.sendInput({}, session.now);
+        session.server.receive(session.now);
+        session.server.tick(session.now);
+        session.client.receive(session.now);
+        other.receive(session.now);
+        session.now += kTick;
+    }
+    REQUIRE(session.server.playerCount() == 2);
+    const ct::World& world = session.server.state().world;
+    const float a = world.transforms.get(session.client.player())->position.x;
+    const float b = world.transforms.get(other.player())->position.x;
+    CHECK(std::abs(a - b) == doctest::Approx(30.0f));
 }

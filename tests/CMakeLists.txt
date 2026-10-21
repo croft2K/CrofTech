@@ -23,6 +23,7 @@ add_executable(ct_unit_tests
     unit/net/LoopbackLinkTests.cpp
     unit/net/ProtocolTests.cpp
     unit/sim/CollisionWorldTests.cpp
+    unit/sim/GameSettingsTests.cpp
     unit/sim/MovementConfigTests.cpp
     unit/sim/SaveGameTests.cpp
     unit/sim/StateSaveTests.cpp
@@ -43,6 +44,7 @@ ct_add_test(ct_unit_tests)
 add_executable(ct_sim_tests
     unit/Main.cpp
     sim/DeterminismTests.cpp
+    sim/HealthTests.cpp
     sim/LogicTests.cpp
     sim/MoverTests.cpp
     sim/MovementTests.cpp

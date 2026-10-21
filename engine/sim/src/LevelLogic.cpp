@@ -1,6 +1,7 @@
 #include "LevelLogic.h"
 
 #include "croftech/core/Profile.h"
+#include "croftech/sim/Damage.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -89,6 +90,10 @@ void LevelLogic::updateTriggers(const MovementSettings& movement) {
         const std::uint32_t slot = controls[i].inputSlot;
         const EntityId id = world.playerControls.entities()[i];
         const Transform* transform = world.transforms.get(id);
+        const Health* health = world.healths.get(id);
+        if (health != nullptr && isDead(*health)) {
+            continue; // the dead set nothing off
+        }
         if (slot < kMaxPlayers && transform != nullptr && (present & (1u << slot)) == 0) {
             present |= 1u << slot;
             players[slot] = id;
@@ -155,6 +160,34 @@ void LevelLogic::updateTriggers(const MovementSettings& movement) {
         }
     }
     deliverQueued();
+}
+
+void LevelLogic::runHurtVolumes(const GameSettings& settings) {
+    CT_PROFILE_ZONE();
+    World& world = m_state.world;
+    for (std::size_t i = 0; i < world.hurts.size(); ++i) {
+        std::uint32_t index = 0;
+        const GameLevel::Entity* entity =
+            levelEntityOf(world.hurts.entities()[i], LogicClass::Hurt, index);
+        if (entity == nullptr || entity->model == nullptr ||
+            (world.hurts.components()[i].flags & kLogicEnabled) == 0) {
+            continue;
+        }
+        for (std::size_t j = 0; j < world.healths.size(); ++j) {
+            const EntityId target = world.healths.entities()[j];
+            Health& health = world.healths.components()[j];
+            const Transform* transform = world.transforms.get(target);
+            if (transform == nullptr || isDead(health) || health.hazardTick > m_state.tick ||
+                !entity->model->overlapsBox(transform->position, settings.movement.halfExtents)) {
+                continue;
+            }
+            health.hazardTick = m_state.tick + entity->intervalTicks;
+            Damage damage;
+            damage.amount = entity->damage;
+            damage.kind = DamageKind::Hazard;
+            applyDamage(m_state, settings.rules, target, damage);
+        }
+    }
 }
 
 void LevelLogic::fire(std::uint32_t source, LogicEvent event, EntityId activator) {
@@ -224,6 +257,18 @@ void LevelLogic::apply(const Queued& input) {
                 // Players still inside when it is switched back on go in again.
                 trigger->flags &= ~kLogicEnabled;
                 trigger->playersInside = 0;
+            }
+        }
+        return;
+    case LogicClass::Hurt:
+        if (Hurt* hurt = world.hurts.get(id)) {
+            const bool enable =
+                input.input == LogicInput::Enable ||
+                (input.input == LogicInput::Toggle && (hurt->flags & kLogicEnabled) == 0);
+            if (enable) {
+                hurt->flags |= kLogicEnabled;
+            } else if (input.input == LogicInput::Disable || input.input == LogicInput::Toggle) {
+                hurt->flags &= ~kLogicEnabled;
             }
         }
         return;

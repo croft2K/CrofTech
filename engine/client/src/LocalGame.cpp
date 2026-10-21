@@ -7,10 +7,16 @@
 #include <memory>
 
 namespace ct {
+namespace {
 
-LocalGame::LocalGame(const Level& level, const MovementSettings& movement,
+constexpr float kDeadEyeHeight = 0.3f; // above the feet
+constexpr float kDeathSinkSeconds = 0.4f;
+
+} // namespace
+
+LocalGame::LocalGame(const Level& level, const GameSettings& settings,
                      const LinkConditions& conditions, std::optional<SpawnPoint> start)
-    : m_movement(movement), m_link(conditions), m_server(level, movement, start),
+    : m_settings(settings), m_link(conditions), m_server(level, settings, start),
       m_thread(m_server), m_client(m_link.clientEnd()) {
     m_server.addConnection(m_link.serverEnd());
     m_thread.start();
@@ -21,9 +27,9 @@ LocalGame::~LocalGame() {
     m_thread.stop();
 }
 
-void LocalGame::setMovementSettings(const MovementSettings& movement) {
-    m_movement = movement;
-    m_thread.withServer([&movement](Server& server) { server.setMovementSettings(movement); });
+void LocalGame::setSettings(const GameSettings& settings) {
+    m_settings = settings;
+    m_thread.withServer([&settings](Server& server) { server.setSettings(settings); });
 }
 
 void LocalGame::update(const UserCmd& command, Clock::time_point now) {
@@ -45,9 +51,18 @@ std::optional<Vec3> LocalGame::eyePosition(Clock::time_point now) const {
     if (from == nullptr) {
         from = to;
     }
-    const Vec3 a = ct::eyePosition(m_movement, *from);
-    const Vec3 b = ct::eyePosition(m_movement, *to);
-    return a + (b - a) * blend(now);
+    const Vec3 a = ct::eyePosition(m_settings.movement, *from);
+    const Vec3 b = ct::eyePosition(m_settings.movement, *to);
+    Vec3 eye = a + (b - a) * blend(now);
+    // The dead see from the floor, sinking there over a moment.
+    const Health* health = current->world.healths.get(m_client.player());
+    if (health != nullptr && isDead(*health)) {
+        const float since =
+            (static_cast<float>(current->tick - health->diedTick) + blend(now)) * kTickSeconds;
+        const float sink = std::clamp(since / kDeathSinkSeconds, 0.0f, 1.0f);
+        eye.z -= (m_settings.movement.eyeHeight - kDeadEyeHeight) * sink;
+    }
+    return eye;
 }
 
 Vec3 LocalGame::moverOffset(std::uint32_t levelEntity, Clock::time_point now) const {

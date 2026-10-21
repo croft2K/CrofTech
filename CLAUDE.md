@@ -34,7 +34,9 @@ that link behave like a poor network. F5 saves and F9 loads the newest save (`sa
 (`sim/SaveGame.h`, fuzzed) is the level's name and content hash plus the state; saves go to SDL's
 pref path (`%APPDATA%/CrofTech/<game>/saves`), never into content. Loading replaces the server's
 state (`Server::restore`), and snapshots carry a timeline number so the client follows it back in
-time.
+time. Players have health and armour (the HUD in `apps/common/GameHud` is shared with
+play-in-editor); a dead player respawns at the spawn point furthest from other players when fire
+is pressed after `rules.respawn_delay`.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -60,9 +62,9 @@ grid stay exact through any number of edits. Entities are point entities (an "or
 entities (doors, movers, triggers: the brushes whose `Brush::entity` is theirs; the file nests them
 in the entity's block). Outputs wire entities together: when an event happens, an input is sent
 to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
-properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform, Trigger, Checkpoint);
+properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform, Trigger, Checkpoint, Hurt, Kill);
 the editor's inspector and the game both read it. To play a level, the server builds a
-`GameLevel` (`sim/GameLevel.h`) from it once: world collision (triggers aren't solid), each logic
+`GameLevel` (`sim/GameLevel.h`) from it once: world collision (volumes aren't solid), each logic
 entity's settings with its outputs resolved to target entities and inputs, and the state play
 starts from. Logic entities are simulated entities with components (`sim/LogicComponents.h`), and
 a delayed output waits as a `PendingInput` entity, so logic saves and rewinds with everything
@@ -104,7 +106,8 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
                      profiling
     engine/level     level data: brushes, entities, brush geometry, level files, .map import
                      (core)
-    engine/sim       ECS world, components, collision, movement        (core, level)
+    engine/sim       ECS world, components, collision, movement, level logic and gameplay
+                     (health and damage; later weapons, pickups, AI, encounters)   (core, level)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    client connection, LocalGame (server thread + client over an in-memory
                      link); later prediction, interpolation          (net, server, sim)
@@ -118,7 +121,6 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/server    Server (players join over a Transport, inputs, ticks, snapshots),
                      ServerThread; later input buffers, lag compensation (M6-M7)
                      (net, sim, platform)
-    game/            weapons, damage, rules (simulation systems)
     apps/            client (croftech.exe), editor (croftech_editor.exe), common (code both
                      share); later dedicated_server, levelc
     content/         engine default content (config, levels; later assets)
@@ -128,7 +130,7 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
 Each module is a CMake target `ct_<module>` (alias `ct::<module>`) with public headers under
 `include/croftech/<module>/`. A module only sees headers of modules it links, so these rules hold:
 
-- `sim` and `game` never depend on `render`, `platform`, audio or wall-clock time.
+- `sim` never depends on `render`, `platform`, audio or wall-clock time.
 - `server` and the dedicated server never link `render`.
 - `render` reads simulation state; it never writes it.
 - Dear ImGui is drawn by our own Vulkan code in `render` (`UiRenderer`), not ImGui's Vulkan
@@ -153,7 +155,11 @@ Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct
   (`sim/StateSave.h`), the inspector and, later, replication; generic code never names fields.
   Type and field names are stable identifiers in save files: renaming one drops it from old saves.
   Register every new component pool in `forEachPool` (sim/World.h).
-- Units are metres and seconds, Z up. Movement tuning lives in `MovementSettings`.
+- Units are metres and seconds, Z up. Everything a game tunes reaches the simulation as a
+  `GameSettings` (sim/GameSettings.h): `MovementSettings` from `config/movement.cfg` and
+  `RulesSettings` (health, armour, respawning) from `config/rules.cfg`.
+- All damage goes through `applyDamage` (sim/Damage.h), so armour, knockback and death work the
+  same for every source.
 - Components are trivially copyable plain structs with no pointers. Refer to other entities by
   generation-checked `EntityId`, never by pointer.
 - Presentation state (particles, sounds, ragdolls, view-model animation) lives outside the
