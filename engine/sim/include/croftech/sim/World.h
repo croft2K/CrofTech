@@ -3,6 +3,7 @@
 #include "croftech/sim/ComponentPool.h"
 #include "croftech/sim/Components.h"
 #include "croftech/sim/EntityId.h"
+#include "croftech/sim/LogicComponents.h"
 
 #include <cstdint>
 #include <span>
@@ -23,6 +24,12 @@ struct World {
     ComponentPool<Transform, kMaxEntities> transforms;
     ComponentPool<PlayerMotion, kMaxEntities> playerMotions;
     ComponentPool<PlayerControl, kMaxEntities> playerControls;
+    ComponentPool<LevelEntityRef, kMaxEntities> levelEntities;
+    ComponentPool<Trigger, kMaxEntities> triggers;
+    ComponentPool<Relay, kMaxEntities> relays;
+    ComponentPool<Counter, kMaxEntities> counters;
+    ComponentPool<Timer, kMaxEntities> timers;
+    ComponentPool<PendingInput, kMaxEntities> pendingInputs;
 
     void destroy(EntityId id) noexcept;
 };
@@ -34,6 +41,12 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.transforms);
     fn(world.playerMotions);
     fn(world.playerControls);
+    fn(world.levelEntities);
+    fn(world.triggers);
+    fn(world.relays);
+    fn(world.counters);
+    fn(world.timers);
+    fn(world.pendingInputs);
 }
 
 // Calls fn(schema, bytes) for each component the entity has, in pool order. For tools that work

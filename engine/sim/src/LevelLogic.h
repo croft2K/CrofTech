@@ -1,0 +1,54 @@
+#pragma once
+
+#include "croftech/sim/GameLevel.h"
+#include "croftech/sim/PlayerMovement.h"
+#include "croftech/sim/World.h"
+
+#include <array>
+#include <cstdint>
+
+namespace ct {
+
+// Runs the level's logic entities for one tick of a state: delivers inputs, fires events and
+// passes them along the wiring. Made on the stack for each tick, so it holds no state of its own
+// between ticks.
+//
+// Outputs without a delay are delivered within the tick, in the order they were sent; each phase
+// below delivers everything its events set off before returning. Delayed outputs become
+// PendingInput entities. A tick delivers at most kMaxInputDeliveriesPerTick inputs.
+class LevelLogic {
+public:
+    LevelLogic(const GameLevel& level, State& state) : m_level(level), m_state(state) {}
+
+    // Inputs whose delay ends this tick, oldest first.
+    void deliverPendingInputs();
+    void runTimers();
+    // Players going into and out of triggers, after they have moved.
+    void updateTriggers(const MovementSettings& movement);
+
+private:
+    struct Queued {
+        std::uint32_t target = 0; // level entity index
+        LogicInput input = LogicInput::Trigger;
+        EntityId activator;
+    };
+
+    // The level entity behind a simulated entity, if its LevelEntityRef names one of that class.
+    const GameLevel::Entity* levelEntityOf(EntityId id, LogicClass logicClass,
+                                           std::uint32_t& index) const;
+    void fire(std::uint32_t source, LogicEvent event, EntityId activator);
+    void send(std::uint32_t source, std::uint32_t output, EntityId activator);
+    void queue(const GameLevel::Output& output, EntityId activator);
+    void deliverQueued();
+    void apply(const Queued& input);
+
+    const GameLevel& m_level;
+    State& m_state;
+    std::array<Queued, 1024> m_queue{}; // a ring
+    std::uint32_t m_queueHead = 0;
+    std::uint32_t m_queueCount = 0;
+    std::uint32_t m_delivered = 0;
+    std::uint32_t m_sentOrder = 0;
+};
+
+} // namespace ct

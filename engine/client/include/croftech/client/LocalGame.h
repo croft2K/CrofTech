@@ -7,8 +7,6 @@
 
 #include <chrono>
 #include <optional>
-#include <span>
-#include <vector>
 
 namespace ct {
 
@@ -20,9 +18,9 @@ class LocalGame {
 public:
     using Clock = std::chrono::steady_clock;
 
-    // spawns must not be empty.
-    LocalGame(std::span<const Brush> brushes, std::vector<SpawnPoint> spawns,
-              const MovementSettings& movement, const LinkConditions& conditions = {});
+    // The level must have a player spawn.
+    LocalGame(const Level& level, const MovementSettings& movement,
+              const LinkConditions& conditions = {});
     ~LocalGame();
     LocalGame(const LocalGame&) = delete;
     LocalGame& operator=(const LocalGame&) = delete;
@@ -39,6 +37,8 @@ public:
     // The newest state the client has, or null.
     const State* latestState() const { return m_client.current(); }
     EntityId player() const { return m_client.player(); }
+    // The server's copy of the level, which never changes while it runs.
+    const GameLevel& level() const { return m_server.level(); }
 
     float serverTickMilliseconds() const { return m_thread.lastTickMilliseconds(); }
     LinkStats linkStats() const { return m_link.stats(); }

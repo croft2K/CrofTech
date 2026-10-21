@@ -1,5 +1,6 @@
 #include "croftech/core/ByteStream.h"
 #include "croftech/core/Schema.h"
+#include "croftech/sim/EntityId.h"
 
 #include <doctest/doctest.h>
 
@@ -77,6 +78,31 @@ TEST_CASE("fields encode little-endian and decode to the same bytes") {
     CHECK(copy.count == -3);
     CHECK(copy.yaw == 0xBEEF);
     CHECK(copy.pitch == -1234);
+}
+
+TEST_CASE("entity references encode as index then generation, and any value loads") {
+    struct Reference {
+        ct::EntityId who;
+    };
+    constexpr ct::FieldInfo field = CT_FIELD(Reference, who);
+    static_assert(field.type == ct::FieldType::Entity);
+    static_assert(ct::fieldSize(ct::FieldType::Entity) == sizeof(ct::EntityId));
+
+    const Reference reference{{7, 0x01020304}};
+    ct::ByteWriter writer;
+    ct::encodeField(writer, field, std::as_bytes(std::span{&reference, 1}));
+    REQUIRE(writer.bytes().size() == 8);
+    CHECK(writer.bytes()[0] == std::byte{7});
+    CHECK(writer.bytes()[4] == std::byte{4});
+
+    Reference copy;
+    const auto out = std::as_writable_bytes(std::span{&copy, 1});
+    ct::ByteReader reader(writer.bytes());
+    ct::decodeField(reader, field, out);
+    CHECK(copy.who == reference.who);
+    // A reference to an entity that has gone, or to none, is still a valid value.
+    copy.who = {};
+    CHECK(ct::isValidFieldValue(field, out));
 }
 
 TEST_CASE("loaded values must be finite and inside the field's range") {

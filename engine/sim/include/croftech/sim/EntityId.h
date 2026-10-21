@@ -1,5 +1,7 @@
 #pragma once
 
+#include "croftech/core/Schema.h"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -19,6 +21,10 @@ struct EntityId {
     constexpr bool isValid() const noexcept { return index != kInvalidIndex; }
     friend constexpr bool operator==(const EntityId&, const EntityId&) = default;
 };
+static_assert(sizeof(EntityId) == 8, "EntityId is stored as FieldType::Entity");
+
+template <>
+struct FieldTypeOf<EntityId> : std::integral_constant<FieldType, FieldType::Entity> {};
 
 // Fixed-capacity entity allocator. Plain data: copying it copies the allocation state exactly.
 // Freed indices are reused last-in first-out, so allocation order is deterministic.

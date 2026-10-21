@@ -41,6 +41,8 @@ std::string_view fieldTypeName(FieldType type) noexcept {
         return "i16";
     case FieldType::I32:
         return "i32";
+    case FieldType::Entity:
+        return "entity";
     }
     return "unknown";
 }
@@ -53,6 +55,8 @@ bool isValidFieldValue(const FieldInfo& field, std::span<const std::byte> object
         const Vec3 v = readVec3(object, field.offset);
         return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
     }
+    case FieldType::Entity:
+        return true;
     default: {
         const std::int64_t value = readInteger(field, object);
         return value >= field.options.min && value <= field.options.max;
@@ -83,6 +87,7 @@ std::int64_t readInteger(const FieldInfo& field, std::span<const std::byte> obje
         return load<std::int32_t>(object, field.offset);
     case FieldType::Float:
     case FieldType::Vec3:
+    case FieldType::Entity:
         break;
     }
     CT_ASSERT(false && "not an integer field");
@@ -119,9 +124,19 @@ void writeInteger(const FieldInfo& field, std::span<std::byte> object, std::int6
         return;
     case FieldType::Float:
     case FieldType::Vec3:
+    case FieldType::Entity:
         break;
     }
     CT_ASSERT(false && "not an integer field");
+}
+
+EntityRefValue readEntityRef(std::span<const std::byte> object, std::uint32_t offset) {
+    return {load<std::uint32_t>(object, offset), load<std::uint32_t>(object, offset + 4)};
+}
+
+void writeEntityRef(std::span<std::byte> object, std::uint32_t offset, EntityRefValue value) {
+    store(object, offset, value.index);
+    store(object, offset + 4, value.generation);
 }
 
 void encodeField(ByteWriter& writer, const FieldInfo& field, std::span<const std::byte> object) {
@@ -147,6 +162,12 @@ void encodeField(ByteWriter& writer, const FieldInfo& field, std::span<const std
     case FieldType::I32:
         writer.writeU32(static_cast<std::uint32_t>(readInteger(field, object)));
         return;
+    case FieldType::Entity: {
+        const EntityRefValue entity = readEntityRef(object, field.offset);
+        writer.writeU32(entity.index);
+        writer.writeU32(entity.generation);
+        return;
+    }
     }
 }
 
@@ -177,6 +198,12 @@ void decodeField(ByteReader& reader, const FieldInfo& field, std::span<std::byte
     case FieldType::I32:
         writeInteger(field, object, static_cast<std::int32_t>(reader.readU32()));
         return;
+    case FieldType::Entity: {
+        const std::uint32_t index = reader.readU32();
+        const std::uint32_t generation = reader.readU32();
+        writeEntityRef(object, field.offset, {index, generation});
+        return;
+    }
     }
 }
 

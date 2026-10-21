@@ -27,6 +27,8 @@ public:
 
     // Sweeps an axis-aligned box (centre, half extents) from start to end.
     TraceResult traceBox(Vec3 start, Vec3 end, Vec3 halfExtents) const;
+    // Whether the box (centre, half extents) is inside or touching any brush.
+    bool overlapsBox(Vec3 centre, Vec3 halfExtents) const;
 
 private:
     struct CollisionBrush {

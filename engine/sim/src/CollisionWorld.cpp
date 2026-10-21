@@ -18,6 +18,15 @@ bool hasPlaneWithNormal(std::span<const Plane> planes, Vec3 normal) {
     });
 }
 
+// How far the point is in front of the plane pushed out by the box's extent along its normal:
+// the box touches the plane's solid side when its centre is on or behind the pushed-out plane.
+float expandedDistance(const Plane& plane, Vec3 point, Vec3 halfExtents) {
+    const float expand = std::fabs(plane.normal.x) * halfExtents.x +
+                         std::fabs(plane.normal.y) * halfExtents.y +
+                         std::fabs(plane.normal.z) * halfExtents.z;
+    return dot(plane.normal, point) - (plane.distance + expand);
+}
+
 } // namespace
 
 CollisionWorld::CollisionWorld(std::span<const Brush> brushes) {
@@ -67,6 +76,22 @@ TraceResult CollisionWorld::traceBox(Vec3 start, Vec3 end, Vec3 halfExtents) con
     }
     result.endPosition = start + (end - start) * result.fraction;
     return result;
+}
+
+bool CollisionWorld::overlapsBox(Vec3 centre, Vec3 halfExtents) const {
+    const Aabb box{centre - halfExtents, centre + halfExtents};
+    for (const CollisionBrush& brush : m_brushes) {
+        if (!overlaps(box, brush.bounds)) {
+            continue;
+        }
+        const std::span<const Plane> planes(m_planes.data() + brush.firstPlane, brush.planeCount);
+        if (std::all_of(planes.begin(), planes.end(), [&](const Plane& plane) {
+                return expandedDistance(plane, centre, halfExtents) <= 0.0f;
+            })) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Clips the segment against the brush grown by the box: each plane is pushed out by the box's

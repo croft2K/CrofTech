@@ -16,7 +16,8 @@ namespace ct {
 // from the description: the editor inspector, saves and, later, network replication. No code
 // outside the struct's own file names its fields.
 
-enum class FieldType : std::uint8_t { Float, Vec3, U8, U16, U32, I16, I32 };
+// Entity is a reference to an entity: its index then its generation, two u32s (sim's EntityId).
+enum class FieldType : std::uint8_t { Float, Vec3, U8, U16, U32, I16, I32, Entity };
 
 // How tools show a field; storage is the same either way.
 enum class FieldHint : std::uint8_t {
@@ -108,6 +109,8 @@ constexpr std::uint32_t fieldSize(FieldType type) noexcept {
     case FieldType::U32:
     case FieldType::I32:
         return 4;
+    case FieldType::Entity:
+        return 8;
     case FieldType::Vec3:
         return 12;
     }
@@ -135,7 +138,8 @@ constexpr bool describesEveryByte(const TypeSchema& schema) noexcept {
     ::ct::FieldInfo(#member, ::ct::FieldTypeOf<std::remove_cv_t<decltype(Type::member)>>::value,   \
                     static_cast<std::uint32_t>(offsetof(Type, member)))
 
-// Checks a loaded value: floats must be finite, integers inside the field's range.
+// Checks a loaded value: floats must be finite, integers inside the field's range. Any entity
+// reference is valid: it may name an entity that has since gone, which the generation shows.
 bool isValidFieldValue(const FieldInfo& field, std::span<const std::byte> object);
 
 // Values copied in and out of an object's bytes by field, so generic code never casts a struct.
@@ -145,6 +149,13 @@ std::int64_t readInteger(const FieldInfo& field, std::span<const std::byte> obje
 void writeFloat(std::span<std::byte> object, std::uint32_t offset, float value);
 void writeVec3(std::span<std::byte> object, std::uint32_t offset, Vec3 value);
 void writeInteger(const FieldInfo& field, std::span<std::byte> object, std::int64_t value);
+
+struct EntityRefValue {
+    std::uint32_t index = 0;
+    std::uint32_t generation = 0;
+};
+EntityRefValue readEntityRef(std::span<const std::byte> object, std::uint32_t offset);
+void writeEntityRef(std::span<std::byte> object, std::uint32_t offset, EntityRefValue value);
 
 class ByteWriter;
 class ByteReader;

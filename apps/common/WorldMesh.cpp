@@ -17,6 +17,11 @@ constexpr std::array kPalette{
     Vec3{0.33f, 0.50f, 0.48f},
 };
 
+bool isTrigger(const Level& level, const Brush& brush) {
+    return brush.entity < level.entities.size() &&
+           level.entities[brush.entity].className == "trigger";
+}
+
 // Brushes of entities are coloured by what they are, so movers and triggers stand out.
 Vec3 brushColor(const Level& level, std::size_t index) {
     const std::uint32_t entity = level.brushes[index].entity;
@@ -34,9 +39,12 @@ Vec3 brushColor(const Level& level, std::size_t index) {
 
 } // namespace
 
-WorldMesh buildWorldMesh(const Level& level) {
+WorldMesh buildWorldMesh(const Level& level, MeshPurpose purpose) {
     WorldMesh mesh;
     for (std::size_t brushIndex = 0; brushIndex < level.brushes.size(); ++brushIndex) {
+        if (purpose == MeshPurpose::Playing && isTrigger(level, level.brushes[brushIndex])) {
+            continue;
+        }
         const Vec3 color = brushColor(level, brushIndex);
         for (const BrushPolygon& face : brushPolygons(level.brushes[brushIndex])) {
             const auto first = static_cast<std::uint32_t>(mesh.vertices.size());

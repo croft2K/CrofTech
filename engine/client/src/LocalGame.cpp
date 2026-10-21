@@ -6,10 +6,10 @@
 
 namespace ct {
 
-LocalGame::LocalGame(std::span<const Brush> brushes, std::vector<SpawnPoint> spawns,
-                     const MovementSettings& movement, const LinkConditions& conditions)
-    : m_movement(movement), m_link(conditions), m_server(brushes, std::move(spawns), movement),
-      m_thread(m_server), m_client(m_link.clientEnd()) {
+LocalGame::LocalGame(const Level& level, const MovementSettings& movement,
+                     const LinkConditions& conditions)
+    : m_movement(movement), m_link(conditions), m_server(level, movement), m_thread(m_server),
+      m_client(m_link.clientEnd()) {
     m_server.addConnection(m_link.serverEnd());
     m_thread.start();
 }

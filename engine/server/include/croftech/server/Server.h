@@ -3,29 +3,27 @@
 #include "croftech/core/ByteStream.h"
 #include "croftech/level/Level.h"
 #include "croftech/net/Transport.h"
-#include "croftech/sim/CollisionWorld.h"
+#include "croftech/sim/GameLevel.h"
 #include "croftech/sim/Simulation.h"
 
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 namespace ct {
 
-// The authority for one game: it owns the simulation, and clients reach it only through packets
-// on their transports. A client says hello and gets a player at a spawn point; its inputs drive
-// that player; after every tick each client is sent a snapshot of the state. Malformed packets
-// are dropped and counted, never trusted.
+// The authority for one game: it owns the level and the simulation, and clients reach it only
+// through packets on their transports. A client says hello and gets a player at a spawn point;
+// its inputs drive that player; after every tick each client is sent a snapshot of the state.
+// Malformed packets are dropped and counted, never trusted.
 //
 // Not thread-safe: one thread calls everything (ServerThread runs it at the tick rate).
 class Server {
 public:
-    // spawns must not be empty; players take them in turn.
-    Server(std::span<const Brush> brushes, std::vector<SpawnPoint> spawns,
-           const MovementSettings& movement);
+    // The level must have a player spawn; players take the spawns in turn.
+    Server(const Level& level, const MovementSettings& movement);
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
 
@@ -43,6 +41,8 @@ public:
         m_simulation.setMovementSettings(movement);
     }
     const State& state() const { return *m_current; }
+    // Never changes, so other threads may read it while the server runs.
+    const GameLevel& level() const { return m_level; }
     std::uint64_t malformedPackets() const { return m_malformed; }
     std::size_t playerCount() const;
 
@@ -61,10 +61,8 @@ private:
     void join(Connection& connection);
     void leave(Connection& connection);
 
-    std::vector<Brush> m_brushes;
-    CollisionWorld m_collision;
+    GameLevel m_level;
     Simulation m_simulation;
-    std::vector<SpawnPoint> m_spawns;
     std::size_t m_nextSpawn = 0;
     std::unique_ptr<State> m_current;
     std::unique_ptr<State> m_next;

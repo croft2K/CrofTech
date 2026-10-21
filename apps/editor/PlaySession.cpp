@@ -29,13 +29,13 @@ std::unique_ptr<PlaySession> PlaySession::start(const Level& level,
                             kPlayerSpawnClass);
         return nullptr;
     }
-    return std::make_unique<PlaySession>(level.brushes, std::move(*spawns), movement, conditions);
+    return std::make_unique<PlaySession>(level, movement, conditions);
 }
 
-PlaySession::PlaySession(std::span<const Brush> brushes, std::vector<SpawnPoint> spawns,
-                         const MovementSettings& movement, const LinkConditions& conditions)
-    : m_game(brushes, spawns, movement, conditions),
-      m_look{angleToRadians(spawns.front().yaw), 0.0f} {}
+PlaySession::PlaySession(const Level& level, const MovementSettings& movement,
+                         const LinkConditions& conditions)
+    : m_game(level, movement, conditions),
+      m_look{angleToRadians(m_game.level().spawns().front().yaw), 0.0f} {}
 
 void PlaySession::look(float countsX, float countsY) {
     m_look.turn(countsX, countsY, kSensitivity);

@@ -285,6 +285,7 @@ int main(int argc, char** argv) {
     bool flying = false;
     bool layoutBuilt = false;
     std::uint64_t meshChangeCount = ~0ull;
+    bool meshForPlay = false;
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
     int frameCount = 0;
@@ -315,6 +316,9 @@ int main(int argc, char** argv) {
         if (!play) {
             ct::logError("Can't play: {}", playError);
             return;
+        }
+        for (const std::string& warning : play->game().level().warnings()) {
+            ct::logWarning("{}", warning);
         }
         ct::logInfo("Playing {}; Esc stops", document.path().filename().string());
         capturePlayMouse(true);
@@ -557,9 +561,12 @@ int main(int argc, char** argv) {
         }
 
         const ImDrawData* ui = devUi->endFrame();
-        if (document.changeCount() != meshChangeCount) {
+        if (document.changeCount() != meshChangeCount || meshForPlay != (play != nullptr)) {
             meshChangeCount = document.changeCount();
-            const ct::WorldMesh mesh = ct::buildWorldMesh(document.level());
+            meshForPlay = play != nullptr;
+            const ct::WorldMesh mesh =
+                ct::buildWorldMesh(document.level(), meshForPlay ? ct::MeshPurpose::Playing
+                                                                 : ct::MeshPurpose::Editing);
             renderer->setWorldMesh(mesh.vertices, mesh.indices);
         }
         const std::string title =

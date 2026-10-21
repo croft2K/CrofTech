@@ -1,17 +1,20 @@
 #include "croftech/sim/Simulation.h"
 
+#include "LevelLogic.h"
+
 #include "croftech/core/Assert.h"
 #include "croftech/core/Hash.h"
 #include "croftech/core/Profile.h"
 #include "croftech/sim/CollisionWorld.h"
+#include "croftech/sim/GameLevel.h"
 
 #include <cstddef>
 #include <span>
 
 namespace ct {
 
-Simulation::Simulation(const CollisionWorld& collision, const MovementSettings& movement)
-    : m_collision(&collision), m_movement(movement) {}
+Simulation::Simulation(const GameLevel& level, const MovementSettings& movement)
+    : m_level(&level), m_movement(movement) {}
 
 void Simulation::step(const State& prev, const InputSet& inputs, State& next) const {
     CT_PROFILE_ZONE();
@@ -21,6 +24,10 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     World& world = next.world;
 
     // Systems run in a fixed order every tick.
+    LevelLogic logic(*m_level, next);
+    logic.deliverPendingInputs();
+    logic.runTimers();
+
     const std::span<const EntityId> controlled = world.playerControls.entities();
     const std::span<const PlayerControl> controls = world.playerControls.components();
     for (std::size_t i = 0; i < controlled.size(); ++i) {
@@ -30,8 +37,9 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
         if (slot >= kMaxPlayers || transform == nullptr || motion == nullptr) {
             continue;
         }
-        movePlayer(*m_collision, m_movement, inputs.commands[slot], *transform, *motion);
+        movePlayer(m_level->collision(), m_movement, inputs.commands[slot], *transform, *motion);
     }
+    logic.updateTriggers(m_movement);
 }
 
 EntityId spawnPlayer(World& world, const MovementSettings& movement, const SpawnPoint& spawn,

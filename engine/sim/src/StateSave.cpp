@@ -17,7 +17,7 @@ namespace {
 constexpr std::uint32_t kMagic = 0x54535443; // "CTST" in file order
 constexpr std::uint32_t kMaxPoolsInSave = 64;
 constexpr std::uint32_t kMaxFieldsInSave = 64;
-constexpr std::uint8_t kFieldTypeCount = static_cast<std::uint8_t>(FieldType::I32) + 1;
+constexpr std::uint8_t kFieldTypeCount = static_cast<std::uint8_t>(FieldType::Entity) + 1;
 
 template <typename Pool>
 const TypeSchema& schemaOfPool() {

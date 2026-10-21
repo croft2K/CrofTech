@@ -9,14 +9,15 @@
 
 namespace ct {
 
-class CollisionWorld;
+class GameLevel;
 
 // The game simulation. step() is a pure function of the previous state, the inputs and the static
 // level: no clock, no I/O, no globals. The same code runs on the server, in client prediction and
-// in replays.
+// in replays. States start from the level's GameLevel::startState().
 class Simulation {
 public:
-    Simulation(const CollisionWorld& collision, const MovementSettings& movement);
+    // The level must outlive the simulation.
+    Simulation(const GameLevel& level, const MovementSettings& movement);
 
     // Settings may only change between ticks.
     void setMovementSettings(const MovementSettings& movement) { m_movement = movement; }
@@ -25,8 +26,10 @@ public:
     // Writes the state for prev.tick + 1 into next. prev and next must be different objects.
     void step(const State& prev, const InputSet& inputs, State& next) const;
 
+    const GameLevel& level() const { return *m_level; }
+
 private:
-    const CollisionWorld* m_collision;
+    const GameLevel* m_level;
     MovementSettings m_movement;
 };
 

@@ -55,7 +55,12 @@ entities (doors, movers, triggers: the brushes whose `Brush::entity` is theirs; 
 in the entity's block). Outputs wire entities together: when an event happens, an input is sent
 to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
 properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform);
-the editor's inspector and the game both read it. In the editor a click picks a whole entity,
+the editor's inspector and the game both read it. To play a level, the server builds a
+`GameLevel` (`sim/GameLevel.h`) from it once: world collision (triggers aren't solid), each logic
+entity's settings with its outputs resolved to target entities and inputs, and the state play
+starts from. Logic entities are simulated entities with components (`sim/LogicComponents.h`), and
+a delayed output waits as a `PendingInput` entity, so logic saves and rewinds with everything
+else. Problems in the wiring are warnings, logged when play starts. In the editor a click picks a whole entity,
 Alt-click one brush; a selected mover shows a see-through copy at its end with a drag handle, and
 selected entities show their wires (`editor/EntityLinks.h`). A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the

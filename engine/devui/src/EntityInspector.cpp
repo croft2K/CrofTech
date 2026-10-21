@@ -48,6 +48,15 @@ void drawValue(const FieldInfo& field, std::span<const std::byte> bytes) {
                     static_cast<double>(v.z), suffix);
         return;
     }
+    case FieldType::Entity: {
+        const EntityRefValue entity = readEntityRef(bytes, field.offset);
+        if (entity.index == 0xFFFFFFFFu) {
+            ImGui::TextUnformatted("none");
+        } else {
+            ImGui::Text("entity %u (generation %u)", entity.index, entity.generation);
+        }
+        return;
+    }
     default:
         break;
     }

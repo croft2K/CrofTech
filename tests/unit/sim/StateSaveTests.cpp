@@ -29,8 +29,7 @@ std::unique_ptr<ct::State> makeBusyState() {
     }
     state->world.destroy(state->world.playerControls.entities()[1]);
 
-    ct::CollisionWorld collision(std::vector{ct::test::floorBrush()});
-    ct::Simulation simulation(collision, sim.movement());
+    ct::Simulation simulation(sim.level(), sim.movement());
     ct::InputSet inputs;
     inputs.commands[0].forward = 127;
     inputs.commands[0].buttons = ct::kButtonJump;
@@ -83,8 +82,8 @@ TEST_CASE("a saved state loads back identical and plays on identically") {
     CHECK(ct::hashState(*loaded) == ct::hashState(*original));
     CHECK(ct::saveState(*loaded) == bytes);
 
-    ct::CollisionWorld collision(std::vector{ct::test::floorBrush()});
-    ct::Simulation simulation(collision, ct::MovementSettings{});
+    const ct::GameLevel level(ct::Level{{ct::test::floorBrush()}, {}});
+    ct::Simulation simulation(level, ct::MovementSettings{});
     ct::InputSet inputs;
     inputs.commands[2].forward = 127;
     inputs.commands[2].buttons = ct::kButtonJump;

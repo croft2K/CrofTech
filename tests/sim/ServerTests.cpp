@@ -28,14 +28,13 @@ ct::UserCmd forward() {
 
 // A server and a client joined by a link, run a tick at a time on a made-up clock.
 struct Session {
-    std::vector<ct::Brush> brushes{ct::test::floorBrush()};
     ct::LoopbackLink link;
     ct::Server server;
     ct::ClientConnection client;
     Clock::time_point now{};
 
     explicit Session(ct::LinkConditions conditions = {})
-        : link(conditions, 5), server(brushes, {ct::SpawnPoint{}}, {}), client(link.clientEnd()) {
+        : link(conditions, 5), server(ct::test::floorLevel(), {}), client(link.clientEnd()) {
         server.addConnection(link.serverEnd());
     }
 
@@ -134,8 +133,7 @@ TEST_CASE("goodbye takes the player out of the game") {
 }
 
 TEST_CASE("a local game runs its server on a thread and shows the player moving") {
-    const std::vector<ct::Brush> brushes{ct::test::floorBrush()};
-    ct::LocalGame game(brushes, {ct::SpawnPoint{}}, {});
+    ct::LocalGame game(ct::test::floorLevel(), {});
     // Walking half a metre takes about 25 ticks (200 ms). Loaded test machines, sanitizer builds on
     // CI especially, can run the thread far slower, so wait for it up to a generous deadline.
     const auto deadline = Clock::now() + std::chrono::seconds(5);

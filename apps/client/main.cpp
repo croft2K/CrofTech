@@ -277,10 +277,13 @@ int main(int argc, char** argv) {
     ct::PlayerLook look;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
         localGame.reset();
-        const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level);
+        const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level, ct::MeshPurpose::Playing);
         renderer->setWorldMesh(mesh.vertices, mesh.indices);
-        localGame = std::make_unique<ct::LocalGame>(prepared.level.brushes, prepared.spawns,
-                                                    movement, client.linkConditions());
+        localGame =
+            std::make_unique<ct::LocalGame>(prepared.level, movement, client.linkConditions());
+        for (const std::string& warning : localGame->level().warnings()) {
+            ct::logWarning("{}: {}", prepared.name, warning);
+        }
         look = {ct::angleToRadians(prepared.spawns.front().yaw), 0.0f};
         ct::logInfo("Level: {} ({} brushes, {} entities)", prepared.name,
                     prepared.level.brushes.size(), prepared.level.entities.size());

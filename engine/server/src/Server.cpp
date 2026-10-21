@@ -10,12 +10,10 @@
 
 namespace ct {
 
-Server::Server(std::span<const Brush> brushes, std::vector<SpawnPoint> spawns,
-               const MovementSettings& movement)
-    : m_brushes(brushes.begin(), brushes.end()), m_collision(m_brushes),
-      m_simulation(m_collision, movement), m_spawns(std::move(spawns)),
-      m_current(std::make_unique<State>()), m_next(std::make_unique<State>()) {
-    CT_ASSERT(!m_spawns.empty());
+Server::Server(const Level& level, const MovementSettings& movement)
+    : m_level(level), m_simulation(m_level, movement),
+      m_current(std::make_unique<State>(m_level.startState())), m_next(std::make_unique<State>()) {
+    CT_ASSERT(!m_level.spawns().empty());
 }
 
 void Server::addConnection(Transport& transport) {
@@ -87,7 +85,7 @@ void Server::join(Connection& connection) {
         return; // full; the client keeps asking
     }
     const auto slot = static_cast<std::uint32_t>(free - m_slotTaken.begin());
-    const SpawnPoint& spawn = m_spawns[m_nextSpawn++ % m_spawns.size()];
+    const SpawnPoint& spawn = m_level.spawns()[m_nextSpawn++ % m_level.spawns().size()];
     const EntityId player =
         spawnPlayer(m_current->world, m_simulation.movementSettings(), spawn, slot);
     if (!player.isValid()) {

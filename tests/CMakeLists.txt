@@ -42,6 +42,7 @@ ct_add_test(ct_unit_tests)
 add_executable(ct_sim_tests
     unit/Main.cpp
     sim/DeterminismTests.cpp
+    sim/LogicTests.cpp
     sim/MovementTests.cpp
     sim/ServerTests.cpp
     sim/SimHarness.h

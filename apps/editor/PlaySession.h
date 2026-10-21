@@ -25,8 +25,9 @@ public:
     static std::unique_ptr<PlaySession> start(const Level& level, const MovementSettings& movement,
                                               const LinkConditions& conditions, std::string& error);
 
-    PlaySession(std::span<const Brush> brushes, std::vector<SpawnPoint> spawns,
-                const MovementSettings& movement, const LinkConditions& conditions);
+    // The level must have a player spawn.
+    PlaySession(const Level& level, const MovementSettings& movement,
+                const LinkConditions& conditions);
 
     void look(float countsX, float countsY);
     // Once a frame. keys is the keyboard state, or null while the mouse is not captured.

@@ -88,8 +88,11 @@ In order; each step builds, tests and commits on its own.
      of a selected mover at its end with a handle to drag it, and wires drawn in the view between
      connected entities, labelled with event and input. The fast path for quick iteration; every
      property and output stays editable underneath.
-   - 8b. Logic in the simulation: the server builds the game from the whole level; triggers,
-     relays, counters, timers and delayed inputs as components.
+   - 8b. *Done.* Logic in the simulation: the server builds a `GameLevel` from the whole level
+     (collision without triggers, wiring resolved to entities and inputs, with warnings for wires
+     that can't work); triggers, relays, counters and timers are components, and delayed outputs
+     wait as entities, so logic is saved, rewound and sent like the rest of the state. Triggers
+     are hidden in play.
    - 8c. Doors and movers: player collision against moving brushes (pushed, carried, blocked), and
      moved brushes drawn from the snapshots.
 9. **Saves, checkpoints and play from here.**
