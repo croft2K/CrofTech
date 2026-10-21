@@ -82,6 +82,29 @@ Vec3 LocalGame::moverOffset(std::uint32_t levelEntity, Clock::time_point now) co
     return from->offset + (to->offset - from->offset) * blend(now);
 }
 
+std::optional<Transform> LocalGame::transform(EntityId id, Clock::time_point now) const {
+    const State* current = m_client.current();
+    const Transform* to = current != nullptr ? current->world.transforms.get(id) : nullptr;
+    if (to == nullptr) {
+        return std::nullopt;
+    }
+    const Transform* from = m_client.previous()->world.transforms.get(id);
+    if (from == nullptr) {
+        return *to;
+    }
+    const float t = blend(now);
+    const auto turn = [t](auto a, auto b) {
+        using Angle = decltype(a);
+        const auto difference = static_cast<std::int16_t>(static_cast<std::uint16_t>(b - a));
+        return static_cast<Angle>(a + static_cast<int>(static_cast<float>(difference) * t));
+    };
+    Transform drawn = *to;
+    drawn.position = from->position + (to->position - from->position) * t;
+    drawn.yaw = turn(from->yaw, to->yaw);
+    drawn.pitch = turn(from->pitch, to->pitch);
+    return drawn;
+}
+
 std::vector<std::byte> LocalGame::save() {
     std::vector<std::byte> bytes;
     m_thread.withServer([&bytes](Server& server) { bytes = saveState(server.state()); });

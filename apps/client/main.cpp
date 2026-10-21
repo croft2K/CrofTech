@@ -16,6 +16,7 @@
 // checkpoint saves too. Saves go in the user's folder for the game, never in its content. After
 // dying, fire respawns.
 
+#include "EntityShapes.h"
 #include "GameHud.h"
 #include "PlayerInput.h"
 #include "SaveFiles.h"
@@ -96,6 +97,7 @@ struct ClientCVars {
     const ct::CVar& showStats;
     const ct::CVar& showEntities;
     const ct::CVar& stepSmoothing;
+    const ct::CVar& thirdPerson;
     const ct::CVar& fakeLatency;
     const ct::CVar& fakeJitter;
     const ct::CVar& fakeLoss;
@@ -119,6 +121,8 @@ ClientCVars registerClientCVars(ct::Console& console) {
         console.add(ct::CVar::makeFloat(
             "client.step_smoothing", 0.1f, 0.0f, 1.0f,
             "seconds the view takes to follow a step up or down stairs; 0 follows at once")),
+        console.add(ct::CVar::makeBool("client.third_person", false,
+                                       "1 = follow the player from behind, to see it move")),
         console.add(ct::CVar::makeFloat("net.fake_latency_ms", 0.0f, 0.0f, 1000.0f,
                                         "delay added to every packet, each way")),
         console.add(ct::CVar::makeFloat("net.fake_jitter_ms", 0.0f, 0.0f, 500.0f,
@@ -375,6 +379,8 @@ int main(int argc, char** argv) {
     std::optional<PreparedLevel> enteredLevel;
     std::vector<std::uint32_t> moverParts; // the level entity of each moving part of the mesh
     std::vector<ct::Vec3> moverOffsets;
+    std::vector<ct::WorldVertex> shapes; // rebuilt every frame
+    std::vector<ct::EffectVertex> effects;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
         localGame.reset();
         const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level, ct::MeshPurpose::Playing);
@@ -554,8 +560,16 @@ int main(int argc, char** argv) {
         consoleWindow.draw();
         const ImDrawData* ui = devUi->endFrame();
 
+        const bool thirdPerson = client.thirdPerson.asBool();
+        shapes.clear();
+        effects.clear();
+        ct::addPlayers(shapes, *localGame, now, thirdPerson);
+        renderer->setDynamicGeometry(shapes, effects);
+
         ct::Camera camera;
-        camera.position = eye;
+        camera.position = thirdPerson ? ct::thirdPersonPosition(localGame->level().collision(), eye,
+                                                                look.yaw, look.pitch)
+                                      : eye;
         camera.yawRadians = look.yaw;
         camera.pitchRadians = look.pitch;
         camera.horizontalFovRadians16x9 = client.fov.asFloat() * (ct::kPi / 180.0f);

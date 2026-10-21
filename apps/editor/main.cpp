@@ -12,6 +12,7 @@
 // [ and ] grid size, Esc cancel or deselect.
 
 #include "EditorPanels.h"
+#include "EntityShapes.h"
 #include "LevelViewport.h"
 #include "PlaySession.h"
 #include "WorldMesh.h"
@@ -301,6 +302,7 @@ int main(int argc, char** argv) {
     bool meshForPlay = false;
     std::vector<std::uint32_t> moverParts; // in play, the level entity of each moving part
     std::vector<ct::Vec3> moverOffsets;
+    std::vector<ct::WorldVertex> shapes; // what moves in play, rebuilt every frame
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
     int frameCount = 0;
@@ -623,8 +625,12 @@ int main(int argc, char** argv) {
                 moverOffsets[i] = play->game().moverOffset(moverParts[i], now);
             }
             renderer->setWorldPartOffsets(moverOffsets);
+            shapes.clear();
+            ct::addPlayers(shapes, play->game(), now, false);
+            renderer->setDynamicGeometry(shapes, {});
             renderer->drawFrame(play->camera(), ui, &rect);
         } else {
+            renderer->setDynamicGeometry({}, {});
             std::vector<ct::WorldView> worldViews;
             for (const ct::LevelViewport::PaneDraw& pane : viewport.paneDraws(view)) {
                 const ImVec2 scale = io.DisplayFramebufferScale;

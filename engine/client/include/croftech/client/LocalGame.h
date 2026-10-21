@@ -44,6 +44,9 @@ public:
     // How far the mover made from the level entity has moved, drawn between snapshots the same
     // way; zero until known.
     Vec3 moverOffset(std::uint32_t levelEntity, Clock::time_point now) const;
+    // Where an entity is, drawn between snapshots the same way (turning the short way round);
+    // nullopt if the newest snapshot has no transform for it.
+    std::optional<Transform> transform(EntityId id, Clock::time_point now) const;
     // The newest state the client has, or null.
     const State* latestState() const { return m_client.current(); }
     EntityId player() const { return m_client.player(); }

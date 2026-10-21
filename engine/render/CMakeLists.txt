@@ -27,7 +27,7 @@ target_compile_options(ct_render PRIVATE -Wno-missing-designated-field-initializ
 # Shaders compile to SPIR-V next to the executables.
 set(shader_output_dir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders)
 set(shader_outputs)
-foreach(shader world.vert world.frag ui.vert ui.frag)
+foreach(shader world.vert world.frag effect.vert effect.frag ui.vert ui.frag)
     set(source ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader})
     set(output ${shader_output_dir}/${shader}.spv)
     add_custom_command(

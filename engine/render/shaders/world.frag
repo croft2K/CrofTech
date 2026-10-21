@@ -42,6 +42,9 @@ void main() {
     float sky = 0.55 + 0.45 * n.z;
     vec3 lit = inColor * (sun * vec3(1.0, 0.94, 0.84) * 0.85 + sky * vec3(0.32, 0.36, 0.45));
 
-    float grid = max(gridLine(uv / pc.gridSpacing.x) * 0.18, gridLine(uv / pc.gridSpacing.y) * 0.35);
+    // Shapes that aren't level geometry (players, items) are drawn with no grid: spacing 0.
+    float grid = pc.gridSpacing.x > 0.0
+        ? max(gridLine(uv / pc.gridSpacing.x) * 0.18, gridLine(uv / pc.gridSpacing.y) * 0.35)
+        : 0.0;
     outColor = vec4(linearToSrgb(lit * (1.0 - grid)), 1.0);
 }

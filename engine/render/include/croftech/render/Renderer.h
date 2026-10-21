@@ -21,6 +21,14 @@ struct WorldVertex {
     Vec3 color; // linear RGB
 };
 
+// A corner of an effect triangle: unlit and see-through, added over the scene (tracers, flashes,
+// glows).
+struct EffectVertex {
+    Vec3 position;
+    Vec3 color;         // linear RGB
+    float alpha = 1.0f; // how much of the colour is added
+};
+
 // A run of the world mesh's indices that moves as one: the brushes of a mover.
 struct WorldMeshPart {
     std::uint32_t firstIndex = 0;
@@ -65,6 +73,11 @@ public:
     void setWorldPartOffsets(std::span<const Vec3> offsets);
     // Spacing of the grid lines drawn on every world surface, in metres (1 and 4 by default).
     void setWorldGrid(float minorSpacing, float majorSpacing);
+    // Geometry that changes from frame to frame, as triangle lists, drawn in every view that draws
+    // the world until replaced: shapes for what moves (players, enemies, items; lit like the
+    // world, without its grid) and effects (added over everything solid, hiding nothing).
+    void setDynamicGeometry(std::span<const WorldVertex> shapes,
+                            std::span<const EffectVertex> effects);
     // ui (may be null) is this frame's ImGui::GetDrawData(), drawn over the world. The world fills
     // worldRect, or the whole window if it is null; its aspect ratio comes from that rectangle.
     void drawFrame(const Camera& camera, const ImDrawData* ui = nullptr,

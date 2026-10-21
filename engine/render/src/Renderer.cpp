@@ -41,11 +41,30 @@ struct Image {
     VkImageView view = VK_NULL_HANDLE;
 };
 
+// A host-visible vertex buffer refilled every frame, grown when it is too small.
+struct DynamicBuffer {
+    Buffer buffer;
+    void* mapped = nullptr;
+    VkDeviceSize capacity = 0;
+    std::uint32_t vertexCount = 0;
+};
+
 struct FrameResources {
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkFence inFlight = VK_NULL_HANDLE;
+    DynamicBuffer shapes;
+    DynamicBuffer effects;
+};
+
+// How a pipeline differs from the world's: what it reads and how it blends.
+struct PipelineDesc {
+    const char* vertexShader = nullptr;
+    const char* fragmentShader = nullptr;
+    std::uint32_t vertexStride = 0;
+    std::span<const VkVertexInputAttributeDescription> attributes;
+    bool blendAdd = false; // adds colour times alpha, writes no depth and draws both sides
 };
 
 // A WorldView with its rectangle clamped to the swapchain.
@@ -92,6 +111,9 @@ struct Renderer::Impl {
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipeline effectPipeline = VK_NULL_HANDLE;
+    std::vector<WorldVertex> shapeVertices;
+    std::vector<EffectVertex> effectVertices;
 
     Buffer vertexBuffer;
     Buffer indexBuffer;
@@ -111,8 +133,13 @@ struct Renderer::Impl {
               std::string& error);
     bool createSwapchain(std::string& error);
     void destroySwapchainResources();
-    bool createPipeline(const std::filesystem::path& shaderDirectory, std::string& error);
+    bool createPipelines(const std::filesystem::path& shaderDirectory, std::string& error);
+    bool createPipeline(const std::filesystem::path& shaderDirectory, const PipelineDesc& desc,
+                        VkPipeline& out, std::string& error);
     Buffer createHostBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage);
+    // Copies the vertices into the buffer, growing it if needed; false if memory ran out.
+    bool fillDynamic(DynamicBuffer& dynamic, const void* data, std::size_t count,
+                     std::size_t stride);
     void destroyBuffer(Buffer& buffer);
     void recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
                      std::span<const DrawnView> views, const ImDrawData* uiData);
@@ -242,7 +269,7 @@ bool Renderer::Impl::init(SDL_Window* sdlWindow, const std::filesystem::path& sh
         }
     }
 
-    return createSwapchain(error) && createPipeline(shaderDirectory, error) &&
+    return createSwapchain(error) && createPipelines(shaderDirectory, error) &&
            ui.init(device.device, allocator, kFramesInFlight, swapchain.image_format, kDepthFormat,
                    shaderDirectory, error);
 }
@@ -340,21 +367,9 @@ void Renderer::Impl::destroySwapchainResources() {
     swapchainImages.clear();
 }
 
-bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory,
-                                    std::string& error) {
-    const VkShaderModule vertexShader =
-        loadShaderModule(device.device, shaderDirectory / "world.vert.spv", error);
-    const VkShaderModule fragmentShader =
-        loadShaderModule(device.device, shaderDirectory / "world.frag.spv", error);
-    const auto destroyModules = [&] {
-        vkDestroyShaderModule(device.device, vertexShader, nullptr);
-        vkDestroyShaderModule(device.device, fragmentShader, nullptr);
-    };
-    if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE) {
-        destroyModules();
-        return false;
-    }
-
+bool Renderer::Impl::createPipelines(const std::filesystem::path& shaderDirectory,
+                                     std::string& error) {
+    // Both pipelines share one layout: effects read only the matrix at the start.
     const VkPushConstantRange pushRange{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                         0, sizeof(PushConstants)};
     const VkPipelineLayoutCreateInfo layoutInfo{
@@ -363,6 +378,45 @@ bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory
         .pPushConstantRanges = &pushRange,
     };
     vkCreatePipelineLayout(device.device, &layoutInfo, nullptr, &pipelineLayout);
+
+    const std::array worldAttributes{
+        VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                          offsetof(WorldVertex, position)},
+        VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                          offsetof(WorldVertex, normal)},
+        VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                          offsetof(WorldVertex, color)},
+    };
+    const std::array effectAttributes{
+        VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                          offsetof(EffectVertex, position)},
+        VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                          offsetof(EffectVertex, color)},
+        VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32_SFLOAT,
+                                          offsetof(EffectVertex, alpha)},
+    };
+    const PipelineDesc world{"world.vert.spv", "world.frag.spv", sizeof(WorldVertex),
+                             worldAttributes, false};
+    const PipelineDesc effect{"effect.vert.spv", "effect.frag.spv", sizeof(EffectVertex),
+                              effectAttributes, true};
+    return createPipeline(shaderDirectory, world, pipeline, error) &&
+           createPipeline(shaderDirectory, effect, effectPipeline, error);
+}
+
+bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory,
+                                    const PipelineDesc& desc, VkPipeline& out, std::string& error) {
+    const VkShaderModule vertexShader =
+        loadShaderModule(device.device, shaderDirectory / desc.vertexShader, error);
+    const VkShaderModule fragmentShader =
+        loadShaderModule(device.device, shaderDirectory / desc.fragmentShader, error);
+    const auto destroyModules = [&] {
+        vkDestroyShaderModule(device.device, vertexShader, nullptr);
+        vkDestroyShaderModule(device.device, fragmentShader, nullptr);
+    };
+    if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE) {
+        destroyModules();
+        return false;
+    }
 
     const std::array stages{
         VkPipelineShaderStageCreateInfo{
@@ -378,22 +432,14 @@ bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory
             .pName = "main",
         },
     };
-    const VkVertexInputBindingDescription binding{0, sizeof(WorldVertex),
+    const VkVertexInputBindingDescription binding{0, desc.vertexStride,
                                                   VK_VERTEX_INPUT_RATE_VERTEX};
-    const std::array attributes{
-        VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                                          offsetof(WorldVertex, position)},
-        VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                                          offsetof(WorldVertex, normal)},
-        VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32B32_SFLOAT,
-                                          offsetof(WorldVertex, color)},
-    };
     const VkPipelineVertexInputStateCreateInfo vertexInput{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding,
-        .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributes.size()),
-        .pVertexAttributeDescriptions = attributes.data(),
+        .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(desc.attributes.size()),
+        .pVertexAttributeDescriptions = desc.attributes.data(),
     };
     const VkPipelineInputAssemblyStateCreateInfo inputAssembly{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -409,7 +455,8 @@ bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory
     const VkPipelineRasterizationStateCreateInfo rasterization{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .cullMode = desc.blendAdd ? VkCullModeFlags{VK_CULL_MODE_NONE}
+                                  : VkCullModeFlags{VK_CULL_MODE_BACK_BIT},
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .lineWidth = 1.0f,
     };
@@ -420,10 +467,17 @@ bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory
     const VkPipelineDepthStencilStateCreateInfo depthStencil{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
+        .depthWriteEnable = desc.blendAdd ? VK_FALSE : VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL, // reverse-Z
     };
     const VkPipelineColorBlendAttachmentState blendAttachment{
+        .blendEnable = desc.blendAdd ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
@@ -460,13 +514,49 @@ bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory
         .pDynamicState = &dynamicState,
         .layout = pipelineLayout,
     };
-    const VkResult result = vkCreateGraphicsPipelines(device.device, VK_NULL_HANDLE, 1,
-                                                      &pipelineInfo, nullptr, &pipeline);
+    const VkResult result =
+        vkCreateGraphicsPipelines(device.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &out);
     destroyModules();
     if (result != VK_SUCCESS) {
-        error = "failed to create the world pipeline";
+        error = std::string("failed to create the pipeline for ") + desc.vertexShader;
         return false;
     }
+    return true;
+}
+
+bool Renderer::Impl::fillDynamic(DynamicBuffer& dynamic, const void* data, std::size_t count,
+                                 std::size_t stride) {
+    dynamic.vertexCount = 0;
+    const VkDeviceSize size = static_cast<VkDeviceSize>(count) * stride;
+    if (size == 0) {
+        return true;
+    }
+    if (size > dynamic.capacity) {
+        destroyBuffer(dynamic.buffer);
+        dynamic.mapped = nullptr;
+        dynamic.capacity = 0;
+        const VkDeviceSize capacity = std::max<VkDeviceSize>(size + size / 2, 64 * 1024);
+        const VkBufferCreateInfo bufferInfo{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = capacity,
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        };
+        VmaAllocationCreateInfo allocationInfo{};
+        allocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        allocationInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                               VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        VmaAllocationInfo allocated{};
+        if (vmaCreateBuffer(allocator, &bufferInfo, &allocationInfo, &dynamic.buffer.buffer,
+                            &dynamic.buffer.allocation, &allocated) != VK_SUCCESS) {
+            dynamic.buffer = {};
+            return false;
+        }
+        dynamic.mapped = allocated.pMappedData;
+        dynamic.capacity = capacity;
+    }
+    std::memcpy(dynamic.mapped, data, static_cast<std::size_t>(size));
+    vmaFlushAllocation(allocator, dynamic.buffer.allocation, 0, size);
+    dynamic.vertexCount = static_cast<std::uint32_t>(count);
     return true;
 }
 
@@ -501,6 +591,7 @@ void Renderer::Impl::destroyBuffer(Buffer& buffer) {
 
 void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
                                  std::span<const DrawnView> views, const ImDrawData* uiData) {
+    const FrameResources& frame = frames[frameIndex];
     const VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -614,6 +705,31 @@ void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
                 draw(parts[i].firstIndex, parts[i].indexCount, partOffsets[i]);
             }
         }
+        if (!view.drawWorld) {
+            continue;
+        }
+        PushConstants dynamicPush;
+        dynamicPush.viewProjection = view.viewProjection;
+        dynamicPush.gridMinor = 0.0f; // no grid on shapes
+        dynamicPush.gridMajor = 0.0f;
+        const VkDeviceSize start = 0;
+        if (frame.shapes.vertexCount > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdPushConstants(cmd, pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(dynamicPush), &dynamicPush);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.shapes.buffer.buffer, &start);
+            vkCmdDraw(cmd, frame.shapes.vertexCount, 1, 0, 0);
+        }
+        // Last, so they add to everything solid behind them.
+        if (frame.effects.vertexCount > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, effectPipeline);
+            vkCmdPushConstants(cmd, pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(dynamicPush), &dynamicPush);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.effects.buffer.buffer, &start);
+            vkCmdDraw(cmd, frame.effects.vertexCount, 1, 0, 0);
+        }
     }
     ui.draw(cmd, frameIndex, uiData);
 
@@ -654,8 +770,11 @@ Renderer::Impl::~Impl() {
     destroyBuffer(vertexBuffer);
     destroyBuffer(indexBuffer);
     vkDestroyPipeline(device.device, pipeline, nullptr);
+    vkDestroyPipeline(device.device, effectPipeline, nullptr);
     vkDestroyPipelineLayout(device.device, pipelineLayout, nullptr);
     for (FrameResources& frame : frames) {
+        destroyBuffer(frame.shapes.buffer);
+        destroyBuffer(frame.effects.buffer);
         vkDestroyFence(device.device, frame.inFlight, nullptr);
         vkDestroySemaphore(device.device, frame.imageAvailable, nullptr);
         vkDestroyCommandPool(device.device, frame.commandPool, nullptr);
@@ -729,6 +848,13 @@ void Renderer::setWorldGrid(float minorSpacing, float majorSpacing) {
     m_impl->gridMajor = majorSpacing;
 }
 
+void Renderer::setDynamicGeometry(std::span<const WorldVertex> shapes,
+                                  std::span<const EffectVertex> effects) {
+    // Copied now and uploaded when a frame is drawn, once that frame's buffers are free.
+    m_impl->shapeVertices.assign(shapes.begin(), shapes.end());
+    m_impl->effectVertices.assign(effects.begin(), effects.end());
+}
+
 void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui, const PixelRect* worldRect) {
     int width = 0;
     int height = 0;
@@ -784,6 +910,12 @@ void Renderer::drawFrame(std::span<const WorldView> views, const ImDrawData* ui)
 
     vkResetFences(device, 1, &frame.inFlight);
     vkResetCommandPool(device, frame.commandPool, 0);
+    if (!r.fillDynamic(frame.shapes, r.shapeVertices.data(), r.shapeVertices.size(),
+                       sizeof(WorldVertex)) ||
+        !r.fillDynamic(frame.effects, r.effectVertices.data(), r.effectVertices.size(),
+                       sizeof(EffectVertex))) {
+        logError("out of memory for this frame's shapes and effects");
+    }
     const VkExtent2D extent = r.swapchain.extent;
     const auto clampTo = [](float value, std::uint32_t limit) {
         return static_cast<std::uint32_t>(std::clamp(value, 0.0f, static_cast<float>(limit)));

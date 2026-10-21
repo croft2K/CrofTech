@@ -28,7 +28,9 @@ automated smoke runs; `--exec` runs console commands once the config files have 
 client, the key below Esc opens the developer console; `map <name>` there switches level and
 `client.show_entities 1` opens a live, read-only view of every entity's components, and
 `client.step_smoothing` sets how long the view takes to follow a step up or down stairs
-(`client/StepSmoothing.h`; play-in-editor uses the default). The client
+(`client/StepSmoothing.h`; play-in-editor uses the default). Players are drawn as simple boxes
+(`apps/common/EntityShapes`, through `Renderer::setDynamicGeometry`, which also takes see-through
+effects) until M5 brings models; `client.third_person 1` follows your own from behind. The client
 and its game's server run in one process and talk only through packets over an in-memory link
 (`ct::LocalGame`); `net.fake_latency_ms`, `net.fake_jitter_ms` and `net.fake_loss_percent` make
 that link behave like a poor network. F5 saves and F9 loads the newest save (`save [name]` and
