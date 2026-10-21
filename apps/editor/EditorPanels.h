@@ -26,11 +26,13 @@ class EditorPanels {
 public:
     MenuRequests drawMenuBar(EditorDocument& document, EditorSettings& settings,
                              LevelViewport& viewport);
-    void drawToolbar(LevelViewport& viewport, const ViewRect& view);
+    void drawToolbar(LevelViewport& viewport, EditorSettings& settings, const ViewRect& view);
     void drawHierarchy(EditorDocument& document);
     void drawInspector(EditorDocument& document, const EditorSettings& settings);
 
 private:
+    // Sides, steps, thickness and facing for the shape being drawn.
+    void drawShapeSettings(EditorSettings& settings);
     void drawBrushInspector(EditorDocument& document, const EditorSettings& settings,
                             std::size_t index);
     void drawEntityInspector(EditorDocument& document, std::size_t index);

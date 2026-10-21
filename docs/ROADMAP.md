@@ -62,9 +62,10 @@ In order; each step builds, tests and commits on its own.
    levels built in the editor, and boxes alone make that slow. Three parts, each committed and
    tried on its own:
    1. *Selection and transforms:* tool toolbar, multi-selection (Ctrl-click, drag a box), move,
-      rotate and scale gizmos, 90° rotations and flips, all working on any brush shape.
+      rotate and scale gizmos, 90° rotations and flips, all working on any brush shape. *Done.*
    2. *Shapes:* wedge, cylinder, cone, pyramid and rough sphere tools; arches and stairs built from
-      several brushes; a settings panel (sides, steps, thickness) with a live preview.
+      several brushes; a settings panel (sides, steps, thickness) with a live preview. *Done:
+      drawn as a rectangle then a height; the settings reshape the shape just placed.*
    3. *Vertex, edge and face editing, and cutting:* drag corners, edges and faces of any brush with
       snapping (edits that would make a brush concave or flat are refused); clip, extrude, hollow,
       subtract and merge. Checks first whether plane-based brushes drift off the grid after many

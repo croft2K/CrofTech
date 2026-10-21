@@ -5,6 +5,7 @@
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/level/BrushGeometry.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <memory>
@@ -127,6 +128,23 @@ void addBox(EditorDocument& document, Vec3 min, Vec3 max) {
     const std::size_t index = document.level().brushes.size();
     document.execute(makeInsertBrush("Create box", index, makeBoxBrush(min, max)));
     document.select(LevelItem::brush(index));
+}
+
+bool addBrushes(EditorDocument& document, std::vector<Brush> brushes, const std::string& name) {
+    const std::size_t first = document.level().brushes.size();
+    if (brushes.empty() || brushes.size() > kMaxLevelBrushes - std::min(first, kMaxLevelBrushes)) {
+        return false;
+    }
+    std::vector<std::unique_ptr<Command>> commands;
+    std::vector<LevelItem> added;
+    for (Brush& brush : brushes) {
+        const std::size_t index = first + added.size();
+        commands.push_back(makeInsertBrush(name, index, std::move(brush)));
+        added.push_back(LevelItem::brush(index));
+    }
+    runCommands(document, name, std::move(commands));
+    document.setSelection(std::move(added));
+    return true;
 }
 
 std::optional<Aabb> selectionExtent(const EditorDocument& document) {

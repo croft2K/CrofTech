@@ -34,6 +34,7 @@ constexpr ImU32 kSelectedColor = IM_COL32(255, 210, 40, 255);
 constexpr ImU32 kFaceColor = IM_COL32(80, 200, 255, 255);
 constexpr ImU32 kSpawnColor = IM_COL32(90, 230, 120, 230);
 constexpr ImU32 kEntityColor = IM_COL32(255, 150, 60, 230);
+constexpr ImU32 kInvalidColor = IM_COL32(255, 80, 60, 255);
 constexpr ImU32 kMarqueeColor = IM_COL32(120, 180, 255, 255);
 constexpr ImU32 kMarqueeFill = IM_COL32(120, 180, 255, 40);
 constexpr ImU32 kExtentColor = IM_COL32(255, 255, 255, 110);
@@ -419,6 +420,25 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
         return;
     }
     const Ray ray = mouseRay(rect);
+    if (m_drag.kind == DragKind::ShapeHeight) {
+        // The height follows the mouse up the vertical through the rectangle's far corner.
+        const float grid = settings.grid();
+        if (const auto s =
+                closestAlongAxis(m_drag.boxEnd, {0.0f, 0.0f, 1.0f}, ray.origin, ray.direction)) {
+            if (!m_drag.heightStart) {
+                m_drag.heightStart = *s;
+            }
+            m_drag.height =
+                std::max(grid, snapToGrid(m_shapeHeight + *s - *m_drag.heightStart, grid));
+        }
+        const bool enter =
+            !ImGui::GetIO().WantTextInput && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+                                              ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
+        if ((mouseOverView && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) || enter) {
+            placeShape(document, settings);
+        }
+        return;
+    }
     if (isDragging()) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             continueDrag(document, settings, ray);
@@ -428,6 +448,7 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
         return;
     }
 
+    adjustPlacedShape(document, settings);
     m_hoverHandle = mouseOverView ? pickGizmo(document, rect) : std::nullopt;
     m_hover = mouseOverView && !m_hoverHandle ? pick(document, settings, ray) : std::nullopt;
     if (mouseOverView && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -445,13 +466,15 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
         beginGizmoDrag(document, *m_hoverHandle, rect, ray);
         return;
     }
-    if (m_tool == EditorTool::Box) {
+    if (m_tool == EditorTool::Draw) {
         const std::optional<Vec3> point = surfacePoint(document, ray);
         if (point) {
             m_drag = {};
-            m_drag.kind = DragKind::Box;
+            m_drag.kind = DragKind::ShapeBase;
             m_drag.boxStart = snapToGrid(*point, settings.grid());
             m_drag.boxEnd = m_drag.boxStart;
+            m_drag.height = m_shapeHeight;
+            m_drag.forward = forwardOnGrid();
         }
         return;
     }
@@ -541,7 +564,7 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
                                  const Ray& ray) {
     const float grid = settings.grid();
     switch (m_drag.kind) {
-    case DragKind::Box: {
+    case DragKind::ShapeBase: {
         const Plane base{{0.0f, 0.0f, 1.0f}, m_drag.boxStart.z};
         if (const auto t = rayCastPlane(base, ray.origin, ray.direction)) {
             const Vec3 point = snapToGrid(ray.origin + ray.direction * *t, grid);
@@ -584,6 +607,7 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
         continueGizmoDrag(document, settings, ray);
         return;
     case DragKind::Marquee:
+    case DragKind::ShapeHeight:
     case DragKind::None:
         return;
     }
@@ -654,17 +678,17 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
     Drag drag = std::move(m_drag);
     m_drag = {};
     switch (drag.kind) {
-    case DragKind::Box: {
-        const Vec3 min = ct::min(drag.boxStart, drag.boxEnd);
-        Vec3 max = ct::max(drag.boxStart, drag.boxEnd);
-        if (max.x - min.x < settings.grid() || max.y - min.y < settings.grid()) {
+    case DragKind::ShapeBase: {
+        const Vec3 size = drag.boxEnd - drag.boxStart;
+        if (std::fabs(size.x) < settings.grid() || std::fabs(size.y) < settings.grid()) {
             return; // a click, not a drag
         }
-        max.z = min.z + std::max(settings.grid(), 1.0f);
-        addBox(document, min, max);
-        m_tool = EditorTool::Select;
+        m_drag = std::move(drag);
+        m_drag.kind = DragKind::ShapeHeight;
         return;
     }
+    case DragKind::ShapeHeight:
+        return;
     case DragKind::Move:
     case DragKind::MoveVertical:
         // A click on one item of several, without moving, selects just that one.
@@ -696,6 +720,79 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
     case DragKind::None:
         return;
     }
+}
+
+Aabb LevelViewport::shapeBox() const {
+    Vec3 min = ct::min(m_drag.boxStart, m_drag.boxEnd);
+    Vec3 max = ct::max(m_drag.boxStart, m_drag.boxEnd);
+    max.z = min.z + m_drag.height;
+    return {min, max};
+}
+
+ShapeSettings LevelViewport::shapeSettings(const EditorSettings& settings, Vec3 awayForward) const {
+    ShapeSettings result = settings.shapeSettings;
+    switch (settings.facing) {
+    case ShapeFacing::AwayFromView:
+        result.forward = awayForward;
+        break;
+    case ShapeFacing::PlusX:
+        result.forward = {1.0f, 0.0f, 0.0f};
+        break;
+    case ShapeFacing::PlusY:
+        result.forward = {0.0f, 1.0f, 0.0f};
+        break;
+    case ShapeFacing::MinusX:
+        result.forward = {-1.0f, 0.0f, 0.0f};
+        break;
+    case ShapeFacing::MinusY:
+        result.forward = {0.0f, -1.0f, 0.0f};
+        break;
+    }
+    return clampedSettings(settings.shape, result);
+}
+
+void LevelViewport::placeShape(EditorDocument& document, const EditorSettings& settings) {
+    const Aabb box = shapeBox();
+    const ShapeSettings wanted = shapeSettings(settings, m_drag.forward);
+    std::vector<Brush> brushes = makeShape(settings.shape, box, wanted);
+    if (brushes.empty()) {
+        return; // shown in red; the height or settings must change first
+    }
+    const std::string name = std::format("Create {}", shapeName(settings.shape));
+    if (!addBrushes(document, std::move(brushes), name)) {
+        return;
+    }
+    m_shapeHeight = m_drag.height;
+    m_placedShape = PlacedShape{box, settings.shape, wanted, document.history().stateId()};
+    m_drag = {};
+}
+
+void LevelViewport::adjustPlacedShape(EditorDocument& document, const EditorSettings& settings) {
+    if (!m_placedShape) {
+        return;
+    }
+    // Anything edited since, including an undo, ends the chance to adjust it.
+    if (document.history().stateId() != m_placedShape->stateId) {
+        m_placedShape.reset();
+        return;
+    }
+    if (settings.shape != m_placedShape->kind) {
+        return;
+    }
+    const ShapeSettings wanted = shapeSettings(settings, m_placedShape->settings.forward);
+    if (wanted == m_placedShape->settings) {
+        return;
+    }
+    std::vector<Brush> brushes = makeShape(m_placedShape->kind, m_placedShape->box, wanted);
+    if (brushes.empty()) {
+        return;
+    }
+    // Replace it as if it had been made this way: one command in the history either way.
+    document.undo();
+    addBrushes(document, std::move(brushes),
+               std::format("Create {}", shapeName(m_placedShape->kind)));
+    m_placedShape->settings = wanted;
+    m_placedShape->stateId = document.history().stateId();
 }
 
 void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
@@ -803,14 +900,33 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
         }
     }
 
-    if (m_drag.kind == DragKind::Box) {
-        const Vec3 min = ct::min(m_drag.boxStart, m_drag.boxEnd);
-        Vec3 max = ct::max(m_drag.boxStart, m_drag.boxEnd);
-        max.z = min.z + std::max(settings.grid(), 1.0f);
-        painter.box({min, max}, kSelectedColor, 2.0f);
+    const bool drawingShape =
+        m_drag.kind == DragKind::ShapeBase || m_drag.kind == DragKind::ShapeHeight;
+    if (drawingShape) {
+        const Aabb box = shapeBox();
+        const std::vector<Brush> shape =
+            makeShape(settings.shape, box, shapeSettings(settings, m_drag.forward));
+        for (const Brush& brush : shape) {
+            painter.brush(brush, kSelectedColor, 2.0f);
+        }
+        if (shape.empty()) {
+            painter.box(box, kInvalidColor, 2.0f);
+        }
     }
 
     ImDrawList& drawList = painter.drawList();
+    if (drawingShape) {
+        // The size next to the mouse, and what to do next.
+        const Aabb box = shapeBox();
+        const Vec3 size = box.max - box.min;
+        const std::string label = std::format("{:g} x {:g} x {:g} m\n{}", size.x, size.y, size.z,
+                                              m_drag.kind == DragKind::ShapeBase
+                                                  ? "release, then move up for the height"
+                                                  : "click or Enter to place, Esc to cancel");
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        drawList.AddText({mouse.x + ImGui::GetFontSize(), mouse.y + ImGui::GetFontSize()},
+                         kSelectedColor, label.c_str());
+    }
     if (m_drag.kind == DragKind::Marquee) {
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         const ImVec2 from{std::min(m_drag.screenStartX, mouse.x),

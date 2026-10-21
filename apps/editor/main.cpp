@@ -3,7 +3,7 @@
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
 // console docked around it, and the tool bar over the view. Hold the right mouse button in the view
 // to fly (WASD, Q/E down/up, Shift faster). Shortcuts: Q/W/E/R select, move, rotate and scale
-// tools, B box tool, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all, Ctrl+D duplicate,
+// tools, B shape tool, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all, Ctrl+D duplicate,
 // Del delete, arrow keys and Page Up/Down nudge the selection one grid step, F frame selection,
 // [ and ] grid size, Esc cancel or deselect.
 
@@ -136,7 +136,7 @@ std::optional<ct::EditorTool> toolShortcut() {
                                                           {ImGuiKey_W, ct::EditorTool::Move},
                                                           {ImGuiKey_E, ct::EditorTool::Rotate},
                                                           {ImGuiKey_R, ct::EditorTool::Scale},
-                                                          {ImGuiKey_B, ct::EditorTool::Box}};
+                                                          {ImGuiKey_B, ct::EditorTool::Draw}};
     for (const auto& [key, tool] : kKeys) {
         if (ImGui::IsKeyPressed(key, false)) {
             return tool;
@@ -321,7 +321,7 @@ int main(int argc, char** argv) {
         if (const ImGuiDockNode* centre = ImGui::DockBuilderGetCentralNode(dockspace)) {
             view = {centre->Pos.x, centre->Pos.y, centre->Size.x, centre->Size.y};
         }
-        panels.drawToolbar(viewport, view);
+        panels.drawToolbar(viewport, settings, view);
         const ImGuiIO& io = ImGui::GetIO();
         const bool mouseOverView =
             !flying && !io.WantCaptureMouse && view.contains(io.MousePos.x, io.MousePos.y);

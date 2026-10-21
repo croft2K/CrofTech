@@ -6,6 +6,7 @@ add_library(ct_editor STATIC
     include/croftech/editor/LevelCommands.h
     include/croftech/editor/LevelItem.h
     include/croftech/editor/SelectionDrag.h
+    include/croftech/editor/Shapes.h
     include/croftech/editor/AffineTransform.h
     src/BrushEditing.cpp
     src/CommandStack.cpp
@@ -14,6 +15,7 @@ add_library(ct_editor STATIC
     src/LevelCommands.cpp
     src/LevelItem.cpp
     src/SelectionDrag.cpp
+    src/Shapes.cpp
     src/AffineTransform.cpp
 )
 add_library(ct::editor ALIAS ct_editor)

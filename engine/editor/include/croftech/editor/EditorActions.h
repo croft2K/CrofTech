@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ct {
 
@@ -32,6 +33,10 @@ void addEntity(EditorDocument& document, LevelEntity entity);
 
 // Adds a box brush at the end of the list and selects it.
 void addBox(EditorDocument& document, Vec3 min, Vec3 max);
+
+// Adds brushes at the end of the list as one command named name, and selects them. False, adding
+// nothing, if there are none or the level would have more than kMaxLevelBrushes.
+bool addBrushes(EditorDocument& document, std::vector<Brush> brushes, const std::string& name);
 
 // The box around the selected brushes and entity origins: what rotations turn about and the scale
 // tool stretches. Nullopt with nothing selected.

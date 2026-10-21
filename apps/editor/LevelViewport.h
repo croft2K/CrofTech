@@ -4,9 +4,11 @@
 #include "croftech/editor/BrushEditing.h"
 #include "croftech/editor/EditorDocument.h"
 #include "croftech/editor/SelectionDrag.h"
+#include "croftech/editor/Shapes.h"
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 
 namespace ct {
@@ -27,9 +29,15 @@ struct ViewRect {
 // Rotation snapping steps in degrees, smallest first.
 inline constexpr std::array<double, 5> kRotationSteps{1.0, 5.0, 15.0, 45.0, 90.0};
 
+// Which way a new wedge or stairs rise and an arch is walked through.
+enum class ShapeFacing { AwayFromView, PlusX, PlusY, MinusX, MinusY };
+
 struct EditorSettings {
     std::size_t gridIndex = 3;     // 0.25 m
     std::size_t rotationIndex = 2; // 15 degrees
+    ShapeKind shape = ShapeKind::Box;
+    ShapeSettings shapeSettings; // forward comes from facing when a shape is drawn
+    ShapeFacing facing = ShapeFacing::AwayFromView;
     // The player's collision box, so spawn markers show the size the game uses.
     Vec3 playerHalfExtents{0.4f, 0.4f, 0.9f};
 
@@ -38,8 +46,8 @@ struct EditorSettings {
 };
 
 // Select, Move, Rotate and Scale all select and drag items the same way; the last three add a
-// gizmo on the selection. Box draws a new box brush.
-enum class EditorTool { Select, Move, Rotate, Scale, Box };
+// gizmo on the selection. Draw makes a new shape (EditorSettings::shape).
+enum class EditorTool { Select, Move, Rotate, Scale, Draw };
 
 // Camera movement while the right mouse button is held.
 struct FlyInput {
@@ -62,7 +70,12 @@ struct FlyInput {
 // everything inside the rectangle (Ctrl adds). Shift-drag a face of a lone selected brush to move
 // just that face. The Move, Rotate and Scale gizmos act on the whole selection: arrows and squares
 // move along an axis or plane, rings turn about an axis in snapped steps, and the handles on the
-// selection's box drag its sides. Every drag shows live and finishes as one undoable command; Esc cancels it.
+// selection's box drag its sides. Every drag shows live and finishes as one undoable command;
+// Esc cancels it.
+//
+// Draw: drag a rectangle on the surface under the mouse, release, move the mouse up to set the
+// height and click (or press Enter) to place the shape. Until something else is edited, changing
+// the shape settings remakes the shape just placed.
 class LevelViewport {
 public:
     explicit LevelViewport(Camera camera) : m_camera(camera) {}
@@ -93,7 +106,9 @@ public:
     Vec3 forwardOnGrid() const;
 
 private:
-    enum class DragKind { None, Marquee, Move, MoveVertical, Face, Box, Gizmo };
+    // ShapeBase is the rectangle drag; ShapeHeight follows the mouse, with no button held,
+    // until a click places the shape.
+    enum class DragKind { None, Marquee, Move, MoveVertical, Face, ShapeBase, ShapeHeight, Gizmo };
 
     struct Pick {
         LevelItem target;
@@ -119,9 +134,12 @@ private:
         std::optional<SelectionDrag> selection;
         Vec3 grabPoint;
         std::size_t plane = 0;
-        Vec3 boxStart;
+        Vec3 boxStart; // ShapeBase and ShapeHeight: the base rectangle's corners
         Vec3 boxEnd;
-        float screenStartX = 0.0f; // Marquee, Ring
+        float height = 0.0f;
+        std::optional<float> heightStart; // where along the vertical the mouse began
+        Vec3 forward;                     // the shape's facing, fixed when the drag began
+        float screenStartX = 0.0f;        // Marquee, Ring
         float screenStartY = 0.0f;
         bool additive = false;            // Marquee with Ctrl
         std::optional<LevelItem> clicked; // Marquee: the item under the mouse when it began
@@ -131,6 +149,14 @@ private:
         float axisStart = 0.0f;
         double angle = 0.0; // Ring: degrees turned so far, unsnapped
         double lastScreenAngle = 0.0;
+    };
+
+    // The shape placed last, which the shape settings can still remake.
+    struct PlacedShape {
+        Aabb box;
+        ShapeKind kind = ShapeKind::Box;
+        ShapeSettings settings;
+        std::uint64_t stateId = 0; // the history state right after placing it
     };
 
     struct Ray {
@@ -163,6 +189,11 @@ private:
     void continueGizmoDrag(EditorDocument& document, const EditorSettings& settings,
                            const Ray& ray);
     void endDrag(EditorDocument& document, const EditorSettings& settings, const ViewRect& rect);
+    Aabb shapeBox() const;
+    ShapeSettings shapeSettings(const EditorSettings& settings, Vec3 awayForward) const;
+    void placeShape(EditorDocument& document, const EditorSettings& settings);
+    // Remakes the shape placed last when the settings changed since.
+    void adjustPlacedShape(EditorDocument& document, const EditorSettings& settings);
     void finishMarquee(const Drag& drag, EditorDocument& document, const EditorSettings& settings,
                        const ViewRect& rect) const;
 
@@ -171,6 +202,8 @@ private:
     Drag m_drag;
     std::optional<Pick> m_hover;
     std::optional<GizmoHandle> m_hoverHandle;
+    float m_shapeHeight = 1.0f; // new shapes start as tall as the last one
+    std::optional<PlacedShape> m_placedShape;
 };
 
 } // namespace ct

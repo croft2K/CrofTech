@@ -10,6 +10,7 @@ add_executable(ct_unit_tests
     unit/editor/BrushEditingTests.cpp
     unit/editor/EditorDocumentTests.cpp
     unit/editor/SelectionTests.cpp
+    unit/editor/ShapesTests.cpp
     unit/editor/AffineTransformTests.cpp
     unit/level/BrushGeometryTests.cpp
     unit/level/LevelFileTests.cpp

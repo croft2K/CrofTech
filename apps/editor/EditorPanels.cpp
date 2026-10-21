@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <string>
@@ -42,7 +43,8 @@ constexpr std::array<ToolInfo, 5> kTools{{
     {EditorTool::Move, "Move", "W", "Move: drag an arrow, or a square to move in its plane"},
     {EditorTool::Rotate, "Rotate", "E", "Rotate: drag a ring"},
     {EditorTool::Scale, "Scale", "R", "Scale: drag a handle on the selection's box"},
-    {EditorTool::Box, "Box", "B", "Box: drag on a surface to draw a box brush"},
+    {EditorTool::Draw, "Shape", "B",
+     "Shape: drag a rectangle, release, move up for the height, click to place"},
 }};
 
 const ToolInfo& toolInfo(EditorTool tool) {
@@ -126,9 +128,14 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Create")) {
-        if (ImGui::MenuItem("Box brush", "B", viewport.tool() == EditorTool::Box)) {
-            viewport.setTool(EditorTool::Box);
+        for (const ShapeKind kind : kShapeKinds) {
+            const bool drawing = viewport.tool() == EditorTool::Draw && settings.shape == kind;
+            if (ImGui::MenuItem(std::string(shapeName(kind)).c_str(), nullptr, drawing)) {
+                settings.shape = kind;
+                viewport.setTool(EditorTool::Draw);
+            }
         }
+        ImGui::Separator();
         requests.addPlayerSpawn = ImGui::MenuItem("Player spawn");
         ImGui::EndMenu();
     }
@@ -166,7 +173,8 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
     return requests;
 }
 
-void EditorPanels::drawToolbar(LevelViewport& viewport, const ViewRect& view) {
+void EditorPanels::drawToolbar(LevelViewport& viewport, EditorSettings& settings,
+                               const ViewRect& view) {
     if (view.width <= 0.0f || view.height <= 0.0f) {
         return;
     }
@@ -177,29 +185,98 @@ void EditorPanels::drawToolbar(LevelViewport& viewport, const ViewRect& view) {
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking;
-    if (ImGui::Begin("Tools", nullptr, kFlags)) {
-        for (const ToolInfo& info : kTools) {
-            // Box makes something new, so it stands a little apart from the selection tools.
-            if (info.tool == EditorTool::Box) {
-                ImGui::SameLine(0.0f, ImGui::GetFontSize());
-            } else if (info.tool != EditorTool::Select) {
-                ImGui::SameLine();
-            }
-            const bool active = viewport.tool() == info.tool;
-            if (active) {
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                                      ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            }
-            if (ImGui::Button(std::format("{} ({})", info.name, info.shortcut).c_str())) {
-                viewport.setTool(info.tool);
-            }
-            if (active) {
-                ImGui::PopStyleColor();
-            }
-            ImGui::SetItemTooltip("%s", info.hint);
+    if (!ImGui::Begin("Tools", nullptr, kFlags)) {
+        ImGui::End();
+        return;
+    }
+    const auto toolButton = [](const std::string& label, bool active, const char* hint) {
+        if (active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        }
+        const bool clicked = ImGui::Button(label.c_str());
+        if (active) {
+            ImGui::PopStyleColor();
+        }
+        ImGui::SetItemTooltip("%s", hint);
+        return clicked;
+    };
+    for (const ToolInfo& info : kTools) {
+        if (info.tool == EditorTool::Draw) {
+            continue; // the shape buttons below
+        }
+        if (info.tool != EditorTool::Select) {
+            ImGui::SameLine();
+        }
+        if (toolButton(std::format("{} ({})", info.name, info.shortcut),
+                       viewport.tool() == info.tool, info.hint)) {
+            viewport.setTool(info.tool);
         }
     }
+    // Shapes make something new, so they stand a little apart from the selection tools.
+    const bool drawing = viewport.tool() == EditorTool::Draw;
+    for (const ShapeKind kind : kShapeKinds) {
+        ImGui::SameLine(0.0f, kind == kShapeKinds[0] ? ImGui::GetFontSize() : -1.0f);
+        if (toolButton(std::string(shapeName(kind)), drawing && settings.shape == kind,
+                       toolInfo(EditorTool::Draw).hint)) {
+            settings.shape = kind;
+            viewport.setTool(EditorTool::Draw);
+        }
+    }
+    if (drawing) {
+        drawShapeSettings(settings);
+    }
     ImGui::End();
+}
+
+void EditorPanels::drawShapeSettings(EditorSettings& settings) {
+    ShapeSettings& shape = settings.shapeSettings;
+    const ShapeKind kind = settings.shape;
+    const float width = ImGui::GetFontSize() * 8.0f;
+    bool any = false;
+    const auto next = [&] {
+        if (any) {
+            ImGui::SameLine(0.0f, ImGui::GetFontSize());
+        }
+        any = true;
+        ImGui::SetNextItemWidth(width);
+    };
+    if (kind == ShapeKind::Cylinder || kind == ShapeKind::Cone || kind == ShapeKind::Sphere) {
+        next();
+        const bool sphere = kind == ShapeKind::Sphere;
+        ImGui::SliderInt("Sides", &shape.sides, sphere ? kMinSphereSides : kMinShapeSides,
+                         sphere ? kMaxSphereSides : kMaxShapeSides, "%d",
+                         ImGuiSliderFlags_AlwaysClamp);
+    }
+    if (kind == ShapeKind::Arch) {
+        next();
+        ImGui::SliderInt("Segments", &shape.sides, kMinShapeSides, kMaxShapeSides, "%d",
+                         ImGuiSliderFlags_AlwaysClamp);
+        next();
+        const float grid = settings.grid();
+        if (ImGui::DragFloat("Thickness", &shape.thickness, grid * 0.25f, grid, 64.0f, "%.3g m",
+                             ImGuiSliderFlags_AlwaysClamp)) {
+            shape.thickness = std::max(grid, snapToGrid(shape.thickness, grid));
+        }
+    }
+    if (kind == ShapeKind::Stairs) {
+        next();
+        ImGui::SliderInt("Steps", &shape.steps, 1, kMaxStairSteps, "%d",
+                         ImGuiSliderFlags_AlwaysClamp);
+    }
+    if (kind == ShapeKind::Wedge || kind == ShapeKind::Stairs || kind == ShapeKind::Arch) {
+        next();
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("Away from view").x +
+                                ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f);
+        constexpr const char* kFacings[]{"Away from view", "+X", "+Y", "-X", "-Y"};
+        int facing = static_cast<int>(settings.facing);
+        if (ImGui::Combo(kind == ShapeKind::Arch ? "Opening" : "Rises to", &facing, kFacings,
+                         IM_ARRAYSIZE(kFacings))) {
+            settings.facing = static_cast<ShapeFacing>(facing);
+        }
+    }
+    if (any) {
+        ImGui::TextDisabled("Changing these reshapes the shape you just placed.");
+    }
 }
 
 void EditorPanels::drawHierarchy(EditorDocument& document) {
