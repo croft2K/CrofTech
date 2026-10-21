@@ -19,11 +19,11 @@ inline constexpr ShapeKind kShapeKinds[]{ShapeKind::Box,  ShapeKind::Wedge,   Sh
 
 std::string_view shapeName(ShapeKind kind);
 
-// Limits that keep every part within kMaxBrushPlanes. A sphere has sides * sides / 2 faces.
+// Limits that keep every part within kMaxBrushFaces. A sphere has sides * sides / 2 faces.
 inline constexpr int kMinShapeSides = 3;
-inline constexpr int kMaxShapeSides = 32;
+inline constexpr int kMaxShapeSides = 128;
 inline constexpr int kMinSphereSides = 4;
-inline constexpr int kMaxSphereSides = 10;
+inline constexpr int kMaxSphereSides = 32;
 inline constexpr int kMaxStairSteps = 64;
 
 struct ShapeSettings {
@@ -45,14 +45,5 @@ ShapeSettings clampedSettings(ShapeKind kind, const ShapeSettings& settings);
 // cylinder's flat faces sit on the grid. Empty if the box is too thin for the shape or a part
 // would not be a valid brush.
 std::vector<Brush> makeShape(ShapeKind kind, const Aabb& box, const ShapeSettings& settings);
-
-// A convex solid given by its corners and, for each face, the corners on it (in any order). The
-// planes come out facing away from the centre of the corners.
-struct Polyhedron {
-    std::vector<Vec3> vertices;
-    std::vector<std::vector<int>> faces;
-};
-
-std::optional<Brush> brushFromPolyhedron(const Polyhedron& polyhedron);
 
 } // namespace ct

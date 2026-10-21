@@ -1,9 +1,12 @@
 #include "croftech/level/LevelFile.h"
 
 #include "croftech/core/ConfigFile.h"
+#include "croftech/level/BrushGeometry.h"
 
 #include <algorithm>
 #include <array>
+#include <charconv>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <system_error>
@@ -36,6 +39,21 @@ std::string_view takeWord(std::string_view& text) {
     return word;
 }
 
+// Vertex numbers separated by spaces: 3 to kMaxBrushVertices of them.
+bool parseIndices(std::string_view text, std::vector<std::uint32_t>& indices) {
+    while (!text.empty()) {
+        const std::string_view word = takeWord(text);
+        std::uint32_t value = 0;
+        const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), value);
+        if (error != std::errc{} || end != word.data() + word.size() ||
+            indices.size() >= kMaxBrushVertices) {
+            return false;
+        }
+        indices.push_back(value);
+    }
+    return indices.size() >= 3;
+}
+
 std::string pathText(const std::filesystem::path& path) {
     std::filesystem::path copy = path;
     return copy.make_preferred().string();
@@ -51,7 +69,9 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
     int blockLine = 0;
     int lineNumber = 0;
     bool sawHeader = false;
+    int version = kLevelFileVersion;
     Brush brush;
+    std::vector<DPlane> planes; // version 1
     LevelEntity entity;
     const auto fail = [&error](int line, std::string_view message) -> std::optional<Level> {
         error = std::format("line {}: {}", line, message);
@@ -78,7 +98,9 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 return fail(lineNumber, std::format("not a level file (expected '{} {}')", kHeader,
                                                     kLevelFileVersion));
             }
-            if (rest != std::to_string(kLevelFileVersion)) {
+            if (rest == "1") {
+                version = 1;
+            } else if (rest != std::to_string(kLevelFileVersion)) {
                 return fail(lineNumber, "unsupported level file version");
             }
             sawHeader = true;
@@ -93,7 +115,8 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 }
                 block = Block::Brush;
                 blockLine = lineNumber;
-                brush.planes.clear();
+                brush = {};
+                planes.clear();
             } else if (word == "entity") {
                 if (level.entities.size() >= kMaxLevelEntities) {
                     return fail(lineNumber,
@@ -112,6 +135,14 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
 
         case Block::Brush:
             if (word == "end" && rest.empty()) {
+                if (version == 1) {
+                    // Version 1 stored planes; they become corners on load.
+                    std::optional<Brush> built = brushFromPlanes(planes);
+                    if (!built) {
+                        return fail(blockLine, "planes do not enclose a valid brush");
+                    }
+                    brush = std::move(*built);
+                }
                 std::string problem;
                 if (!checkBrush(brush, problem)) {
                     return fail(blockLine, problem);
@@ -119,17 +150,42 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 level.brushes.push_back(std::move(brush));
                 brush = {};
                 block = Block::None;
-            } else if (word == "plane") {
+            } else if (version == 1 && word == "plane") {
                 std::array<float, 4> values{};
                 if (!parseFloats(rest, values)) {
                     return fail(lineNumber, "a plane is four numbers: normal x y z, distance");
                 }
-                if (brush.planes.size() >= kMaxBrushPlanes) {
-                    return fail(lineNumber, std::format("more than {} planes", kMaxBrushPlanes));
+                if (planes.size() >= kMaxBrushFaces) {
+                    return fail(lineNumber, std::format("more than {} planes", kMaxBrushFaces));
                 }
-                brush.planes.push_back({{values[0], values[1], values[2]}, values[3]});
+                const DPlane plane{{values[0], values[1], values[2]}, values[3]};
+                if (!(length(plane.normal) > 0.0)) {
+                    return fail(lineNumber, "plane normal is zero");
+                }
+                planes.push_back(plane);
+            } else if (version >= 2 && word == "vertex") {
+                std::array<float, 3> values{};
+                if (!parseFloats(rest, values)) {
+                    return fail(lineNumber, "a vertex is three numbers: x y z");
+                }
+                if (brush.vertices.size() >= kMaxBrushVertices) {
+                    return fail(lineNumber,
+                                std::format("more than {} vertices", kMaxBrushVertices));
+                }
+                brush.vertices.push_back({values[0], values[1], values[2]});
+            } else if (version >= 2 && word == "face") {
+                BrushFace face;
+                if (!parseIndices(rest, face.corners)) {
+                    return fail(lineNumber,
+                                std::format("a face is 3 to {} vertex numbers", kMaxBrushVertices));
+                }
+                if (brush.faces.size() >= kMaxBrushFaces) {
+                    return fail(lineNumber, std::format("more than {} faces", kMaxBrushFaces));
+                }
+                brush.faces.push_back(std::move(face));
             } else {
-                return fail(lineNumber, "expected 'plane' or 'end'");
+                return fail(lineNumber, version == 1 ? "expected 'plane' or 'end'"
+                                                     : "expected 'vertex', 'face' or 'end'");
             }
             break;
 
@@ -180,10 +236,15 @@ std::optional<std::string> formatLevel(const Level& level, std::string& error) {
             return std::nullopt;
         }
         text += "\nbrush\n";
-        for (const Plane& plane : brush.planes) {
-            text += std::format("    plane {} {} {} {}\n", formatFloat(plane.normal.x),
-                                formatFloat(plane.normal.y), formatFloat(plane.normal.z),
-                                formatFloat(plane.distance));
+        for (const Vec3& vertex : brush.vertices) {
+            text += std::format("    vertex {}\n", formatVec3(vertex));
+        }
+        for (const BrushFace& face : brush.faces) {
+            text += "    face";
+            for (const std::uint32_t corner : face.corners) {
+                text += std::format(" {}", corner);
+            }
+            text += '\n';
         }
         text += "end\n";
     }

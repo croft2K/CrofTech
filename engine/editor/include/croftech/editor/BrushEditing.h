@@ -16,14 +16,17 @@ inline constexpr std::array<float, 9> kGridSizes{1.0f / 32.0f, 1.0f / 16.0f, 0.1
 float snapToGrid(float value, float grid);
 Vec3 snapToGrid(Vec3 value, float grid);
 
-// Moves every plane by the offset. Exact for axis-aligned planes and grid-sized offsets.
+// Moves every corner by the offset. Exact for grid-sized offsets of corners on the grid.
 Brush translatedBrush(const Brush& brush, Vec3 offset);
 
-// The brush with one plane moved to a new distance along its normal, if the result is still a
-// valid brush (checkBrush); this is how faces are dragged.
-std::optional<Brush> withPlaneDistance(const Brush& brush, std::size_t plane, float distance);
+// The brush with one face pushed along its normal until its plane is distance from the origin (as
+// in facePlane), the other faces keeping their planes: how faces are dragged. Corners off the
+// moved face keep their exact values. Nullopt if the face would vanish or the result is not a
+// valid brush; otherwise movedFace (if given) receives the face's index in the result.
+std::optional<Brush> withFacePushed(const Brush& brush, std::size_t face, float distance,
+                                    std::size_t* movedFace = nullptr);
 
-// The box if the brush is exactly six axis-aligned planes, in any order.
+// The box if the brush is exactly six axis-aligned faces.
 std::optional<Aabb> boxBounds(const Brush& brush);
 
 // True if the normal is one of the six axis directions.
@@ -31,7 +34,7 @@ bool isAxial(Vec3 normal);
 
 struct BrushHit {
     float distance = 0.0f;
-    std::size_t plane = 0; // the face the ray enters through
+    std::size_t face = 0; // the face the ray enters through
 };
 
 // Rays start at origin and run along a unit direction. A ray starting inside the solid misses,

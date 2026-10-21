@@ -29,7 +29,21 @@ constexpr const char* kOpenBowl = "croftech_level 1\n"
                                   "    plane 0 -0.98058068 -0.19611614 1.7650452\n"
                                   "end\n";
 
-std::string boxText(std::string_view lastPlane = "plane 0 0 -1 0") {
+// A unit box in the current format; the bottom face and corner 7's z can be swapped out.
+std::string boxText(std::string_view bottomFace = "face 0 2 3 1", std::string_view topZ = "1") {
+    return std::string("croftech_level 2\n"
+                       "brush\n"
+                       "    vertex 0 0 0\n    vertex 1 0 0\n    vertex 0 1 0\n    vertex 1 1 0\n"
+                       "    vertex 0 0 1\n    vertex 1 0 1\n    vertex 0 1 1\n    vertex 1 1 ") +
+           std::string(topZ) +
+           "\n"
+           "    face 1 3 7 5\n    face 0 4 6 2\n    face 2 6 7 3\n    face 0 1 5 4\n"
+           "    face 4 5 7 6\n    " +
+           std::string(bottomFace) + "\nend\n";
+}
+
+// The same box in version 1, as planes.
+std::string planeBoxText(std::string_view lastPlane = "plane 0 0 -1 0") {
     return std::string("croftech_level 1\n"
                        "brush\n"
                        "    plane 1 0 0 1\n"
@@ -102,7 +116,7 @@ TEST_CASE("comments, blank lines, indentation and CRLF line ends are accepted") 
     CHECK(ct::parseLevel(*text, error) == level);
 }
 
-TEST_CASE("a box brush loads with its planes in file order") {
+TEST_CASE("a box brush loads with its corners and faces in file order") {
     std::string error;
     const auto level = ct::parseLevel(boxText(), error);
     REQUIRE_MESSAGE(level.has_value(), error);
@@ -110,52 +124,93 @@ TEST_CASE("a box brush loads with its planes in file order") {
     CHECK(level->brushes[0] == ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}));
 }
 
+TEST_CASE("version 1 brushes, made of planes, load as corners and save as version 2") {
+    std::string error;
+    const auto level = ct::parseLevel(planeBoxText(), error);
+    REQUIRE_MESSAGE(level.has_value(), error);
+    REQUIRE(level->brushes.size() == 1);
+    const ct::Brush& brush = level->brushes[0];
+    CHECK(brush.vertices.size() == 8);
+    CHECK(brush.faces.size() == 6);
+    ct::Aabb bounds;
+    REQUIRE(ct::computeBrushBounds(brush, bounds));
+    CHECK(bounds.min == ct::Vec3{0.0f, 0.0f, 0.0f});
+    CHECK(bounds.max == ct::Vec3{1.0f, 1.0f, 1.0f});
+    // Faces come in plane order: the first plane was +X.
+    CHECK(ct::facePlane(brush, 0) == ct::Plane{{1.0f, 0.0f, 0.0f}, 1.0f});
+
+    const auto text = ct::formatLevel(*level, error);
+    REQUIRE(text.has_value());
+    CHECK(text->starts_with("croftech_level 2\n"));
+    CHECK(ct::parseLevel(*text, error) == level);
+}
+
 TEST_CASE("malformed level files are rejected with the line of the problem") {
     CHECK(parseError("") == "line 1: not a level file (it is empty)");
     CHECK(parseError("brush\nend\n").starts_with("line 1: not a level file"));
-    CHECK(parseError("croftech_level 2\n") == "line 1: unsupported level file version");
-    CHECK(parseError("croftech_level 1\nwall\n") == "line 2: expected 'brush' or 'entity'");
-    CHECK(parseError("croftech_level 1\nbrush extra\n") == "line 2: expected 'brush' or 'entity'");
-    CHECK(parseError("croftech_level 1\n\nbrush\n    plane 1 0 0 1\n") ==
+    CHECK(parseError("croftech_level 3\n") == "line 1: unsupported level file version");
+    CHECK(parseError("croftech_level 2\nwall\n") == "line 2: expected 'brush' or 'entity'");
+    CHECK(parseError("croftech_level 2\nbrush extra\n") == "line 2: expected 'brush' or 'entity'");
+    CHECK(parseError("croftech_level 2\n\nbrush\n    vertex 1 0 0\n") ==
           "line 3: brush has no 'end'");
-    CHECK(parseError("croftech_level 1\nentity a b\nend\n") == "line 2: invalid entity class name");
-    CHECK(parseError("croftech_level 1\nentity a\n    bad/key 1\nend\n") ==
+    CHECK(parseError("croftech_level 2\nentity a b\nend\n") == "line 2: invalid entity class name");
+    CHECK(parseError("croftech_level 2\nentity a\n    bad/key 1\nend\n") ==
           "line 3: invalid property key");
-    CHECK(parseError("croftech_level 1\nentity a\n    k 1\n    k 2\nend\n") ==
+    CHECK(parseError("croftech_level 2\nentity a\n    k 1\n    k 2\nend\n") ==
           "line 2: property 'k' appears twice");
+    CHECK(parseError("croftech_level 2\nbrush\n    vertex 1 0\nend\n")
+              .starts_with("line 3: a vertex is three numbers"));
+    CHECK(parseError("croftech_level 2\nbrush\n    vertex 1 0 nan\nend\n")
+              .starts_with("line 3: a vertex is three numbers"));
+    CHECK(parseError("croftech_level 2\nbrush\n    face 0 1\nend\n")
+              .starts_with("line 3: a face is 3 to"));
+    CHECK(parseError("croftech_level 2\nbrush\n    face 0 1 -2\nend\n")
+              .starts_with("line 3: a face is 3 to"));
+    CHECK(parseError("croftech_level 2\nbrush\n    face 0 1 x\nend\n")
+              .starts_with("line 3: a face is 3 to"));
+    CHECK(parseError("croftech_level 2\nbrush\n    plane 1 0 0 1\nend\n") ==
+          "line 3: expected 'vertex', 'face' or 'end'");
     CHECK(parseError("croftech_level 1\nbrush\n    plane 1 0 0\nend\n")
               .starts_with("line 3: a plane is four numbers"));
-    CHECK(parseError("croftech_level 1\nbrush\n    plane 1 0 0 nan\nend\n")
-              .starts_with("line 3: a plane is four numbers"));
+    CHECK(parseError("croftech_level 1\nbrush\n    plane 0 0 0 1\nend\n") ==
+          "line 3: plane normal is zero");
     CHECK(parseError("croftech_level 1\nbrush\n    face 1 0 0 1\nend\n") ==
           "line 3: expected 'plane' or 'end'");
 }
 
-TEST_CASE("brushes must be closed solids within the world") {
-    // Missing its bottom plane: open downwards.
-    CHECK(parseError(boxText("plane 0 0 1 1")) == "line 2: brush encloses no volume");
-    CHECK(parseError(boxText("plane 0 0 -2 0")) == "line 2: plane normal is not unit length");
-    CHECK(parseError(boxText("plane 0 0 -1 -5")) == "line 2: brush encloses no volume");
-    CHECK(parseError(kOpenBowl) == "line 2: brush is not a closed solid");
-    CHECK(parseError(boxText("plane 0 0 -1 3000"))
-              .starts_with("line 2: brush reaches outside the world"));
-    CHECK(parseError("croftech_level 1\nbrush\nend\n")
-              .starts_with("line 2: a brush needs 4 to 64 planes"));
+TEST_CASE("brushes must be closed convex solids within the world") {
+    // Missing its bottom face: open downwards.
+    CHECK(parseError(boxText("")) == "line 2: brush is not a closed solid");
+    CHECK(parseError(boxText("face 0 2 3 1 4")) == "line 2: brush is not a closed solid");
+    CHECK(parseError(boxText("face 0 2 3 9")) ==
+          "line 2: face uses corner 9, which does not exist");
+    CHECK(parseError(boxText("face 0 2 3 1", "3000")).starts_with("line 2: brush reaches outside"));
+    CHECK(parseError(boxText("face 0 2 3 1", "0.5")) == "line 2: a face is not flat");
+    CHECK(parseError("croftech_level 2\nbrush\nend\n").starts_with("line 2: a brush needs 4 to"));
 
-    std::string text = "croftech_level 1\nbrush\n";
-    for (int i = 0; i <= 64; ++i) {
-        text += "    plane 0 0 1 1\n";
+    std::string text = "croftech_level 2\nbrush\n";
+    for (int i = 0; i <= 512; ++i) {
+        text += "    face 0 1 2\n";
     }
-    CHECK(parseError(text + "end\n") == "line 67: more than 64 planes");
+    CHECK(parseError(text + "end\n") == "line 515: more than 512 faces");
+
+    // Version 1: the planes must enclose something inside the world.
+    CHECK(parseError(planeBoxText("plane 0 0 1 1")) ==
+          "line 2: planes do not enclose a valid brush");
+    CHECK(parseError(planeBoxText("plane 0 0 -1 -5")) ==
+          "line 2: planes do not enclose a valid brush");
+    CHECK(parseError(planeBoxText("plane 0 0 -1 3000")) ==
+          "line 2: planes do not enclose a valid brush");
+    CHECK(parseError(kOpenBowl) == "line 2: planes do not enclose a valid brush");
 }
 
 TEST_CASE("formatLevel refuses levels that would not load again") {
     ct::Level level;
     level.brushes.push_back(ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}));
-    level.brushes[0].planes.pop_back();
+    level.brushes[0].faces.pop_back();
     std::string error;
     CHECK_FALSE(ct::formatLevel(level, error).has_value());
-    CHECK(error == "brush 0: brush encloses no volume");
+    CHECK(error == "brush 0: brush is not a closed solid");
 
     level.brushes.clear();
     level.entities.push_back({"note", {{"text", "two\nlines"}}});

@@ -26,10 +26,11 @@ CollisionWorld::CollisionWorld(std::span<const Brush> brushes) {
         if (!computeBrushBounds(brush, bounds)) {
             continue;
         }
+        const std::vector<Plane> planes = brushPlanes(brush);
         CollisionBrush collision;
         collision.firstPlane = static_cast<std::uint32_t>(m_planes.size());
         collision.bounds = bounds;
-        m_planes.insert(m_planes.end(), brush.planes.begin(), brush.planes.end());
+        m_planes.insert(m_planes.end(), planes.begin(), planes.end());
 
         // Expanding a sloped brush by the box only moves its planes outwards, which leaves the
         // expanded shape too large past sharp edges. Axis-aligned bevel planes at the brush bounds
@@ -43,7 +44,7 @@ CollisionWorld::CollisionWorld(std::span<const Brush> brushes) {
             {{0.0f, 0.0f, -1.0f}, -bounds.min.z},
         }};
         for (const Plane& bevel : bevels) {
-            if (!hasPlaneWithNormal(brush.planes, bevel.normal)) {
+            if (!hasPlaneWithNormal(planes, bevel.normal)) {
                 m_planes.push_back(bevel);
             }
         }

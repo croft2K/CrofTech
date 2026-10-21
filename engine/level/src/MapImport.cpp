@@ -1,6 +1,8 @@
 #include "croftech/level/MapImport.h"
 
 #include "croftech/core/ConfigFile.h"
+#include "croftech/core/DVec3.h"
+#include "croftech/level/BrushGeometry.h"
 #include "croftech/level/LevelFile.h"
 
 #include <array>
@@ -18,18 +20,6 @@ constexpr std::size_t kMaxRawProperties = 1024;
 // Quake's player box reaches 24 units below its origin, so its spawn origins sit that far above
 // the floor; player_spawn origins are the feet.
 constexpr double kQuakeSpawnHeightUnits = 24.0;
-
-struct DVec3 {
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-};
-
-DVec3 operator-(DVec3 a, DVec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-double dot(DVec3 a, DVec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-DVec3 cross(DVec3 a, DVec3 b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
 
 // A cursor over .map text that counts lines for messages.
 class MapReader {
@@ -280,7 +270,7 @@ bool Importer::readBrush(RawEntity& entity, std::string& error) {
         return true;
     }
 
-    Brush brush;
+    std::vector<DPlane> planes;
     bool degenerate = false;
     std::size_t faceCount = 0;
     while (m_reader.skipSpace() && m_reader.peek() == '(') {
@@ -289,6 +279,7 @@ bool Importer::readBrush(RawEntity& entity, std::string& error) {
             if (!readPoint(point)) {
                 return fail(m_reader.line(), "a face starts with three points: ( x y z )", error);
             }
+            point = point * m_options.metresPerUnit;
         }
         if (m_reader.readWordOnLine().empty()) {
             return fail(m_reader.line(), "face has no texture name", error);
@@ -296,36 +287,32 @@ bool Importer::readBrush(RawEntity& entity, std::string& error) {
         m_reader.skipLine(); // texture alignment
 
         ++faceCount;
-        if (faceCount > kMaxBrushPlanes) {
+        if (faceCount > kMaxBrushFaces) {
             continue;
         }
-        // Face points run clockwise seen from outside the brush.
-        const DVec3 normal = cross(points[2] - points[0], points[1] - points[0]);
-        const double length = std::sqrt(dot(normal, normal));
-        if (!(length > 1e-9)) {
+        // Face points run clockwise seen from outside the brush. The plane is kept unnormalized:
+        // through integer points it is exact.
+        const DPlane plane = planeThroughPoints(points[0], points[2], points[1]);
+        if (!(length(plane.normal) > 1e-12)) {
             degenerate = true;
             continue;
         }
-        const DVec3 unit{normal.x / length, normal.y / length, normal.z / length};
-        brush.planes.push_back(
-            {{static_cast<float>(unit.x), static_cast<float>(unit.y), static_cast<float>(unit.z)},
-             static_cast<float>(dot(unit, points[0]) * m_options.metresPerUnit)});
+        planes.push_back(plane);
     }
     if (!m_reader.consume('}')) {
         return fail(m_reader.line(), "expected '(' to start a face or '}' to end the brush", error);
     }
 
-    if (faceCount > kMaxBrushPlanes) {
-        warn(brushLine, std::format("brush has more than {} faces; skipped", kMaxBrushPlanes));
+    if (faceCount > kMaxBrushFaces) {
+        warn(brushLine, std::format("brush has more than {} faces; skipped", kMaxBrushFaces));
         return true;
     }
-    std::string problem;
     if (degenerate) {
         warn(brushLine, "brush has a face whose points are in a line; skipped");
-    } else if (!checkBrush(brush, problem)) {
-        warn(brushLine, std::format("{}; skipped", problem));
+    } else if (std::optional<Brush> brush = brushFromPlanes(planes)) {
+        entity.brushes.emplace_back(brushLine, std::move(*brush));
     } else {
-        entity.brushes.emplace_back(brushLine, std::move(brush));
+        warn(brushLine, "brush is not a closed solid inside the world; skipped");
     }
     return true;
 }

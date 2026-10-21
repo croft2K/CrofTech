@@ -22,7 +22,7 @@ std::string brushLabel(const Brush& brush, std::size_t index) {
         return std::format("Brush {}  box {:g} x {:g} x {:g} m##{}", index, size.x, size.y, size.z,
                            index);
     }
-    return std::format("Brush {}  {} planes##{}", index, brush.planes.size(), index);
+    return std::format("Brush {}  {} faces##{}", index, brush.faces.size(), index);
 }
 
 std::string commandLabel(const char* verb, std::string_view name, const char* shortcut) {
@@ -265,8 +265,8 @@ void EditorPanels::drawShapeSettings(EditorSettings& settings) {
     }
     if (kind == ShapeKind::Wedge || kind == ShapeKind::Stairs || kind == ShapeKind::Arch) {
         next();
-        ImGui::SetNextItemWidth(ImGui::CalcTextSize("Away from view").x +
-                                ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f);
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("Away from view").x + ImGui::GetFrameHeight() +
+                                ImGui::GetStyle().FramePadding.x * 2.0f);
         constexpr const char* kFacings[]{"Away from view", "+X", "+Y", "-X", "-Y"};
         int facing = static_cast<int>(settings.facing);
         if (ImGui::Combo(kind == ShapeKind::Arch ? "Opening" : "Rises to", &facing, kFacings,
@@ -390,11 +390,10 @@ void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSett
         ImGui::TextDisabled("Size %.3f x %.3f x %.3f m", static_cast<double>(size.x),
                             static_cast<double>(size.y), static_cast<double>(size.z));
     } else {
-        ImGui::TextDisabled("%zu planes (normal, distance):", brush.planes.size());
-        for (const Plane& plane : brush.planes) {
-            ImGui::Text("  %.3f %.3f %.3f   %.3f", static_cast<double>(plane.normal.x),
-                        static_cast<double>(plane.normal.y), static_cast<double>(plane.normal.z),
-                        static_cast<double>(plane.distance));
+        ImGui::TextDisabled("%zu faces, %zu corners:", brush.faces.size(), brush.vertices.size());
+        for (const Vec3& vertex : brush.vertices) {
+            ImGui::Text("  %.4g  %.4g  %.4g", static_cast<double>(vertex.x),
+                        static_cast<double>(vertex.y), static_cast<double>(vertex.z));
         }
     }
     ImGui::Spacing();

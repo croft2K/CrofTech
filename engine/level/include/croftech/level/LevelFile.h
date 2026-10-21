@@ -13,10 +13,12 @@ namespace ct {
 // The level file: the editable source of a level, as line-based text so version control can diff
 // and merge it. Shipped games will cook levels into packed binary files; this stays the source.
 //
-//     croftech_level 1
+//     croftech_level 2
 //     # Lines starting with '#' are comments.
 //     brush
-//         plane <normal x> <normal y> <normal z> <distance>
+//         vertex <x> <y> <z>
+//         ...
+//         face <vertex number> <vertex number> <vertex number> ...
 //         ...
 //     end
 //     entity <class>
@@ -24,10 +26,15 @@ namespace ct {
 //         ...
 //     end
 //
-// Numbers are written in their shortest exact form, so saving and loading never changes a value.
-// Indentation is optional. Loading rejects anything malformed or outside the limits in Level.h.
+// Vertices are numbered from 0 in the order they appear; each face lists its corners
+// counter-clockwise seen from outside. Numbers are written in their shortest exact form, so saving
+// and loading never changes a value. Indentation is optional. Loading rejects anything malformed
+// or outside the limits in Level.h.
+//
+// Version 1 files, whose brushes were "plane <normal x> <normal y> <normal z> <distance>" lines,
+// still load; their planes become corners and saving writes version 2.
 inline constexpr std::string_view kLevelFileExtension = ".level";
-inline constexpr int kLevelFileVersion = 1;
+inline constexpr int kLevelFileVersion = 2;
 inline constexpr std::size_t kMaxLevelFileBytes = 64u << 20;
 
 // error is "line N: problem".

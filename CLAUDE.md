@@ -38,7 +38,11 @@ the box's sides placed exactly on them. Editing logic lives in `engine/editor` a
 only the ImGui panels, the 3D view, gizmos and input.
 
 Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described in
-`level/LevelFile.h`): the editable source, diffable in git. A level name is looked up as
+`level/LevelFile.h`): the editable source, diffable in git. Brushes are stored as corners and
+faces, with planes derived from them (`level/BrushGeometry.h`), because float planes let corners
+drift off the grid by millimetres far from the origin. Brush geometry is built in double precision
+(`brushFromPlanes`, `brushFromPoints`, `clipBrush`) and rounded to float once, so corners on the
+grid stay exact through any number of edits. A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
 content layers; a name with an extension is a path. Shipped games will later cook levels and
 assets into packed binary files; the text file stays the source.

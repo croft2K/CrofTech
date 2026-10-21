@@ -2,6 +2,7 @@
 
 #include "croftech/core/ConfigFile.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <string>
@@ -10,18 +11,6 @@ namespace ct {
 namespace {
 
 constexpr double kFlatDeterminant = 1e-12;
-
-DVec3 operator+(DVec3 a, DVec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-DVec3 operator-(DVec3 a, DVec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-DVec3 operator*(DVec3 a, double s) { return {a.x * s, a.y * s, a.z * s}; }
-double dot(DVec3 a, DVec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-DVec3 cross(DVec3 a, DVec3 b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
-DVec3 toDouble(Vec3 v) { return {v.x, v.y, v.z}; }
-Vec3 toFloat(DVec3 v) {
-    return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
-}
 
 DVec3 linear(const AffineTransform& t, DVec3 v) {
     return t.xAxis * v.x + t.yAxis * v.y + t.zAxis * v.z;
@@ -114,37 +103,19 @@ AffineTransform AffineTransform::then(const AffineTransform& next) const {
     return t;
 }
 
-std::optional<Plane> transformedPlane(const Plane& plane, const AffineTransform& transform) {
+std::optional<Brush> transformedBrush(const Brush& brush, const AffineTransform& transform) {
     const double det = transform.determinant();
     if (!(std::fabs(det) > kFlatDeterminant)) {
         return std::nullopt;
     }
-    // Normals transform by the inverse transpose, whose columns are these cross products / det.
-    // It keeps dot(normal, point) <= distance meaning "inside" even through a mirror.
-    const DVec3 a = transform.xAxis;
-    const DVec3 b = transform.yAxis;
-    const DVec3 c = transform.zAxis;
-    const DVec3 n = toDouble(plane.normal);
-    const DVec3 m = (cross(b, c) * n.x + cross(c, a) * n.y + cross(a, b) * n.z) * (1.0 / det);
-    const double length = std::sqrt(dot(m, m));
-    if (!(length > 0.0)) {
-        return std::nullopt;
+    Brush result = brush;
+    for (Vec3& vertex : result.vertices) {
+        vertex = transform.apply(vertex) + Vec3{}; // adding zero turns -0 into 0
     }
-    const DVec3 normal = m * (1.0 / length);
-    // The point of the plane nearest the origin, moved by the transform, is on the new plane.
-    const DVec3 onPlane = linear(transform, n * plane.distance) + transform.translation;
-    return Plane{toFloat(normal), static_cast<float>(dot(normal, onPlane))};
-}
-
-std::optional<Brush> transformedBrush(const Brush& brush, const AffineTransform& transform) {
-    Brush result;
-    result.planes.reserve(brush.planes.size());
-    for (const Plane& plane : brush.planes) {
-        const std::optional<Plane> moved = transformedPlane(plane, transform);
-        if (!moved) {
-            return std::nullopt;
+    if (det < 0.0) {
+        for (BrushFace& face : result.faces) {
+            std::reverse(face.corners.begin(), face.corners.end());
         }
-        result.planes.push_back(*moved);
     }
     std::string problem;
     if (!checkBrush(result, problem)) {

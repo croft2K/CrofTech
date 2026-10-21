@@ -4,6 +4,7 @@ add_library(ct_core STATIC
     include/croftech/core/ByteStream.h
     include/croftech/core/Camera.h
     include/croftech/core/ConfigFile.h
+    include/croftech/core/DVec3.h
     include/croftech/core/Console.h
     include/croftech/core/Content.h
     include/croftech/core/CVar.h

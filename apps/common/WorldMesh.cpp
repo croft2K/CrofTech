@@ -21,7 +21,7 @@ WorldMesh buildWorldMesh(const Level& level) {
     WorldMesh mesh;
     for (std::size_t brushIndex = 0; brushIndex < level.brushes.size(); ++brushIndex) {
         const Vec3 color = kPalette[brushIndex % kPalette.size()];
-        for (const BrushFace& face : buildBrushFaces(level.brushes[brushIndex])) {
+        for (const BrushPolygon& face : brushPolygons(level.brushes[brushIndex])) {
             const auto first = static_cast<std::uint32_t>(mesh.vertices.size());
             for (const Vec3& position : face.vertices) {
                 mesh.vertices.push_back({position, face.plane.normal, color});

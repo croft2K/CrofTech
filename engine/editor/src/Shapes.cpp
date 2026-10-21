@@ -1,5 +1,7 @@
 #include "croftech/editor/Shapes.h"
 
+#include "croftech/level/BrushGeometry.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -50,15 +52,15 @@ void snapToBox(Vec3& p, const Aabb& box) {
     }
 }
 
-// Stretches the polyhedron's corners from their own bounds onto the box.
-void fitToBox(Polyhedron& shape, const Aabb& box) {
-    Vec3 low = shape.vertices.front();
+// Stretches the corners from their own bounds onto the box.
+void fitToBox(std::vector<Vec3>& corners, const Aabb& box) {
+    Vec3 low = corners.front();
     Vec3 high = low;
-    for (const Vec3& v : shape.vertices) {
+    for (const Vec3& v : corners) {
         low = min(low, v);
         high = max(high, v);
     }
-    for (Vec3& v : shape.vertices) {
+    for (Vec3& v : corners) {
         for (std::size_t axis = 0; axis < 3; ++axis) {
             const float span = component(high, axis) - component(low, axis);
             const float t = span > 0.0f ? (component(v, axis) - component(low, axis)) / span : 0.0f;
@@ -80,69 +82,39 @@ void addRing(std::vector<Vec3>& vertices, int sides, double radius, double z) {
     }
 }
 
-int next(int i, int sides) { return (i + 1) % sides; }
-
-Polyhedron wedge(Facing facing) {
-    Polyhedron shape;
+std::vector<Vec3> wedge(Facing facing) {
+    std::vector<Vec3> corners;
     // Rises from the low edge at x = 0 to the top of the back wall at x = 1.
     for (const Vec3& p : {Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{1.0f, 1.0f, 0.0f},
                           Vec3{0.0f, 1.0f, 0.0f}, Vec3{1.0f, 0.0f, 1.0f}, Vec3{1.0f, 1.0f, 1.0f}}) {
-        shape.vertices.push_back(faceUnitPoint(p, facing));
+        corners.push_back(faceUnitPoint(p, facing));
     }
-    shape.faces = {{0, 1, 2, 3}, {1, 2, 5, 4}, {0, 3, 5, 4}, {0, 1, 4}, {3, 2, 5}};
-    return shape;
+    return corners;
 }
 
-Polyhedron cylinder(int sides) {
-    Polyhedron shape;
-    addRing(shape.vertices, sides, 1.0, 0.0);
-    addRing(shape.vertices, sides, 1.0, 1.0);
-    std::vector<int> bottom;
-    std::vector<int> top;
-    for (int i = 0; i < sides; ++i) {
-        bottom.push_back(i);
-        top.push_back(sides + i);
-        shape.faces.push_back({i, next(i, sides), sides + next(i, sides), sides + i});
-    }
-    shape.faces.push_back(bottom);
-    shape.faces.push_back(top);
-    return shape;
+std::vector<Vec3> cylinder(int sides) {
+    std::vector<Vec3> corners;
+    addRing(corners, sides, 1.0, 0.0);
+    addRing(corners, sides, 1.0, 1.0);
+    return corners;
 }
 
-Polyhedron cone(int sides) {
-    Polyhedron shape;
-    addRing(shape.vertices, sides, 1.0, 0.0);
-    shape.vertices.push_back({0.0f, 0.0f, 1.0f});
-    std::vector<int> base;
-    for (int i = 0; i < sides; ++i) {
-        base.push_back(i);
-        shape.faces.push_back({i, next(i, sides), sides});
-    }
-    shape.faces.push_back(base);
-    return shape;
+std::vector<Vec3> cone(int sides) {
+    std::vector<Vec3> corners;
+    addRing(corners, sides, 1.0, 0.0);
+    corners.push_back({0.0f, 0.0f, 1.0f});
+    return corners;
 }
 
 // Rings of corners between the poles; every face is a triangle at a pole or a flat trapezoid.
-Polyhedron sphere(int sides) {
+std::vector<Vec3> sphere(int sides) {
     const int bands = std::max(2, sides / 2);
-    Polyhedron shape;
-    shape.vertices.push_back({0.0f, 0.0f, -1.0f});
+    std::vector<Vec3> corners{{0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 1.0f}};
     for (int band = 1; band < bands; ++band) {
         const double latitude = std::numbers::pi * (static_cast<double>(band) / bands - 0.5);
-        addRing(shape.vertices, sides, std::cos(latitude), std::sin(latitude));
+        addRing(corners, sides, std::cos(latitude), std::sin(latitude));
     }
-    const int north = static_cast<int>(shape.vertices.size());
-    shape.vertices.push_back({0.0f, 0.0f, 1.0f});
-    const auto ring = [sides](int band, int i) { return 1 + (band - 1) * sides + i; };
-    for (int i = 0; i < sides; ++i) {
-        shape.faces.push_back({0, ring(1, i), ring(1, next(i, sides))});
-        for (int band = 1; band + 1 < bands; ++band) {
-            shape.faces.push_back({ring(band, i), ring(band, next(i, sides)),
-                                   ring(band + 1, next(i, sides)), ring(band + 1, i)});
-        }
-        shape.faces.push_back({north, ring(bands - 1, i), ring(bands - 1, next(i, sides))});
-    }
-    return shape;
+    return corners;
 }
 
 // A point given by how far along the facing axis, across it and up, in world units.
@@ -210,17 +182,15 @@ std::vector<Brush> arch(const Aabb& box, const ShapeSettings& settings) {
         const std::pair<float, float> corners[4]{
             curve(outerWidth, outerHeight, i), curve(outerWidth, outerHeight, i + 1),
             curve(innerWidth, innerHeight, i + 1), curve(innerWidth, innerHeight, i)};
-        Polyhedron segment;
+        std::vector<Vec3> segment;
         for (const float along : {front, back}) {
             for (const auto& [across, z] : corners) {
                 Vec3 p = worldPoint(facing, along, across, z);
                 snapToBox(p, box);
-                segment.vertices.push_back(p);
+                segment.push_back(p);
             }
         }
-        segment.faces = {{0, 1, 2, 3}, {4, 5, 6, 7}, {0, 1, 5, 4},
-                         {3, 2, 6, 7}, {0, 3, 7, 4}, {1, 2, 6, 5}};
-        const std::optional<Brush> brush = brushFromPolyhedron(segment);
+        const std::optional<Brush> brush = brushFromPoints(segment);
         if (!brush) {
             return {};
         }
@@ -273,7 +243,7 @@ std::vector<Brush> makeShape(ShapeKind kind, const Aabb& box, const ShapeSetting
     }
     const ShapeSettings clamped = clampedSettings(kind, settings);
     std::vector<Brush> brushes;
-    Polyhedron shape;
+    std::vector<Vec3> shape;
     switch (kind) {
     case ShapeKind::Box:
         brushes.push_back(makeBoxBrush(box.min, box.max));
@@ -300,9 +270,9 @@ std::vector<Brush> makeShape(ShapeKind kind, const Aabb& box, const ShapeSetting
         brushes = stairs(box, clamped);
         break;
     }
-    if (!shape.vertices.empty()) {
+    if (!shape.empty()) {
         fitToBox(shape, box);
-        if (const std::optional<Brush> brush = brushFromPolyhedron(shape)) {
+        if (const std::optional<Brush> brush = brushFromPoints(shape)) {
             brushes.push_back(*brush);
         }
     }
@@ -313,69 +283,6 @@ std::vector<Brush> makeShape(ShapeKind kind, const Aabb& box, const ShapeSetting
         }
     }
     return brushes;
-}
-
-std::optional<Brush> brushFromPolyhedron(const Polyhedron& polyhedron) {
-    if (polyhedron.vertices.empty()) {
-        return std::nullopt;
-    }
-    Vec3 centre;
-    for (const Vec3& v : polyhedron.vertices) {
-        centre += v;
-    }
-    centre = centre / static_cast<float>(polyhedron.vertices.size());
-
-    const auto vertex = [&](int index) -> const Vec3* {
-        return index >= 0 && static_cast<std::size_t>(index) < polyhedron.vertices.size()
-                   ? &polyhedron.vertices[static_cast<std::size_t>(index)]
-                   : nullptr;
-    };
-    Brush brush;
-    for (const std::vector<int>& face : polyhedron.faces) {
-        if (face.size() < 3) {
-            return std::nullopt;
-        }
-        // The widest triangle on the face gives the most accurate normal; exact for faces whose
-        // corners share a coordinate.
-        const Vec3* origin = vertex(face[0]);
-        if (origin == nullptr) {
-            return std::nullopt;
-        }
-        Vec3 best;
-        float bestArea = 0.0f;
-        for (std::size_t j = 1; j < face.size(); ++j) {
-            for (std::size_t k = j + 1; k < face.size(); ++k) {
-                const Vec3* a = vertex(face[j]);
-                const Vec3* b = vertex(face[k]);
-                if (a == nullptr || b == nullptr) {
-                    return std::nullopt;
-                }
-                const Vec3 n = cross(*a - *origin, *b - *origin);
-                const float area = dot(n, n);
-                if (area > bestArea) {
-                    best = n;
-                    bestArea = area;
-                }
-            }
-        }
-        if (!(bestArea > 0.0f)) {
-            return std::nullopt;
-        }
-        Plane plane{normalize(best), 0.0f};
-        plane.distance = dot(plane.normal, *origin);
-        if (dot(plane.normal, centre) > plane.distance) {
-            plane = {-plane.normal, -plane.distance};
-        }
-        // Adding zero turns -0 into 0 and changes nothing else; -0 reads badly in the inspector.
-        plane.normal += Vec3{};
-        plane.distance += 0.0f;
-        brush.planes.push_back(plane);
-    }
-    std::string problem;
-    if (!checkBrush(brush, problem)) {
-        return std::nullopt;
-    }
-    return brush;
 }
 
 } // namespace ct

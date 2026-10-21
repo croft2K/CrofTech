@@ -218,8 +218,8 @@ public:
     }
 
     void brush(const Brush& brush, ImU32 color, float thickness = 1.0f) const {
-        for (const BrushFace& face : buildBrushFaces(brush)) {
-            polygon(face.vertices, color, thickness);
+        for (std::size_t i = 0; i < brush.faces.size(); ++i) {
+            polygon(faceVertices(brush, i), color, thickness);
         }
     }
 
@@ -227,15 +227,6 @@ private:
     Projector m_projector;
     ImDrawList* m_drawList;
 };
-
-std::optional<BrushFace> faceOfPlane(const Brush& brush, std::size_t plane) {
-    for (BrushFace& face : buildBrushFaces(brush)) {
-        if (face.plane == brush.planes[plane]) {
-            return std::move(face);
-        }
-    }
-    return std::nullopt;
-}
 
 bool isGizmoTool(EditorTool tool) {
     return tool == EditorTool::Move || tool == EditorTool::Rotate || tool == EditorTool::Scale;
@@ -289,7 +280,7 @@ std::optional<LevelViewport::Pick> LevelViewport::pick(const EditorDocument& doc
     for (std::size_t i = 0; i < level.brushes.size(); ++i) {
         const auto hit = rayCastBrush(level.brushes[i], ray.origin, ray.direction);
         if (hit && (!best || hit->distance < best->distance)) {
-            best = Pick{LevelItem::brush(i), hit->distance, hit->plane};
+            best = Pick{LevelItem::brush(i), hit->distance, hit->face};
         }
     }
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
@@ -491,7 +482,8 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
             document.singleSelected() == hit.target) {
             m_drag.kind = DragKind::Face;
             m_drag.brushBefore = document.level().brushes[hit.target.index];
-            m_drag.plane = hit.plane;
+            m_drag.face = hit.face;
+            m_drag.movedFace = hit.face;
             return;
         }
         m_drag.kind = io.KeyAlt ? DragKind::MoveVertical : DragKind::Move;
@@ -590,7 +582,7 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
         return;
     }
     case DragKind::Face: {
-        const Plane before = m_drag.brushBefore.planes[m_drag.plane];
+        const Plane before = facePlane(m_drag.brushBefore, m_drag.face);
         const auto s = closestAlongAxis(m_drag.grabPoint, before.normal, ray.origin, ray.direction);
         if (!s) {
             return;
@@ -598,7 +590,8 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
         // An axis-aligned face lands on the grid; a sloped one moves in grid steps.
         const float distance = isAxial(before.normal) ? snapToGrid(before.distance + *s, grid)
                                                       : before.distance + snapToGrid(*s, grid);
-        if (const auto resized = withPlaneDistance(m_drag.brushBefore, m_drag.plane, distance)) {
+        if (const auto resized =
+                withFacePushed(m_drag.brushBefore, m_drag.face, distance, &m_drag.movedFace)) {
             document.previewBrush(m_drag.target.index, *resized);
         }
         return;
@@ -894,9 +887,10 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
         m_drag.kind == DragKind::Face || (!isDragging() && ImGui::GetIO().KeyShift && m_hover &&
                                           single && m_hover->target == *single);
     if (showFace && single && single->kind == LevelItem::Kind::Brush) {
-        const std::size_t plane = m_drag.kind == DragKind::Face ? m_drag.plane : m_hover->plane;
-        if (const auto face = faceOfPlane(level.brushes[single->index], plane)) {
-            painter.polygon(face->vertices, kFaceColor, 3.0f);
+        const Brush& brush = level.brushes[single->index];
+        const std::size_t face = m_drag.kind == DragKind::Face ? m_drag.movedFace : m_hover->face;
+        if (face < brush.faces.size()) {
+            painter.polygon(faceVertices(brush, face), kFaceColor, 3.0f);
         }
     }
 

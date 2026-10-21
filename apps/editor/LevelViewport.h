@@ -113,7 +113,7 @@ private:
     struct Pick {
         LevelItem target;
         float distance = 0.0f;
-        std::size_t plane = 0; // brushes only
+        std::size_t face = 0; // brushes only
     };
 
     // A part of the gizmo: an arrow or plane square (Move), a ring (Rotate) or a side handle
@@ -133,8 +133,9 @@ private:
         Brush brushBefore; // Face
         std::optional<SelectionDrag> selection;
         Vec3 grabPoint;
-        std::size_t plane = 0;
-        Vec3 boxStart; // ShapeBase and ShapeHeight: the base rectangle's corners
+        std::size_t face = 0;      // Face: in brushBefore
+        std::size_t movedFace = 0; // Face: the same face in the previewed brush
+        Vec3 boxStart;             // ShapeBase and ShapeHeight: the base rectangle's corners
         Vec3 boxEnd;
         float height = 0.0f;
         std::optional<float> heightStart; // where along the vertical the mouse began

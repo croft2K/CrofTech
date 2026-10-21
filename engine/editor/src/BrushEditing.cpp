@@ -1,9 +1,13 @@
 #include "croftech/editor/BrushEditing.h"
 
+#include "croftech/level/BrushGeometry.h"
+
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace ct {
 namespace {
@@ -20,23 +24,37 @@ Vec3 snapToGrid(Vec3 value, float grid) {
 
 Brush translatedBrush(const Brush& brush, Vec3 offset) {
     Brush moved = brush;
-    for (Plane& plane : moved.planes) {
-        plane.distance += dot(plane.normal, offset);
+    for (Vec3& vertex : moved.vertices) {
+        vertex += offset;
     }
     return moved;
 }
 
-std::optional<Brush> withPlaneDistance(const Brush& brush, std::size_t plane, float distance) {
-    if (plane >= brush.planes.size()) {
+std::optional<Brush> withFacePushed(const Brush& brush, std::size_t face, float distance,
+                                    std::size_t* movedFace) {
+    if (face >= brush.faces.size()) {
         return std::nullopt;
     }
-    Brush changed = brush;
-    changed.planes[plane].distance = distance;
-    std::string problem;
-    if (!checkBrush(changed, problem)) {
+    std::vector<DPlane> planes;
+    for (std::size_t i = 0; i < brush.faces.size(); ++i) {
+        planes.push_back(exactFacePlane(brush, i));
+    }
+    // A unit normal, so the distance is in metres; an axis-aligned normal stays exact.
+    const DPlane& before = planes[face];
+    planes[face] = {before.normal * (1.0 / length(before.normal)), distance};
+    std::vector<std::size_t> planeOfFace;
+    std::optional<Brush> result = brushFromPlanes(planes, brush.vertices, &planeOfFace);
+    if (!result) {
         return std::nullopt;
     }
-    return changed;
+    const auto found = std::find(planeOfFace.begin(), planeOfFace.end(), face);
+    if (found == planeOfFace.end()) {
+        return std::nullopt;
+    }
+    if (movedFace != nullptr) {
+        *movedFace = static_cast<std::size_t>(found - planeOfFace.begin());
+    }
+    return result;
 }
 
 bool isAxial(Vec3 normal) {
@@ -48,26 +66,26 @@ bool isAxial(Vec3 normal) {
 }
 
 std::optional<Aabb> boxBounds(const Brush& brush) {
-    if (brush.planes.size() != 6) {
+    if (brush.faces.size() != 6 || brush.vertices.size() != 8) {
         return std::nullopt;
     }
-    // One plane per axis direction: +X, -X, +Y, -Y, +Z, -Z.
-    std::array<const Plane*, 6> sides{};
-    for (const Plane& plane : brush.planes) {
-        if (!isAxial(plane.normal)) {
+    // One face per axis direction: +X, -X, +Y, -Y, +Z, -Z.
+    std::array<bool, 6> sides{};
+    for (std::size_t i = 0; i < brush.faces.size(); ++i) {
+        const Vec3 n = facePlane(brush, i).normal;
+        if (!isAxial(n)) {
             return std::nullopt;
         }
-        const Vec3 n = plane.normal;
         const std::size_t axis = n.x != 0.0f ? 0 : (n.y != 0.0f ? 1 : 2);
         const bool positive = n.x + n.y + n.z > 0.0f;
         const std::size_t slot = axis * 2 + (positive ? 0 : 1);
-        if (sides[slot] != nullptr) {
+        if (sides[slot]) {
             return std::nullopt;
         }
-        sides[slot] = &plane;
+        sides[slot] = true;
     }
-    const Aabb box{{-sides[1]->distance, -sides[3]->distance, -sides[5]->distance},
-                   {sides[0]->distance, sides[2]->distance, sides[4]->distance}};
+    Aabb box;
+    computeBrushBounds(brush, box);
     if (!(box.min.x < box.max.x && box.min.y < box.max.y && box.min.z < box.max.z)) {
         return std::nullopt;
     }
@@ -78,8 +96,9 @@ std::optional<BrushHit> rayCastBrush(const Brush& brush, Vec3 origin, Vec3 direc
     float enter = -std::numeric_limits<float>::infinity();
     float exit = std::numeric_limits<float>::infinity();
     std::size_t enterPlane = 0;
-    for (std::size_t i = 0; i < brush.planes.size(); ++i) {
-        const Plane& plane = brush.planes[i];
+    const std::vector<Plane> planes = brushPlanes(brush);
+    for (std::size_t i = 0; i < planes.size(); ++i) {
+        const Plane& plane = planes[i];
         const float denominator = dot(plane.normal, direction);
         const float outside = dot(plane.normal, origin) - plane.distance;
         if (std::fabs(denominator) < kParallelEpsilon) {

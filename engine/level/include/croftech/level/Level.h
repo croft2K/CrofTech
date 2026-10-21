@@ -21,9 +21,19 @@ struct Plane {
     friend bool operator==(const Plane&, const Plane&) = default;
 };
 
-// A convex solid: the intersection of the back half-spaces of its planes.
+// One side of a brush: indices into Brush::vertices, counter-clockwise seen from outside.
+struct BrushFace {
+    std::vector<std::uint32_t> corners;
+
+    friend bool operator==(const BrushFace&, const BrushFace&) = default;
+};
+
+// A convex solid, stored by its corners and faces. Planes are derived from the corners
+// (BrushGeometry.h) rather than stored: corners placed on the grid then stay exactly on it through
+// any number of edits, where float planes would move them by millimetres far from the origin.
 struct Brush {
-    std::vector<Plane> planes;
+    std::vector<Vec3> vertices;
+    std::vector<BrushFace> faces;
 
     friend bool operator==(const Brush&, const Brush&) = default;
 };
@@ -60,7 +70,9 @@ struct Level {
 // times that precision everywhere in the level; at 2 km from the origin a float step is 0.24 mm.
 inline constexpr float kMaxWorldCoordinate = 2048.0f;
 inline constexpr std::size_t kMaxLevelBrushes = 65536;
-inline constexpr std::size_t kMaxBrushPlanes = 64; // building faces costs planes^4
+// Checking a brush costs faces x corners. A convex solid with F faces has at most 2F - 4 corners.
+inline constexpr std::size_t kMaxBrushFaces = 512;
+inline constexpr std::size_t kMaxBrushVertices = 2 * kMaxBrushFaces - 4;
 inline constexpr std::size_t kMaxLevelEntities = 65536;
 inline constexpr std::size_t kMaxEntityProperties = 256;
 inline constexpr std::size_t kMaxNameLength = 64; // class names and property keys
@@ -68,8 +80,15 @@ inline constexpr std::size_t kMaxPropertyValueLength = 1024;
 
 // Each check returns false with a description of the first problem it finds.
 
-// Planes are finite with unit normals, and they enclose a closed solid inside the world limits.
+// Corners are finite and inside the world; faces are flat, convex and wound outwards, and together
+// close a convex solid with some volume (each edge shared by exactly two faces, every corner
+// behind every face). Allows kBrushTolerance for float rounding.
 bool checkBrush(const Brush& brush, std::string& problem);
+
+// How far a corner may stray from the plane of a face it is on, or in front of any face, for
+// rounding to float far from the origin. Collision keeps boxes kSurfaceEpsilon (about 1 mm) off
+// surfaces, so this stays below it.
+inline constexpr float kBrushTolerance = 5e-4f;
 
 // Class names and keys are 1 to kMaxNameLength of [A-Za-z0-9_.-]; "end" is reserved by the level
 // file. Values are single-line text with no control characters or surrounding spaces. No

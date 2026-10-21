@@ -153,7 +153,7 @@ TEST_CASE("bad brushes are skipped with a warning") {
     CHECK(result.level->brushes.empty());
     REQUIRE(result.warnings.size() == 2);
     CHECK(result.warnings[0] == "line 7: brush has a face whose points are in a line; skipped");
-    CHECK(result.warnings[1] == "line 13: brush encloses no volume; skipped");
+    CHECK(result.warnings[1] == "line 13: brush is not a closed solid inside the world; skipped");
 }
 
 TEST_CASE("syntax errors fail the import with the line of the problem") {

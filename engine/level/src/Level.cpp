@@ -2,20 +2,21 @@
 
 #include "croftech/core/Angle.h"
 #include "croftech/core/ConfigFile.h"
+#include "croftech/core/DVec3.h"
 #include "croftech/level/BrushGeometry.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <utility>
 
 namespace ct {
 namespace {
 
-constexpr float kUnitNormalTolerance = 1e-4f;
-// A closed solid's face areas, each times its outward normal, sum to zero.
-constexpr float kClosureTolerance = 1e-3f;
+// A cube of 1 mm sides; the smallest brush on the editor's grid is 1/32 m across.
+constexpr double kMinBrushVolume = 1e-9;
 constexpr double kMaxYawDegrees = 1e6;
 
 bool isFinite(Vec3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
@@ -23,16 +24,6 @@ bool isFinite(Vec3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::
 bool insideWorld(Vec3 v) {
     return std::fabs(v.x) <= kMaxWorldCoordinate && std::fabs(v.y) <= kMaxWorldCoordinate &&
            std::fabs(v.z) <= kMaxWorldCoordinate;
-}
-
-// Area times unit normal, measured from the first vertex to keep precision far from the origin.
-Vec3 vectorArea(const BrushFace& face) {
-    Vec3 sum;
-    const Vec3 origin = face.vertices.front();
-    for (std::size_t i = 1; i + 1 < face.vertices.size(); ++i) {
-        sum += cross(face.vertices[i] - origin, face.vertices[i + 1] - origin);
-    }
-    return sum * 0.5f;
 }
 
 } // namespace
@@ -65,43 +56,109 @@ void setProperty(LevelEntity& entity, std::string_view key, std::string value) {
 }
 
 bool checkBrush(const Brush& brush, std::string& problem) {
-    if (brush.planes.size() < 4 || brush.planes.size() > kMaxBrushPlanes) {
-        problem = std::format("a brush needs 4 to {} planes, not {}", kMaxBrushPlanes,
-                              brush.planes.size());
+    const std::size_t vertexCount = brush.vertices.size();
+    const std::size_t faceCount = brush.faces.size();
+    if (vertexCount < 4 || vertexCount > kMaxBrushVertices) {
+        problem =
+            std::format("a brush needs 4 to {} corners, not {}", kMaxBrushVertices, vertexCount);
         return false;
     }
-    for (const Plane& plane : brush.planes) {
-        if (!isFinite(plane.normal) || !std::isfinite(plane.distance)) {
-            problem = "plane is not finite";
+    if (faceCount < 4 || faceCount > kMaxBrushFaces) {
+        problem = std::format("a brush needs 4 to {} faces, not {}", kMaxBrushFaces, faceCount);
+        return false;
+    }
+    for (const Vec3& v : brush.vertices) {
+        if (!isFinite(v)) {
+            problem = "corner is not finite";
             return false;
         }
-        if (std::fabs(dot(plane.normal, plane.normal) - 1.0f) > kUnitNormalTolerance) {
-            problem = "plane normal is not unit length";
+        if (!insideWorld(v)) {
+            problem = std::format("brush reaches outside the world (+-{} m)", kMaxWorldCoordinate);
             return false;
         }
     }
 
-    const std::vector<BrushFace> faces = buildBrushFaces(brush);
-    if (faces.size() < 4) {
-        problem = "brush encloses no volume";
+    // Topology: every edge is used once in each direction (a closed surface, consistently wound)
+    // and V - E + F == 2 (one piece, no holes).
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> edges;
+    std::vector<std::size_t> lastFace(vertexCount, faceCount);
+    for (std::size_t f = 0; f < faceCount; ++f) {
+        const std::vector<std::uint32_t>& corners = brush.faces[f].corners;
+        if (corners.size() < 3 || corners.size() > vertexCount) {
+            problem = "a face needs 3 corners or more";
+            return false;
+        }
+        for (std::size_t i = 0; i < corners.size(); ++i) {
+            const std::uint32_t corner = corners[i];
+            if (corner >= vertexCount) {
+                problem = std::format("face uses corner {}, which does not exist", corner);
+                return false;
+            }
+            if (lastFace[corner] == f) {
+                problem = "a face uses a corner twice";
+                return false;
+            }
+            lastFace[corner] = f;
+            edges.emplace_back(corner, corners[(i + 1) % corners.size()]);
+        }
+    }
+    if (std::find(lastFace.begin(), lastFace.end(), faceCount) != lastFace.end()) {
+        problem = "a corner is on no face";
         return false;
     }
-    Vec3 areaSum;
-    float totalArea = 0.0f;
-    for (const BrushFace& face : faces) {
-        for (const Vec3& vertex : face.vertices) {
-            if (!insideWorld(vertex)) {
-                problem =
-                    std::format("brush reaches outside the world (+-{} m)", kMaxWorldCoordinate);
+    std::sort(edges.begin(), edges.end());
+    const bool closed =
+        std::adjacent_find(edges.begin(), edges.end()) == edges.end() &&
+        std::all_of(edges.begin(), edges.end(),
+                    [&](const auto& edge) {
+                        return std::binary_search(edges.begin(), edges.end(),
+                                                  std::pair{edge.second, edge.first});
+                    }) &&
+        vertexCount + faceCount == edges.size() / 2 + 2;
+    if (!closed) {
+        problem = "brush is not a closed solid";
+        return false;
+    }
+
+    // Shape: flat faces with convex outlines, every corner behind every face, some volume.
+    double volume = 0.0;
+    for (std::size_t f = 0; f < faceCount; ++f) {
+        const std::vector<std::uint32_t>& corners = brush.faces[f].corners;
+        const DPlane exact = exactFacePlane(brush, f);
+        const double size = length(exact.normal);
+        if (!(size > 0.0)) {
+            problem = "a face has no area";
+            return false;
+        }
+        const DVec3 normal = exact.normal * (1.0 / size);
+        const double distance = exact.distance / size;
+        volume += exact.distance / 6.0;
+        for (std::size_t i = 0; i < corners.size(); ++i) {
+            const DVec3 prev =
+                toDouble(brush.vertices[corners[(i + corners.size() - 1) % corners.size()]]);
+            const DVec3 here = toDouble(brush.vertices[corners[i]]);
+            const DVec3 next = toDouble(brush.vertices[corners[(i + 1) % corners.size()]]);
+            if (std::fabs(dot(normal, here) - distance) > kBrushTolerance) {
+                problem = "a face is not flat";
+                return false;
+            }
+            // How far the corner pokes into the face from the line between its neighbours.
+            const double chord = length(next - prev);
+            if (chord > 0.0 &&
+                dot(cross(here - prev, next - here), normal) / chord < -kBrushTolerance) {
+                problem = "a face is not convex";
                 return false;
             }
         }
-        const Vec3 area = vectorArea(face);
-        areaSum += area;
-        totalArea += length(area);
+        for (const Vec3& v : brush.vertices) {
+            if (dot(normal, toDouble(v)) - distance > kBrushTolerance) {
+                problem = "brush is not convex";
+                return false;
+            }
+        }
     }
-    if (!(totalArea > 0.0f) || length(areaSum) > kClosureTolerance * totalArea) {
-        problem = "brush is not a closed solid";
+    if (!(volume > kMinBrushVolume)) {
+        problem = "brush encloses no volume";
         return false;
     }
     return true;
@@ -201,23 +258,23 @@ std::optional<std::vector<SpawnPoint>> readSpawnPoints(const Level& level, std::
 
 Brush makeBoxBrush(Vec3 min, Vec3 max) {
     Brush brush;
-    brush.planes = {
-        {{1.0f, 0.0f, 0.0f}, max.x},   {{-1.0f, 0.0f, 0.0f}, -min.x}, {{0.0f, 1.0f, 0.0f}, max.y},
-        {{0.0f, -1.0f, 0.0f}, -min.y}, {{0.0f, 0.0f, 1.0f}, max.z},   {{0.0f, 0.0f, -1.0f}, -min.z},
-    };
+    // Corner i has bit 0 for x, bit 1 for y, bit 2 for z.
+    for (std::uint32_t i = 0; i < 8; ++i) {
+        brush.vertices.push_back({(i & 1) != 0 ? max.x : min.x, (i & 2) != 0 ? max.y : min.y,
+                                  (i & 4) != 0 ? max.z : min.z});
+    }
+    // +X, -X, +Y, -Y, +Z, -Z.
+    brush.faces = {{{1, 3, 7, 5}}, {{0, 4, 6, 2}}, {{2, 6, 7, 3}},
+                   {{0, 1, 5, 4}}, {{4, 5, 7, 6}}, {{0, 2, 3, 1}}};
     return brush;
 }
 
 Brush makeRampBrush(Vec3 min, Vec3 max) {
-    const Vec3 slopeNormal = normalize(Vec3{-(max.z - min.z), 0.0f, max.x - min.x});
     Brush brush;
-    brush.planes = {
-        {{1.0f, 0.0f, 0.0f}, max.x},
-        {{0.0f, 1.0f, 0.0f}, max.y},
-        {{0.0f, -1.0f, 0.0f}, -min.y},
-        {{0.0f, 0.0f, -1.0f}, -min.z},
-        {slopeNormal, dot(slopeNormal, Vec3{min.x, 0.0f, min.z})},
-    };
+    brush.vertices = {{min.x, min.y, min.z}, {max.x, min.y, min.z}, {max.x, max.y, min.z},
+                      {min.x, max.y, min.z}, {max.x, min.y, max.z}, {max.x, max.y, max.z}};
+    // Back wall (+X), the two sides, the bottom and the slope.
+    brush.faces = {{{1, 2, 5, 4}}, {{3, 5, 2}}, {{0, 1, 4}}, {{0, 3, 2, 1}}, {{0, 4, 5, 3}}};
     return brush;
 }
 

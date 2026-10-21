@@ -64,7 +64,7 @@ TEST_CASE("every shape fills its box with valid brushes") {
         CHECK(bounds.max.y == doctest::Approx(kBox.max.y).epsilon(1e-4));
         CHECK(bounds.max.z == doctest::Approx(kBox.max.z).epsilon(1e-4));
         for (const ct::Brush& brush : brushes) {
-            CHECK(brush.planes.size() <= ct::kMaxBrushPlanes);
+            CHECK(brush.faces.size() <= ct::kMaxBrushFaces);
         }
     }
 }
@@ -75,7 +75,8 @@ TEST_CASE("an 8-sided cylinder has its flat sides exactly on the box") {
     const auto brushes = ct::makeShape(ct::ShapeKind::Cylinder, kBox, settings);
     REQUIRE(brushes.size() == 1);
     int onBox = 0;
-    for (const ct::Plane& plane : brushes[0].planes) {
+    const std::vector<ct::Plane> planes = ct::brushPlanes(brushes[0]);
+    for (const ct::Plane& plane : planes) {
         if ((plane.normal == ct::Vec3{1.0f, 0.0f, 0.0f} && plane.distance == kBox.max.x) ||
             (plane.normal == ct::Vec3{-1.0f, 0.0f, 0.0f} && plane.distance == -kBox.min.x) ||
             (plane.normal == ct::Vec3{0.0f, 1.0f, 0.0f} && plane.distance == kBox.max.y) ||
@@ -84,10 +85,15 @@ TEST_CASE("an 8-sided cylinder has its flat sides exactly on the box") {
         }
     }
     CHECK(onBox == 4);
-    CHECK(brushes[0].planes.size() == 10);
+    CHECK(planes.size() == 10);
     // No -0 in what the inspector shows and the level file stores.
-    for (const ct::Plane& plane : brushes[0].planes) {
+    for (const ct::Plane& plane : planes) {
         for (const float value : {plane.normal.x, plane.normal.y, plane.normal.z, plane.distance}) {
+            CHECK_FALSE((value == 0.0f && std::signbit(value)));
+        }
+    }
+    for (const ct::Vec3& corner : brushes[0].vertices) {
+        for (const float value : {corner.x, corner.y, corner.z}) {
             CHECK_FALSE((value == 0.0f && std::signbit(value)));
         }
     }
@@ -158,20 +164,20 @@ TEST_CASE("settings are kept within the limits that keep brushes valid") {
     }
 }
 
-TEST_CASE("polyhedra become brushes with outward planes, whatever the corner order") {
-    ct::Polyhedron tetrahedron;
-    tetrahedron.vertices = {
-        {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
-    tetrahedron.faces = {{0, 1, 2}, {0, 3, 1}, {0, 2, 3}, {1, 2, 3}};
-    const auto brush = ct::brushFromPolyhedron(tetrahedron);
-    REQUIRE(brush.has_value());
-    CHECK(brush->planes[0].normal == ct::Vec3{0.0f, 0.0f, -1.0f});
-    CHECK(ct::rayCastBrush(*brush, {0.2f, 0.2f, 5.0f}, {0.0f, 0.0f, -1.0f}).has_value());
-
-    tetrahedron.faces[1] = {0, 3, 9}; // a corner that doesn't exist
-    CHECK_FALSE(ct::brushFromPolyhedron(tetrahedron));
-    tetrahedron.faces[1] = {0, 3};
-    CHECK_FALSE(ct::brushFromPolyhedron(tetrahedron));
+TEST_CASE("the most detailed shapes stay within the brush limits") {
+    ct::ShapeSettings settings;
+    settings.sides = ct::kMaxShapeSides;
+    for (const ct::ShapeKind kind : {ct::ShapeKind::Cylinder, ct::ShapeKind::Cone}) {
+        const auto brushes = ct::makeShape(kind, kBox, settings);
+        REQUIRE(brushes.size() == 1);
+        CHECK(brushes[0].faces.size() >= static_cast<std::size_t>(ct::kMaxShapeSides) + 1);
+    }
+    settings.sides = ct::kMaxSphereSides;
+    const auto sphere = ct::makeShape(ct::ShapeKind::Sphere, kBox, settings);
+    REQUIRE(sphere.size() == 1);
+    const auto sides = static_cast<std::size_t>(ct::kMaxSphereSides);
+    CHECK(sphere[0].faces.size() == sides * sides / 2);
+    CHECK(sphere[0].faces.size() <= ct::kMaxBrushFaces);
 }
 
 TEST_CASE("a shape is added as one command and selected") {
