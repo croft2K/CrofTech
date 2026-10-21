@@ -69,7 +69,9 @@ In order; each step builds, tests and commits on its own.
    3. *Vertex, edge and face editing, and cutting:* drag corners, edges and faces of any brush with
       snapping (edits that would make a brush concave or flat are refused); clip, extrude, hollow,
       subtract and merge. Checks first whether plane-based brushes drift off the grid after many
-      corner edits, and changes how edited brushes are stored if they do.
+      corner edits, and changes how edited brushes are stored if they do. Also builds brush faces
+      by clipping polygons plane by plane (instead of intersecting every three planes), so the
+      64-face limit per brush can rise to several hundred.
 7. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
    transport, with the network conditioner for latency and loss.
 8. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
@@ -90,6 +92,7 @@ In order; each step builds, tests and commits on its own.
 | Scripting | Event wiring between entities first (M2). A script entity that plugs into the same wiring follows in M3. Script state lives in components so saves, rewinds and prediction keep working |
 | Level editor | Our own editor, brush tools and later modelling tools; TrenchBroom is not part of the workflow. The `.map` importer stays for bringing in existing maps |
 | Modelling | Brushes first; later, editable meshes for level geometry (bevels, curves, detail) in our editor. Characters, weapons and animation are made in Blender and imported as glTF |
+| Quality bar | The editor and engine must eventually compare with the latest idTech and id Studio (2026-10-21). As there, brushes are for blockout and collision; visual detail comes from editable level meshes, imported models, materials, decals and lighting. Every limit and simplification is temporary, and detail features come forward wherever the order allows |
 | Script language | Luau: built to sandbox untrusted scripts (maps downloaded from servers), small enough to compile into the Linux server, and simple to keep deterministic. Gameplay code (weapons, rules, modes) stays C++; a C# gameplay layer may be revisited once networking works (after M6/M7) |
 
 ## Still open
