@@ -25,9 +25,9 @@ Each milestone ends in something playable.
 |---|---|---|---|
 | M0 | Bootstrap | CMake presets, vcpkg, CI, `CLAUDE.md`, doctest, Tracy hookup | **Done.** One command builds and tests Windows debug, asan and profile builds |
 | M1 | Foundations | SDL3 window and raw input, Vulkan static mesh, fixed 128 Hz loop with interpolated uncapped rendering, ECS with `EntityId` handles, state hashing, player movement and collision on a test level, headless sim tests | **Done** (playtested 2026-10-20). Walk the test level; movement tuned from a hot-reloading data file; headless movement and determinism tests pass; tick cost shown in the title bar and Tracy |
-| M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load |
+| M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, basic brush editing (create, move, resize, delete box brushes on a snapping grid), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load |
 | M3 | Gameplay and AI | Hitscan and projectile weapons, damage, pickups, respawn, navmesh from the level, enemy perception and data-driven behaviours, encounter system (waves, arena locks, music cues), script entity (Luau) | First playable single-player arena; an encounter built with wiring plus one script |
-| M4 | Editor tools | Brush tools (create, clip, extrude), transform gizmos, snapping, visual logic graph, asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
+| M4 | Editor tools | Full brush tools (clip, extrude, vertex and face editing, primitives such as cylinders, arches and stairs), transform gizmos, visual logic graph, asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
 | M5 | Rendering and animation | Render graph, clustered forward lighting, PBR, cascaded and local shadows, GPU-driven culling, skeletal animation, sequencer (camera paths, animation, audio, events), TAA plus a sharp competitive mode, level compiler and content cooking into pack files | A scripted intro sequence in a lit, shadowed level at a stable frame rate |
 | M6 | Real networking | Pack checksums so clients and server run identical content, UDP transport, connect tokens, encryption, redundant inputs, delta-compressed snapshots, clock sync, prediction and reconciliation, interpolation, netgraph, packet fuzzers | Two machines play smoothly at 150 ms RTT, 20 ms jitter, 5% loss |
 | M7 | Combat netcode and scale | Lag compensation with rewind cap, sub-tick inputs, server-side projectiles, demo recording, shot debugger, relevancy and visibility culling, bandwidth budgets, Linux dedicated server, bot clients | 24-hour bot soak with no leaks; server tick p99 under 4 ms |
@@ -51,7 +51,8 @@ In order; each step builds, tests and commits on its own.
 4. **Component schema.** Each component declares its fields once; the declaration drives the editor
    inspector, saves and, later, network replication.
 5. **Editor shell.** Docked viewport, scene hierarchy, inspector, console; selection; undo/redo
-   command stack from the first edit.
+   command stack from the first edit; basic brush editing (create, move, resize and delete box
+   brushes on a snapping grid), enough to block out the M2 door puzzle without another editor.
 6. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
    transport, with the network conditioner for latency and loss.
 7. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
@@ -70,13 +71,15 @@ In order; each step builds, tests and commits on its own.
 | Threading | Simulation on its own fixed-step thread; rendering and input on the main thread, reading the two latest published states (M1) |
 | Content packaging | `.level` text files are the editable source. Shipped builds cook levels and assets into binary pack files: shared packs plus a small pack per level, checksummed so clients and server can prove they match. Packs load as one more content layer and are untrusted input (bounds-checked, fuzzed). Built with the level compiler in M5, needed by M6 |
 | Scripting | Event wiring between entities first (M2). A script entity that plugs into the same wiring follows in M3. Script state lives in components so saves, rewinds and prediction keep working |
+| Level editor | Our own editor, brush tools and later modelling tools; TrenchBroom is not part of the workflow. The `.map` importer stays for bringing in existing maps |
 | Script language | Luau: built to sandbox untrusted scripts (maps downloaded from servers), small enough to compile into the Linux server, and simple to keep deterministic. Gameplay code (weapons, rules, modes) stays C++; a C# gameplay layer may be revisited once networking works (after M6/M7) |
 
 ## Still open
 
 - **Game mode for multiplayer**: duel or team deathmatch. Needed by M6; sets the bandwidth budget.
-- **TrenchBroom**: block out levels in it now (with a CrofTech game profile and entity
-  definitions), or wait for our brush tools in M4. The `.map` importer works either way.
+- **Modelling scope**: how far in-editor modelling goes beyond brushes. Proposal: brushes plus,
+  later, editable meshes for level geometry (bevels, curves, detail), with characters, weapons and
+  animation made in Blender and imported as glTF. Needed by M4.
 - **Lag-compensation cap**: starts at 200 ms; tune in M7.
 - **Hosting**: self-hosted, community servers, or both. Needed by M7.
 
