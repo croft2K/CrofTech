@@ -17,7 +17,7 @@ constexpr std::array kPalette{
     Vec3{0.33f, 0.50f, 0.48f},
 };
 
-// Brushes of entities are coloured by what they are, so doors and triggers stand out.
+// Brushes of entities are coloured by what they are, so movers and triggers stand out.
 Vec3 brushColor(const Level& level, std::size_t index) {
     const std::uint32_t entity = level.brushes[index].entity;
     if (entity < level.entities.size()) {
@@ -25,11 +25,8 @@ Vec3 brushColor(const Level& level, std::size_t index) {
         if (className == "trigger") {
             return {0.80f, 0.42f, 0.08f};
         }
-        if (className == "door") {
-            return {0.16f, 0.36f, 0.80f};
-        }
         if (className == "mover") {
-            return {0.14f, 0.62f, 0.56f};
+            return {0.16f, 0.40f, 0.80f};
         }
     }
     return kPalette[index % kPalette.size()];

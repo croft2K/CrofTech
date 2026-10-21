@@ -4,6 +4,7 @@
 #include "croftech/editor/AffineTransform.h"
 #include "croftech/editor/EditorDocument.h"
 #include "croftech/level/BrushGeometry.h"
+#include "croftech/level/EntityClasses.h"
 
 #include <cstddef>
 #include <optional>
@@ -38,11 +39,15 @@ bool deleteSelection(EditorDocument& document);
 // changing nothing, if a copy would not be a valid brush.
 bool duplicateSelection(EditorDocument& document, Vec3 offset);
 
-// Makes the selected brushes into a new entity of the class (a door, a trigger), taking them out of
-// the world or the entity they were part of; an entity left with no brushes is deleted. A class
-// with a "move" property gets one that lifts the brushes by their height. Selects the new entity
-// with its brushes. False if no brushes are selected or the level is full of entities.
-bool createBrushEntity(EditorDocument& document, std::string_view className);
+// Makes the selected brushes into a new entity from the preset (a door, a lift, a trigger), taking
+// them out of the world or the entity they were part of; an entity left with no brushes is
+// deleted. A mover gets the preset's move, or one up by the brushes' height. Selects the new
+// entity with its brushes. False if no brushes are selected or the level is full of entities.
+bool createBrushEntity(EditorDocument& document, const EntityPreset& preset);
+
+// Adds an entity from the preset made of one box brush of the preset's size, standing centred on
+// the point, and selects it.
+bool addPresetEntity(EditorDocument& document, const EntityPreset& preset, Vec3 point);
 
 // Makes the selected brushes world geometry again; an entity left with no brushes is deleted.
 // False if none of them belonged to an entity.

@@ -12,6 +12,7 @@ add_executable(ct_unit_tests
     unit/editor/BrushOperationsTests.cpp
     unit/editor/CornerEditingTests.cpp
     unit/editor/EditorDocumentTests.cpp
+    unit/editor/EntityLinksTests.cpp
     unit/editor/SelectionTests.cpp
     unit/editor/ShapesTests.cpp
     unit/editor/AffineTransformTests.cpp

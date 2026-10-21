@@ -17,7 +17,7 @@ brush
     face 0 2 3 1
 end
 
-entity door
+entity mover
     name gate
     move 0 0 2
     brush
@@ -39,7 +39,7 @@ entity door
 end
 
 entity trigger
-    output on_enter gate open 0.5
+    output on_enter gate move_to_end 0.5
     brush
         vertex 0 2 0
         vertex 4 2 0

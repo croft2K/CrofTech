@@ -417,7 +417,8 @@ std::optional<LevelEntity> Importer::convertEntity(const RawEntity& raw,
     if (quakeSpawn) {
         entity.className = kPlayerSpawnClass;
     } else if (door) {
-        entity.className = "door";
+        entity.className = "mover";
+        entity.properties.push_back({"activate", "touch"});
     } else if (className == "trigger_multiple" || className == "trigger_once") {
         entity.className = "trigger";
         if (className == "trigger_once") {

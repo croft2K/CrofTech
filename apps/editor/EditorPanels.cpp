@@ -2,6 +2,7 @@
 
 #include "croftech/core/ConfigFile.h"
 #include "croftech/editor/EditorActions.h"
+#include "croftech/editor/EntityLinks.h"
 #include "croftech/editor/LevelCommands.h"
 
 #include <imgui.h>
@@ -96,45 +97,37 @@ bool signalCombo(const char* label, std::string_view current, std::span<const Si
     return picked;
 }
 
-// The entity whose inspector the selection shows: the only entity selected, with nothing else but
-// its own brushes.
-std::optional<std::size_t> inspectedEntity(const EditorDocument& document) {
-    std::optional<std::size_t> entity;
-    for (const LevelItem& item : document.selection()) {
-        if (item.kind == LevelItem::Kind::Entity) {
-            if (entity) {
-                return std::nullopt;
-            }
-            entity = item.index;
-        }
-    }
-    if (!entity) {
-        return std::nullopt;
-    }
-    for (const LevelItem& item : document.selection()) {
-        if (item.kind == LevelItem::Kind::Brush &&
-            document.level().brushes[item.index].entity != *entity) {
-            return std::nullopt;
-        }
-    }
-    return entity;
-}
-
 bool anyBrushSelected(const EditorDocument& document) {
     return std::any_of(document.selection().begin(), document.selection().end(),
                        [](const LevelItem& item) { return item.kind == LevelItem::Kind::Brush; });
 }
 
-// Menu items that make the selected brushes into an entity of each brush class.
+// Menu items that make the selected brushes into an entity: the presets first, then each brush
+// class with its defaults, for building one up from scratch.
 void brushEntityMenuItems(EditorDocument& document) {
+    for (const EntityPreset& preset : entityPresets()) {
+        if (ImGui::MenuItem(std::string(preset.name).c_str())) {
+            createBrushEntity(document, preset);
+        }
+        tooltip(preset.description);
+    }
+    ImGui::Separator();
     for (const EntityClassInfo& entityClass : entityClasses()) {
-        if (entityClass.shape == EntityShape::Brush &&
-            ImGui::MenuItem(std::string(entityClass.name).c_str())) {
-            createBrushEntity(document, entityClass.name);
+        if (entityClass.shape != EntityShape::Brush) {
+            continue;
         }
-        if (entityClass.shape == EntityShape::Brush) {
-            tooltip(entityClass.description);
+        const std::string label = std::format("{} (class defaults)", entityClass.name);
+        if (ImGui::MenuItem(label.c_str())) {
+            const bool moves = findPropertyInfo(entityClass, "move") != nullptr;
+            createBrushEntity(document, EntityPreset{entityClass.name,
+                                                     entityClass.description,
+                                                     entityClass.name,
+                                                     {},
+                                                     {},
+                                                     moves,
+                                                     {}});
         }
+        tooltip(entityClass.description);
     }
 }
 
@@ -263,6 +256,13 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
                 viewport.setTool(EditorTool::Draw);
             }
         }
+        ImGui::SeparatorText("Ready-made");
+        for (const EntityPreset& preset : entityPresets()) {
+            if (ImGui::MenuItem(std::string(preset.name).c_str())) {
+                requests.addPreset = &preset;
+            }
+            tooltip(preset.description);
+        }
         ImGui::SeparatorText("Entities");
         for (const EntityClassInfo& entityClass : entityClasses()) {
             if (entityClass.shape == EntityShape::Point &&
@@ -318,6 +318,8 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
                         &settings.hideHandlesBehindSurfaces);
         ImGui::SetItemTooltip("In 3D panes, the vertex tool shows and picks only handles in "
                               "plain sight");
+        ImGui::MenuItem("Show all wires", nullptr, &settings.showAllWires);
+        ImGui::SetItemTooltip("Draw every entity's outputs, not just the selected entities'");
         ImGui::Separator();
         if (ImGui::BeginMenu("Grid")) {
             for (std::size_t i = 0; i < kGridSizes.size(); ++i) {
@@ -511,7 +513,7 @@ void EditorPanels::drawInspector(EditorDocument& document, const EditorSettings&
     }
     if (ImGui::Begin("Inspector")) {
         const std::optional<LevelItem> single = document.singleSelected();
-        const std::optional<std::size_t> entity = inspectedEntity(document);
+        const std::optional<std::size_t> entity = selectedEntity(document);
         if (document.selection().empty()) {
             ImGui::TextDisabled("Nothing selected.");
             ImGui::TextDisabled("Click a brush or entity in the view or the hierarchy;");
@@ -830,6 +832,16 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
                 bool on = propertyValue(entity, property) == "1";
                 if (ImGui::Checkbox("##value", &on)) {
                     setValue(key, on ? "1" : "0");
+                }
+            } else if (property.type == PropertyType::Choice) {
+                const std::string current(propertyValue(entity, property));
+                if (ImGui::BeginCombo("##value", current.c_str())) {
+                    for (const std::string_view choice : property.choices) {
+                        if (ImGui::Selectable(std::string(choice).c_str(), choice == current)) {
+                            setValue(key, std::string(choice));
+                        }
+                    }
+                    ImGui::EndCombo();
                 }
             } else {
                 const std::string hint(property.defaultValue);

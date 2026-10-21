@@ -508,6 +508,10 @@ int main(int argc, char** argv) {
         if (startPlaying && !playing) {
             startPlay();
         }
+        if (menu.addPreset != nullptr) {
+            ct::addPresetEntity(document, *menu.addPreset,
+                                viewport.placementPoint(document, settings));
+        }
         if (menu.addEntity != nullptr) {
             ct::LevelEntity entity = ct::makeEntity(*menu.addEntity);
             ct::setProperty(entity, "origin",

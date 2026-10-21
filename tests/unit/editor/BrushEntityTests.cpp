@@ -5,6 +5,7 @@
 
 #include <doctest/doctest.h>
 
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -24,7 +25,7 @@ ct::Brush owned(ct::Brush brush, std::uint32_t entity) {
 ct::Level doorAndTrigger() {
     ct::Level level;
     level.entities.push_back(ct::makePlayerSpawn({0.0f, 0.0f, 1.0f}, 0.0f));
-    level.entities.push_back({"door", {{"name", "gate"}, {"move", "0 0 2"}}});
+    level.entities.push_back({"mover", {{"name", "gate"}, {"move", "0 0 2"}}});
     level.entities.push_back({"trigger", {}, {{"on_enter", "gate", "open", 0.0f}}});
     level.brushes = {box(0.0f), owned(box(2.0f), 1), owned(box(4.0f, 2.0f), 1),
                      owned(box(6.0f), 2)};
@@ -40,6 +41,16 @@ std::vector<std::uint32_t> owners(const ct::Level& level) {
 }
 
 constexpr std::uint32_t kWorld = ct::kNoEntity;
+
+const ct::EntityPreset& preset(std::string_view name) {
+    for (const ct::EntityPreset& candidate : ct::entityPresets()) {
+        if (candidate.name == name) {
+            return candidate;
+        }
+    }
+    FAIL("no preset " << name);
+    return ct::entityPresets().front();
+}
 
 } // namespace
 
@@ -75,17 +86,18 @@ TEST_CASE("selected brushes become a door that lifts by their height") {
     level.brushes = {box(0.0f), box(2.0f, 3.0f), box(4.0f)};
     ct::EditorDocument document(level, "test.level");
     document.setSelection({LevelItem::brush(1), LevelItem::brush(2)});
-    REQUIRE(ct::createBrushEntity(document, "door"));
+    REQUIRE(ct::createBrushEntity(document, preset("Door")));
 
     REQUIRE(document.level().entities.size() == 1);
     const ct::LevelEntity& door = document.level().entities[0];
-    CHECK(door.className == "door");
+    CHECK(door.className == "mover");
     CHECK(*ct::findProperty(door, "move") == "0 0 3");
+    CHECK(*ct::findProperty(door, "activate") == "touch");
     CHECK(owners(document.level()) == std::vector<std::uint32_t>{kWorld, 0, 0});
     CHECK(document.selection() ==
           std::vector<LevelItem>{LevelItem::brush(1), LevelItem::brush(2), LevelItem::entity(0)});
-    CHECK(ct::describeSelection(document) == "door");
-    CHECK(document.history().undoName() == "Make door");
+    CHECK(ct::describeSelection(document) == "mover");
+    CHECK(document.history().undoName() == "Make Door");
 
     REQUIRE(document.undo());
     CHECK(document.level() == level);
@@ -93,16 +105,16 @@ TEST_CASE("selected brushes become a door that lifts by their height") {
     CHECK(owners(document.level()) == std::vector<std::uint32_t>{kWorld, 0, 0});
 
     document.clearSelection();
-    CHECK_FALSE(ct::createBrushEntity(document, "trigger"));
+    CHECK_FALSE(ct::createBrushEntity(document, preset("Trigger")));
 }
 
 TEST_CASE("taking an entity's last brushes deletes it, and the rest are renumbered") {
     const ct::Level level = doorAndTrigger();
     ct::EditorDocument document(level, "test.level");
     document.setSelection({LevelItem::brush(1), LevelItem::brush(2)});
-    REQUIRE(ct::createBrushEntity(document, "mover"));
+    REQUIRE(ct::createBrushEntity(document, preset("Lift")));
 
-    // The door went; the trigger moved down to 1 and the new mover is 2.
+    // The old mover went; the trigger moved down to 1 and the lift is 2.
     const ct::Level& after = document.level();
     REQUIRE(after.entities.size() == 3);
     CHECK(after.entities[1].className == "trigger");
@@ -111,6 +123,29 @@ TEST_CASE("taking an entity's last brushes deletes it, and the rest are renumber
     CHECK(document.selection().back() == LevelItem::entity(2));
     REQUIRE(document.undo());
     CHECK(document.level() == level);
+}
+
+TEST_CASE("presets make a ready-made entity from one new brush") {
+    ct::EditorDocument document(doorAndTrigger(), "test.level");
+    REQUIRE(ct::addPresetEntity(document, preset("Lift"), {10.0f, 0.0f, 0.0f}));
+    const ct::Level& level = document.level();
+    REQUIRE(level.entities.size() == 4);
+    const ct::LevelEntity& lift = level.entities[3];
+    CHECK(lift.className == "mover");
+    CHECK(*ct::findProperty(lift, "activate") == "stand");
+    CHECK(*ct::findProperty(lift, "move") == "0 0 4");
+    REQUIRE(level.brushes.size() == 5);
+    CHECK(level.brushes[4] ==
+          owned(ct::makeBoxBrush({9.0f, -1.0f, 0.0f}, {11.0f, 1.0f, 0.25f}), 3));
+    CHECK(document.selection() ==
+          std::vector<LevelItem>{LevelItem::brush(4), LevelItem::entity(3)});
+    CHECK(document.history().undoName() == "Create Lift");
+
+    REQUIRE(ct::addPresetEntity(document, preset("Door"), {0.0f, 5.0f, 0.0f}));
+    CHECK(*ct::findProperty(document.level().entities[4], "move") == "0 0 3");
+    REQUIRE(document.undo());
+    REQUIRE(document.undo());
+    CHECK(document.level() == doorAndTrigger());
 }
 
 TEST_CASE("brushes go back to the world, and their emptied entity is deleted") {
@@ -204,7 +239,7 @@ TEST_CASE("subtracting with a whole door deletes the door") {
     ct::Level level;
     level.brushes = {ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {4.0f, 1.0f, 3.0f}),
                      owned(ct::makeBoxBrush({1.0f, -1.0f, 0.0f}, {2.0f, 2.0f, 2.0f}), 1)};
-    level.entities = {ct::makePlayerSpawn({0.0f, 0.0f, 3.0f}, 0.0f), {"door", {}}};
+    level.entities = {ct::makePlayerSpawn({0.0f, 0.0f, 3.0f}, 0.0f), {"mover", {}}};
     ct::EditorDocument document(level, "test.level");
     document.setSelection(ct::withWholeEntities(level, std::vector{LevelItem::brush(1)}));
     REQUIRE(ct::subtractSelection(document));

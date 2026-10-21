@@ -142,7 +142,7 @@ TEST_CASE(
     CHECK(result.warnings[0] == "line 41: patches and brush primitives are not supported; skipped");
 }
 
-TEST_CASE("Quake doors and triggers become door and trigger entities") {
+TEST_CASE("Quake doors and triggers become movers and triggers") {
     const Import result = import(
         worldspawn("") +
         "{\n\"classname\" \"func_door\"\n\"angle\" \"90\"\n"
@@ -156,7 +156,8 @@ TEST_CASE("Quake doors and triggers become door and trigger entities") {
 
     // 128 units wide less the default lip of 8, sideways along +Y.
     const ct::LevelEntity& gate = result.level->entities[0];
-    CHECK(gate.className == "door");
+    CHECK(gate.className == "mover");
+    CHECK(*ct::findProperty(gate, "activate") == "touch");
     CHECK(*ct::findProperty(gate, "move") == ct::formatVec3({0.0f, 120.0f * 0.0254f, 0.0f}));
     CHECK(*ct::findProperty(gate, "speed") == ct::formatFloat(200.0f * 0.0254f));
     CHECK(*ct::findProperty(gate, "name") == "gate");
@@ -230,11 +231,11 @@ TEST_CASE("imported levels always save as level files") {
     CHECK(ct::parseLevel(*text, error) == result.level);
 }
 
-TEST_CASE("a func_door with no brushes comes in as a door with nothing to move") {
+TEST_CASE("a func_door with no brushes comes in as a mover with nothing to move") {
     const Import result = import("{\n\"classname\" \"func_door\"\n\"angle\" \"90\"\n}\n");
     REQUIRE_MESSAGE(result.level.has_value(), result.error);
     REQUIRE(result.level->entities.size() == 1);
-    CHECK(result.level->entities[0].className == "door");
+    CHECK(result.level->entities[0].className == "mover");
     CHECK(ct::findProperty(result.level->entities[0], "move") == nullptr);
 }
 

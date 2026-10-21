@@ -56,6 +56,12 @@ constexpr ImU32 kOrthoGridColor = IM_COL32(255, 255, 255, 18);
 constexpr ImU32 kOrthoMajorGridColor = IM_COL32(255, 255, 255, 40);
 constexpr ImU32 kPaneBorderColor = IM_COL32(20, 20, 24, 255);
 constexpr ImU32 kGizmoActiveColor = IM_COL32(255, 230, 80, 255);
+constexpr ImU32 kGhostFill = IM_COL32(90, 170, 255, 45);
+constexpr ImU32 kGhostEdge = IM_COL32(120, 190, 255, 200);
+constexpr ImU32 kEndHandleColor = IM_COL32(120, 190, 255, 255);
+constexpr ImU32 kWireOutColor = IM_COL32(110, 230, 255, 230);
+constexpr ImU32 kWireInColor = IM_COL32(200, 150, 255, 200);
+constexpr ImU32 kWireLabelBackground = IM_COL32(15, 15, 20, 190);
 constexpr std::array<ImU32, 3> kAxisColors{IM_COL32(235, 75, 75, 255), IM_COL32(115, 205, 65, 255),
                                            IM_COL32(75, 135, 245, 255)};
 
@@ -240,10 +246,120 @@ public:
         }
     }
 
+    // A see-through fill of each face; faces reaching behind the camera are left out.
+    void fill(const Brush& brush, ImU32 color) const {
+        std::vector<ImVec2> points;
+        for (std::size_t i = 0; i < brush.faces.size(); ++i) {
+            points.clear();
+            for (const Vec3& corner : faceVertices(brush, i)) {
+                const std::optional<ImVec2> point = m_projector.screen(corner);
+                if (!point) {
+                    break;
+                }
+                points.push_back(*point);
+            }
+            if (points.size() == brush.faces[i].corners.size()) {
+                m_drawList->AddConvexPolyFilled(points.data(), static_cast<int>(points.size()),
+                                                color);
+            }
+        }
+    }
+
 private:
     Projector m_projector;
     ImDrawList* m_drawList;
 };
+
+// An arrowhead pointing at to, along the line from from, in screen space.
+void arrowHead(ImDrawList& drawList, ImVec2 from, ImVec2 to, ImU32 color) {
+    float dx = to.x - from.x;
+    float dy = to.y - from.y;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length < 1.0f) {
+        return;
+    }
+    dx /= length;
+    dy /= length;
+    const float head = ImGui::GetFontSize() * 0.6f;
+    const ImVec2 back{to.x - dx * head, to.y - dy * head};
+    drawList.AddTriangleFilled(to, {back.x - dy * head * 0.4f, back.y + dx * head * 0.4f},
+                               {back.x + dy * head * 0.4f, back.y - dx * head * 0.4f}, color);
+}
+
+struct ShownWire {
+    Wire wire;
+    bool outgoing = true; // from a selected entity, rather than into one
+};
+
+// Lines from entities to the entities their outputs target, each labelled at its middle with its
+// event, input and delay. Several wires between the same two entities stack their labels.
+void drawWires(const Level& level, std::span<const ShownWire> wires, const LinePainter& painter) {
+    ImDrawList& drawList = painter.drawList();
+    std::vector<std::pair<std::size_t, std::size_t>> drawn;
+    for (const ShownWire& shown : wires) {
+        const Wire& wire = shown.wire;
+        const std::optional<Vec3> from = entityAnchor(level, wire.from);
+        const std::optional<Vec3> to = entityAnchor(level, wire.to);
+        if (!from || !to) {
+            continue;
+        }
+        const ImU32 color = shown.outgoing ? kWireOutColor : kWireInColor;
+        painter.line(*from, *to, color, 2.0f);
+        const std::optional<ImVec2> a = painter.projector().screen(*from);
+        const std::optional<ImVec2> b = painter.projector().screen(*to);
+        if (!a || !b) {
+            continue;
+        }
+        arrowHead(drawList, *a, *b, color);
+        const EntityOutput& output = level.entities[wire.from].outputs[wire.output];
+        std::string label = std::format("{} -> {}", output.event, output.input);
+        if (output.delay > 0.0f) {
+            label += std::format(" after {:g} s", output.delay);
+        }
+        const std::pair<std::size_t, std::size_t> ends{wire.from, wire.to};
+        const auto stacked = static_cast<float>(std::count(drawn.begin(), drawn.end(), ends));
+        drawn.push_back(ends);
+        const ImVec2 size = ImGui::CalcTextSize(label.c_str());
+        const ImVec2 corner{(a->x + b->x - size.x) * 0.5f,
+                            (a->y + b->y) * 0.5f + stacked * (size.y + 3.0f)};
+        drawList.AddRectFilled({corner.x - 4.0f, corner.y - 1.0f},
+                               {corner.x + size.x + 4.0f, corner.y + size.y + 1.0f},
+                               kWireLabelBackground, 3.0f);
+        drawList.AddText(corner, color, label.c_str());
+    }
+}
+
+// A see-through copy of the mover where it ends up, a line along its path and the handle that
+// sets the end, with what it does next to it when hot.
+void drawMoverEnd(const Level& level, const MoverPath& path, const LinePainter& painter, bool hot) {
+    for (const Brush& brush : level.brushes) {
+        if (brush.entity != path.entity) {
+            continue;
+        }
+        Brush moved = brush;
+        for (Vec3& corner : moved.vertices) {
+            corner = corner + path.move;
+        }
+        painter.fill(moved, kGhostFill);
+        painter.brush(moved, kGhostEdge, 1.5f);
+    }
+    painter.line(path.start(), path.end(), kGhostEdge, 1.5f);
+    const std::optional<ImVec2> point = painter.projector().screen(path.end());
+    if (!point) {
+        return;
+    }
+    ImDrawList& drawList = painter.drawList();
+    const float radius = ImGui::GetFontSize() * 0.45f;
+    drawList.AddCircleFilled(*point, radius, hot ? kGizmoActiveColor : kEndHandleColor);
+    drawList.AddCircle(*point, radius, IM_COL32(10, 10, 15, 255), 0, 1.5f);
+    if (hot) {
+        const std::string label =
+            std::format("end {:+g} {:+g} {:+g} m\ndrag to move it, Alt-drag up or down",
+                        path.move.x, path.move.y, path.move.z);
+        drawList.AddText({point->x + radius * 2.0f, point->y - radius}, kGizmoActiveColor,
+                         label.c_str());
+    }
+}
 
 bool isGizmoTool(EditorTool tool) {
     return tool == EditorTool::Move || tool == EditorTool::Rotate || tool == EditorTool::Scale;
@@ -650,6 +766,32 @@ std::optional<LevelViewport::GizmoFrame> LevelViewport::gizmoFrame(const EditorD
     return frame;
 }
 
+std::optional<MoverPath> LevelViewport::shownMover(const EditorDocument& document) const {
+    if (m_tool == EditorTool::Clip || m_tool == EditorTool::Draw) {
+        return std::nullopt;
+    }
+    const std::optional<std::size_t> entity = selectedEntity(document);
+    return entity ? moverPath(document.level(), *entity) : std::nullopt;
+}
+
+bool LevelViewport::pickMoverEnd(const EditorDocument& document) const {
+    const std::optional<MoverPath> path = shownMover(document);
+    if (!path) {
+        return false;
+    }
+    const PaneView view = activeView();
+    const Projector projector(view.viewProjection, view.rect);
+    const std::optional<ImVec2> point = projector.screen(path->end());
+    if (!point) {
+        return false;
+    }
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const float dx = mouse.x - point->x;
+    const float dy = mouse.y - point->y;
+    const float reach = ImGui::GetFontSize() * 0.6f;
+    return dx * dx + dy * dy <= reach * reach;
+}
+
 std::optional<LevelViewport::GizmoHandle>
 LevelViewport::pickGizmo(const EditorDocument& document) const {
     const PaneView view = activeView();
@@ -773,10 +915,13 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
     if (m_tool == EditorTool::Clip) {
         clipKeys(document);
     }
-    m_hoverHandle = mouseOverView ? pickGizmo(document) : std::nullopt;
-    m_hoverVertex = mouseOverView ? pickVertexHandle(document, settings) : std::nullopt;
-    m_hover = mouseOverView && !m_hoverHandle && !m_hoverVertex ? pick(document, settings, ray)
-                                                                : std::nullopt;
+    m_hoverEnd = mouseOverView && pickMoverEnd(document);
+    m_hoverHandle = mouseOverView && !m_hoverEnd ? pickGizmo(document) : std::nullopt;
+    m_hoverVertex =
+        mouseOverView && !m_hoverEnd ? pickVertexHandle(document, settings) : std::nullopt;
+    m_hover = mouseOverView && !m_hoverEnd && !m_hoverHandle && !m_hoverVertex
+                  ? pick(document, settings, ray)
+                  : std::nullopt;
     if (mouseOverView && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         beginDrag(document, settings, ray);
     }
@@ -788,6 +933,18 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
 void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& settings,
                               const Ray& ray) {
     const ImGuiIO& io = ImGui::GetIO();
+    if (m_hoverEnd) {
+        if (const std::optional<MoverPath> path = shownMover(document)) {
+            m_drag = {};
+            m_drag.kind = DragKind::MoverEnd;
+            m_drag.entity = path->entity;
+            m_drag.entityBefore = document.level().entities[path->entity];
+            m_drag.moveBefore = path->move;
+            m_drag.grabPoint = path->end();
+            m_drag.vertical = io.KeyAlt && !activeView().orthographic;
+            return;
+        }
+    }
     if (m_hoverHandle) {
         beginGizmoDrag(document, *m_hoverHandle, ray);
         return;
@@ -1180,6 +1337,32 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
     case DragKind::Gizmo:
         continueGizmoDrag(document, settings, ray);
         return;
+    case DragKind::MoverEnd: {
+        // Like moving the mover itself: across the drag plane, or up and down with Alt, in grid
+        // steps.
+        Vec3 offset;
+        if (m_drag.vertical) {
+            const auto s =
+                closestAlongAxis(m_drag.grabPoint, {0.0f, 0.0f, 1.0f}, ray.origin, ray.direction);
+            if (!s) {
+                return;
+            }
+            offset = {0.0f, 0.0f, snapToGrid(*s, grid)};
+        } else {
+            const Vec3 normal = dragPlaneNormal();
+            const Plane plane{normal, dot(normal, m_drag.grabPoint)};
+            const auto t = rayCastPlane(plane, ray.origin, ray.direction);
+            if (!t) {
+                return;
+            }
+            offset = withoutAxis(
+                snapToGrid(ray.origin + ray.direction * *t - m_drag.grabPoint, grid), normal);
+        }
+        LevelEntity moved = m_drag.entityBefore;
+        setProperty(moved, "move", formatVec3(m_drag.moveBefore + offset + Vec3{}));
+        document.previewEntity(m_drag.entity, moved);
+        return;
+    }
     case DragKind::Marquee:
     case DragKind::ShapeHeight:
     case DragKind::None:
@@ -1268,6 +1451,14 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
     }
     case DragKind::ShapeHeight:
         return;
+    case DragKind::MoverEnd: {
+        const LevelEntity after = document.level().entities[drag.entity];
+        if (!(after == drag.entityBefore)) {
+            document.execute(
+                makeSetEntity("Move mover end", drag.entity, drag.entityBefore, after));
+        }
+        return;
+    }
     case DragKind::Move:
     case DragKind::MoveVertical:
         // A click on one item of several, without moving, selects just that one (with the rest
@@ -1466,6 +1657,8 @@ void LevelViewport::cancelDrag(EditorDocument& document) {
         m_drag.selection->cancel(document);
     } else if (m_drag.kind == DragKind::Face) {
         document.previewBrush(m_drag.target.index, m_drag.brushBefore);
+    } else if (m_drag.kind == DragKind::MoverEnd) {
+        document.previewEntity(m_drag.entity, m_drag.entityBefore);
     }
     m_drag = {};
 }
@@ -1555,6 +1748,35 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
     }
     for (const LevelItem& item : document.selection()) {
         outline(item, kSelectedColor, 2.0f);
+    }
+
+    // The wires of the selected entities (or of every entity), then the selected mover's end.
+    std::vector<ShownWire> wires;
+    if (settings.showAllWires) {
+        for (const Wire& wire : allWires(level)) {
+            wires.push_back({wire, true});
+        }
+    } else {
+        for (const LevelItem& item : document.selection()) {
+            if (item.kind != LevelItem::Kind::Entity) {
+                continue;
+            }
+            for (const Wire& wire : entityWires(level, item.index)) {
+                const bool seen =
+                    std::any_of(wires.begin(), wires.end(), [&](const ShownWire& shown) {
+                        return shown.wire.from == wire.from && shown.wire.to == wire.to &&
+                               shown.wire.output == wire.output;
+                    });
+                if (!seen) {
+                    wires.push_back({wire, wire.from == item.index});
+                }
+            }
+        }
+    }
+    drawWires(level, wires, painter);
+    if (const std::optional<MoverPath> path = shownMover(document)) {
+        drawMoverEnd(level, *path, painter,
+                     m_drag.kind == DragKind::MoverEnd || (active && m_hoverEnd));
     }
 
     // The face Shift-drag would move, or is moving.

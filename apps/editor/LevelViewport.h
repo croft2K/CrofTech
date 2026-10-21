@@ -5,6 +5,7 @@
 #include "croftech/editor/BrushEditing.h"
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
+#include "croftech/editor/EntityLinks.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/editor/Shapes.h"
 #include "croftech/net/LoopbackLink.h"
@@ -47,6 +48,8 @@ struct EditorSettings {
     Vec3 playerHalfExtents{0.4f, 0.4f, 0.9f};
     // Vertex tool handles behind a surface are hidden in 3D panes, and can't be picked there.
     bool hideHandlesBehindSurfaces = true;
+    // Wires are drawn for the selected entities, or with this for every entity.
+    bool showAllWires = false;
     // How the in-memory link behaves in play-in-editor.
     LinkConditions playConditions;
 
@@ -178,7 +181,8 @@ private:
         Extrude,
         ShapeBase,
         ShapeHeight,
-        Gizmo
+        Gizmo,
+        MoverEnd
     };
 
     struct Pick {
@@ -238,6 +242,9 @@ private:
         float axisStart = 0.0f;
         double angle = 0.0; // Ring: degrees turned so far, unsnapped
         double lastScreenAngle = 0.0;
+        std::size_t entity = 0;   // MoverEnd
+        LevelEntity entityBefore; // MoverEnd
+        Vec3 moveBefore;          // MoverEnd
     };
 
     // The shape placed last, which the shape settings can still remake.
@@ -305,6 +312,9 @@ private:
     std::optional<GizmoFrame> gizmoFrame(const EditorDocument& document,
                                          const PaneView& view) const;
     std::optional<GizmoHandle> pickGizmo(const EditorDocument& document) const;
+    // The selected mover, when its end handle is shown: with every tool but Clip and Shape.
+    std::optional<MoverPath> shownMover(const EditorDocument& document) const;
+    bool pickMoverEnd(const EditorDocument& document) const;
 
     void beginDrag(EditorDocument& document, const EditorSettings& settings, const Ray& ray);
     void beginGizmoDrag(EditorDocument& document, const GizmoHandle& handle, const Ray& ray);
@@ -341,6 +351,7 @@ private:
     std::optional<Pick> m_hover;
     std::optional<GizmoHandle> m_hoverHandle;
     std::optional<VertexHandle> m_hoverVertex;
+    bool m_hoverEnd = false; // the mouse is over the selected mover's end handle
     std::vector<Vec3> m_corners;
     std::vector<Vec3> m_clipPoints;
     ClipKeep m_clipKeep = ClipKeep::Back;

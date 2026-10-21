@@ -18,6 +18,7 @@ struct MenuRequests {
     bool quit = false;
     bool frameSelection = false;
     const EntityClassInfo* addEntity = nullptr; // a point entity, at the placement point
+    const EntityPreset* addPreset = nullptr;    // a ready-made brush entity, there too
     bool play = false;
 };
 

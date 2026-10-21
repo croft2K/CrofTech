@@ -27,8 +27,8 @@ Each milestone ends in something playable.
 | M1 | Foundations | SDL3 window and raw input, Vulkan static mesh, fixed 128 Hz loop with interpolated uncapped rendering, ECS with `EntityId` handles, state hashing, player movement and collision on a test level, headless sim tests | **Done** (playtested 2026-10-20). Walk the test level; movement tuned from a hot-reloading data file; headless movement and determinism tests pass; tick cost shown in the title bar and Tracy |
 | M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, brush tools (multi-selection, move/rotate/scale gizmos, primitives such as wedges, cylinders, arches and stairs, vertex, edge and face editing, clip, extrude, hollow, subtract, merge), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load |
 | M3 | Gameplay and AI | Hitscan and projectile weapons, damage, pickups, respawn, navmesh from the level, enemy perception and data-driven behaviours, encounter system (waves, arena locks, music cues), script entity (Luau) | First playable single-player arena; an encounter built with wiring plus one script |
-| M4 | Editor tools | Texture and material assignment with face alignment, editable level-geometry meshes, visual logic graph, asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
-| M5 | Rendering and animation | Render graph, clustered forward lighting, PBR, cascaded and local shadows, GPU-driven culling, skeletal animation, sequencer (camera paths, animation, audio, events), TAA plus a sharp competitive mode, level compiler and content cooking into pack files | A scripted intro sequence in a lit, shadowed level at a stable frame rate |
+| M4 | Editor tools | Texture and material assignment with face alignment, editable level-geometry meshes, visual logic graph (wires as nodes, with the outputs table as the text form), movers that follow a path through several stops and movers that turn (rotating doors), asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
+| M5 | Rendering and animation | Render graph, clustered forward lighting, PBR, cascaded and local shadows, GPU-driven culling, skeletal animation, sequencer (camera paths, animation, audio, events, keyframed movers with easing), TAA plus a sharp competitive mode, level compiler and content cooking into pack files | A scripted intro sequence in a lit, shadowed level at a stable frame rate |
 | M6 | Real networking | Pack checksums so clients and server run identical content, UDP transport, connect tokens, encryption, redundant inputs, delta-compressed snapshots, clock sync, prediction and reconciliation, interpolation, netgraph, packet fuzzers | Two machines play smoothly at 150 ms RTT, 20 ms jitter, 5% loss |
 | M7 | Combat netcode and scale | Lag compensation with rewind cap, sub-tick inputs, server-side projectiles, demo recording, shot debugger, relevancy and visibility culling, bandwidth budgets, Linux dedicated server, bot clients | 24-hour bot soak with no leaks; server tick p99 under 4 ms |
 | M8 | Campaign polish | Level streaming and whatever the first campaign needs | A multi-section campaign level streams in and plays start to finish |
@@ -81,8 +81,13 @@ In order; each step builds, tests and commits on its own.
 8. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
    need player collision against moving brushes), wired in the inspector. In three parts:
    - 8a. *Done.* Brush entities and outputs in the level (file version 3, `.map` doors and triggers
-     import), the entity class table, and the editor: brushes made into doors, triggers and movers,
-     a click picks the whole entity, and the inspector edits class properties and outputs.
+     import), the entity class table, and the editor: a click picks the whole entity, and the
+     inspector edits class properties and outputs. After Tony's review, door and mover became one
+     `mover` class (what activates it: inputs, touch or standing on it; wait, loop), with
+     ready-made Door, Lift, Platform and Trigger presets that need no wiring, a see-through copy
+     of a selected mover at its end with a handle to drag it, and wires drawn in the view between
+     connected entities, labelled with event and input. The fast path for quick iteration; every
+     property and output stays editable underneath.
    - 8b. Logic in the simulation: the server builds the game from the whole level; triggers,
      relays, counters, timers and delayed inputs as components.
    - 8c. Doors and movers: player collision against moving brushes (pushed, carried, blocked), and

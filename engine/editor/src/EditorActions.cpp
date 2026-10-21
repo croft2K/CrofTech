@@ -327,29 +327,31 @@ bool addBrushes(EditorDocument& document, std::vector<Brush> brushes, const std:
     return true;
 }
 
-bool createBrushEntity(EditorDocument& document, std::string_view className) {
+bool createBrushEntity(EditorDocument& document, const EntityPreset& preset) {
     const Level& level = document.level();
     const std::vector<std::size_t> brushes = selectedBrushes(document);
     if (brushes.empty() || level.entities.size() >= kMaxLevelEntities) {
         return false;
     }
-    LevelEntity entity{std::string(className), {}};
-    const EntityClassInfo* entityClass = findEntityClass(className);
+    LevelEntity entity = makePresetEntity(preset);
+    const EntityClassInfo* entityClass = findEntityClass(preset.className);
     if (entityClass != nullptr && findPropertyInfo(*entityClass, "move") != nullptr) {
-        std::optional<Aabb> bounds;
-        for (const std::size_t index : brushes) {
-            Aabb more;
-            if (computeBrushBounds(level.brushes[index], more)) {
-                bounds =
-                    bounds ? Aabb{min(bounds->min, more.min), max(bounds->max, more.max)} : more;
+        Vec3 move = preset.move;
+        if (preset.moveUpByHeight) {
+            std::optional<Aabb> bounds;
+            for (const std::size_t index : brushes) {
+                Aabb more;
+                if (computeBrushBounds(level.brushes[index], more)) {
+                    bounds = bounds ? Aabb{min(bounds->min, more.min), max(bounds->max, more.max)}
+                                    : more;
+                }
             }
+            move = bounds ? Vec3{0.0f, 0.0f, bounds->max.z - bounds->min.z} : Vec3{};
         }
-        if (bounds) {
-            setProperty(entity, "move", formatVec3({0.0f, 0.0f, bounds->max.z - bounds->min.z}));
-        }
+        setProperty(entity, "move", formatVec3(move));
     }
 
-    const std::string name = std::format("Make {}", className);
+    const std::string name = std::format("Make {}", preset.name);
     const auto added = static_cast<std::uint32_t>(level.entities.size());
     std::vector<std::unique_ptr<Command>> commands;
     commands.push_back(makeInsertEntity(name, added, std::move(entity)));
@@ -368,6 +370,36 @@ bool createBrushEntity(EditorDocument& document, std::string_view className) {
     runCommands(document, name, std::move(commands));
     selection.push_back(LevelItem::entity(added - emptied.size()));
     document.setSelection(std::move(selection));
+    return true;
+}
+
+bool addPresetEntity(EditorDocument& document, const EntityPreset& preset, Vec3 point) {
+    const Level& level = document.level();
+    if (level.entities.size() >= kMaxLevelEntities || level.brushes.size() >= kMaxLevelBrushes) {
+        return false;
+    }
+    const Vec3 half{preset.size.x * 0.5f, preset.size.y * 0.5f, 0.0f};
+    Brush brush = makeBoxBrush(point - half, point + half + Vec3{0.0f, 0.0f, preset.size.z});
+    std::string problem;
+    if (!checkBrush(brush, problem)) {
+        return false;
+    }
+    LevelEntity entity = makePresetEntity(preset);
+    const EntityClassInfo* entityClass = findEntityClass(preset.className);
+    if (entityClass != nullptr && findPropertyInfo(*entityClass, "move") != nullptr) {
+        setProperty(
+            entity, "move",
+            formatVec3(preset.moveUpByHeight ? Vec3{0.0f, 0.0f, preset.size.z} : preset.move));
+    }
+    const std::string name = std::format("Create {}", preset.name);
+    const auto entityIndex = static_cast<std::uint32_t>(level.entities.size());
+    const std::size_t brushIndex = level.brushes.size();
+    brush.entity = entityIndex;
+    std::vector<std::unique_ptr<Command>> commands;
+    commands.push_back(makeInsertEntity(name, entityIndex, std::move(entity)));
+    commands.push_back(makeInsertBrush(name, brushIndex, std::move(brush)));
+    runCommands(document, name, std::move(commands));
+    document.setSelection({LevelItem::brush(brushIndex), LevelItem::entity(entityIndex)});
     return true;
 }
 

@@ -54,8 +54,10 @@ grid stay exact through any number of edits. Entities are point entities (an "or
 entities (doors, movers, triggers: the brushes whose `Brush::entity` is theirs; the file nests them
 in the entity's block). Outputs wire entities together: when an event happens, an input is sent
 to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
-properties (types, defaults), events and inputs; the editor's inspector and the game both read it.
-In the editor a click picks a whole entity, Alt-click one brush. A level name is looked up as
+properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform);
+the editor's inspector and the game both read it. In the editor a click picks a whole entity,
+Alt-click one brush; a selected mover shows a see-through copy at its end with a drag handle, and
+selected entities show their wires (`editor/EntityLinks.h`). A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
 content layers; a name with an extension is a path. Shipped games will later cook levels and
 assets into packed binary files; the text file stays the source.

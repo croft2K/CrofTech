@@ -83,45 +83,35 @@ constexpr SignalInfo kTimerInputs[] = {
     {"toggle", "Start if stopped, stop if running"},
 };
 
-constexpr PropertyInfo kDoorProperties[] = {
-    kName,
-    {"move", Vector, "0 0 0", "How far it moves to open, metres (x y z)"},
-    {"speed", Number, "3", "Metres per second", 0.01f, 100.0f},
-    {"wait", Number, "3", "Seconds it stays open before closing; -1 stays open", -1.0f, 3600.0f},
-    {"touch_open", Flag, "1", "Opens when a player walks into it"},
-    {"start_open", Flag, "0", "Starts open"},
-};
-constexpr SignalInfo kDoorEvents[] = {
-    {"on_open", "Started opening"},
-    {"on_opened", "Finished opening"},
-    {"on_close", "Started closing"},
-    {"on_closed", "Finished closing"},
-};
-constexpr SignalInfo kDoorInputs[] = {
-    {"open", "Open; it closes again after its wait"},
-    {"close", "Close"},
-    {"toggle", "Open if closed or closing, close if open or opening"},
-};
+constexpr std::string_view kActivateChoices[] = {"input", "touch", "stand"};
 
 constexpr PropertyInfo kMoverProperties[] = {
     kName,
-    {"move", Vector, "0 0 0", "From the start position to the end position, metres (x y z)"},
-    {"speed", Number, "2", "Metres per second", 0.01f, 100.0f},
-    {"wait", Number, "1", "Seconds it waits at each end before going back, with loop", 0.0f,
-     3600.0f},
-    {"loop", Flag, "0", "Keeps going back and forth between the ends"},
-    {"start_on", Flag, "0", "Starts moving towards the end when the level starts"},
+    {"move", Vector, "0 0 0",
+     "From where it is built to where it moves, metres (x y z); drag its end handle in the view"},
+    {"speed", Number, "3", "Metres per second", 0.01f, 100.0f},
+    {"activate", Choice, "input",
+     "What sets it moving: only inputs, a player walking into it (doors), or a player standing on "
+     "it (lifts)",
+     0.0f, 0.0f, kActivateChoices},
+    {"wait", Number, "3",
+     "Seconds it waits at the end before coming back by itself; -1 stays there", -1.0f, 3600.0f},
+    {"loop", Flag, "0", "Keeps going back and forth, waiting at each end (platforms)"},
+    {"start_moving", Flag, "0", "Sets off as the level starts"},
+    {"start_at_end", Flag, "0", "Starts at the end position (a door that starts open)"},
 };
 constexpr SignalInfo kMoverEvents[] = {
-    {"on_move", "Started moving"},
-    {"on_reached_end", "Arrived at the end position"},
-    {"on_reached_start", "Arrived back at the start position"},
+    {"on_leave_start", "Set off from the start (a door starts opening)"},
+    {"on_reached_end", "Arrived at the end (a door is open)"},
+    {"on_leave_end", "Set off back from the end (a door starts closing)"},
+    {"on_reached_start", "Arrived back at the start (a door is shut)"},
 };
 constexpr SignalInfo kMoverInputs[] = {
-    {"to_end", "Move to the end position"},
-    {"to_start", "Move back to the start position"},
-    {"toggle", "Turn round"},
+    {"move_to_end", "Move to the end; it comes back after its wait"},
+    {"move_to_start", "Move back to the start"},
+    {"toggle", "Head the other way"},
     {"stop", "Stop where it is"},
+    {"resume", "Carry on the way it was going"},
 };
 
 constexpr EntityClassInfo kClasses[] = {
@@ -134,10 +124,46 @@ constexpr EntityClassInfo kClasses[] = {
      kCounterProperties, kCounterEvents, kCounterInputs},
     {"timer", "Fires an event at intervals while running", EntityShape::Point, kTimerProperties,
      kTimerEvents, kTimerInputs},
-    {"door", "Brushes that slide open and closed", EntityShape::Brush, kDoorProperties, kDoorEvents,
-     kDoorInputs},
-    {"mover", "Brushes that move between two positions: lifts, platforms, crushers",
+    {"mover",
+     "Brushes that slide between where they are built and an end position: doors, lifts, "
+     "platforms, crushers",
      EntityShape::Brush, kMoverProperties, kMoverEvents, kMoverInputs},
+};
+
+constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"}, {"wait", "3"}};
+constexpr PresetProperty kLiftPreset[] = {{"activate", "stand"}, {"speed", "2"}, {"wait", "3"}};
+constexpr PresetProperty kPlatformPreset[] = {
+    {"speed", "2"}, {"wait", "1"}, {"loop", "1"}, {"start_moving", "1"}};
+
+constexpr EntityPreset kPresets[] = {
+    {"Door",
+     "Slides up out of the way when a player walks into it, and shuts again",
+     "mover",
+     kDoorPreset,
+     {},
+     true,
+     {2.0f, 0.25f, 3.0f}},
+    {"Lift",
+     "Rises when a player stands on it, and comes back down",
+     "mover",
+     kLiftPreset,
+     {0.0f, 0.0f, 4.0f},
+     false,
+     {2.0f, 2.0f, 0.25f}},
+    {"Platform",
+     "Shuttles back and forth by itself",
+     "mover",
+     kPlatformPreset,
+     {6.0f, 0.0f, 0.0f},
+     false,
+     {2.0f, 2.0f, 0.25f}},
+    {"Trigger",
+     "An invisible volume that fires events when players go in and out",
+     "trigger",
+     {},
+     {},
+     false,
+     {2.0f, 2.0f, 2.0f}},
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,
@@ -150,6 +176,16 @@ const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::str
 } // namespace
 
 std::span<const EntityClassInfo> entityClasses() { return kClasses; }
+
+std::span<const EntityPreset> entityPresets() { return kPresets; }
+
+LevelEntity makePresetEntity(const EntityPreset& preset) {
+    LevelEntity entity{std::string(preset.className), {}};
+    for (const PresetProperty& property : preset.properties) {
+        entity.properties.push_back({std::string(property.key), std::string(property.value)});
+    }
+    return entity;
+}
 
 const EntityClassInfo* findEntityClass(std::string_view name) {
     for (const EntityClassInfo& entityClass : kClasses) {
@@ -223,6 +259,18 @@ bool checkPropertyValue(const PropertyInfo& property, std::string_view value,
         }
         return true;
     }
+    case Choice:
+        if (std::find(property.choices.begin(), property.choices.end(), value) ==
+            property.choices.end()) {
+            std::string list;
+            for (const std::string_view choice : property.choices) {
+                list += list.empty() ? "" : ", ";
+                list += choice;
+            }
+            problem = std::format("{} must be one of: {}", property.key, list);
+            return false;
+        }
+        return true;
     case Angle: {
         float degrees = 0.0f;
         if (!parseFloat(value, degrees) || std::fabs(degrees) > kMaxAngleDegrees) {
@@ -278,6 +326,16 @@ Vec3 vectorProperty(const LevelEntity& entity, const EntityClassInfo& entityClas
                     std::string_view key) {
     return parseVec3(propertyValue(entity, requireProperty(entityClass, key, Vector)))
         .value_or(Vec3{});
+}
+
+std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
+                           std::string_view key) {
+    const PropertyInfo& property = requireProperty(entityClass, key, Choice);
+    const auto found = std::find(property.choices.begin(), property.choices.end(),
+                                 propertyValue(entity, property));
+    return found == property.choices.end()
+               ? 0
+               : static_cast<std::size_t>(found - property.choices.begin());
 }
 
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,

@@ -3,6 +3,7 @@
 #include "croftech/core/Math.h"
 #include "croftech/level/Level.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -23,6 +24,7 @@ enum class PropertyType : std::uint8_t {
     Flag,   // 0 or 1
     Vector, // three numbers: x y z, inside the world
     Angle,  // degrees
+    Choice, // one of a list of words
 };
 
 struct PropertyInfo {
@@ -32,6 +34,7 @@ struct PropertyInfo {
     std::string_view description;
     float minimum = 0.0f; // Number and Count only
     float maximum = 0.0f;
+    std::span<const std::string_view> choices{}; // Choice only
 };
 
 // An event an entity fires, or an input it accepts.
@@ -81,10 +84,35 @@ bool flagProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                   std::string_view key);
 Vec3 vectorProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                     std::string_view key);
+// The index of the value in the property's choices.
+std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
+                           std::string_view key);
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key);
 
 // A new entity of the class with no properties set, so it takes every default.
 LevelEntity makeEntity(const EntityClassInfo& entityClass);
+
+// Ready-made entities for the common cases, so a door or a lift needs no setting up or wiring:
+// an entity of a class with some properties set. The editor lists them in its Create menu, which
+// makes a brush of the preset's size, and offers them for brushes already built. Everything a
+// preset sets stays editable in the inspector.
+struct PresetProperty {
+    std::string_view key;
+    std::string_view value;
+};
+
+struct EntityPreset {
+    std::string_view name;
+    std::string_view description;
+    std::string_view className;
+    std::span<const PresetProperty> properties;
+    Vec3 move;           // where a mover goes...
+    bool moveUpByHeight; // ...or up by its brushes' height, as a door does
+    Vec3 size;           // the box brush the Create menu makes
+};
+
+std::span<const EntityPreset> entityPresets();
+LevelEntity makePresetEntity(const EntityPreset& preset);
 
 } // namespace ct

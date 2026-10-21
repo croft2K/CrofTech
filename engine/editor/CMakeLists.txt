@@ -4,6 +4,7 @@ add_library(ct_editor STATIC
     include/croftech/editor/CommandStack.h
     include/croftech/editor/EditorActions.h
     include/croftech/editor/EditorDocument.h
+    include/croftech/editor/EntityLinks.h
     include/croftech/editor/LevelCommands.h
     include/croftech/editor/LevelItem.h
     include/croftech/editor/SelectionDrag.h
@@ -14,6 +15,7 @@ add_library(ct_editor STATIC
     src/CommandStack.cpp
     src/EditorActions.cpp
     src/EditorDocument.cpp
+    src/EntityLinks.cpp
     src/LevelCommands.cpp
     src/LevelItem.cpp
     src/SelectionDrag.cpp

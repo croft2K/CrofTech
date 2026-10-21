@@ -208,8 +208,8 @@ TEST_CASE("entity brushes and outputs save inside their entity and load back") {
     ct::Level level;
     level.brushes.push_back(ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {4.0f, 4.0f, 1.0f}));
     level.entities.push_back(ct::makePlayerSpawn({1.0f, 1.0f, 1.0f}, 0.0f));
-    level.entities.push_back({"door", {{"name", "gate"}, {"move", "0 0 2.5"}}});
-    level.entities.push_back({"trigger", {}, {{"on_enter", "gate", "open", 0.5f}}});
+    level.entities.push_back({"mover", {{"name", "gate"}, {"move", "0 0 2.5"}}});
+    level.entities.push_back({"trigger", {}, {{"on_enter", "gate", "move_to_end", 0.5f}}});
     // Out of file order on purpose: saving groups each entity's brushes inside its block.
     ct::Brush gate = ct::makeBoxBrush({1.0f, 0.0f, 1.0f}, {2.0f, 0.25f, 3.0f});
     gate.entity = 1;
@@ -222,7 +222,7 @@ TEST_CASE("entity brushes and outputs save inside their entity and load back") {
     std::string error;
     const std::optional<std::string> text = ct::formatLevel(level, error);
     REQUIRE_MESSAGE(text.has_value(), error);
-    CHECK(text->find("entity trigger\n    output on_enter gate open 0.5\n    brush\n") !=
+    CHECK(text->find("entity trigger\n    output on_enter gate move_to_end 0.5\n    brush\n") !=
           std::string::npos);
     const std::optional<ct::Level> loaded = ct::parseLevel(*text, error);
     REQUIRE_MESSAGE(loaded.has_value(), error);
@@ -239,7 +239,7 @@ TEST_CASE("world brushes load first wherever they are in the file") {
     const std::string brush = boxText().substr(boxText().find('\n') + 1);
     std::string error;
     const auto level =
-        ct::parseLevel("croftech_level 3\nentity door\n" + brush + "end\n" + brush, error);
+        ct::parseLevel("croftech_level 3\nentity mover\n" + brush + "end\n" + brush, error);
     REQUIRE_MESSAGE(level.has_value(), error);
     REQUIRE(level->brushes.size() == 2);
     CHECK(level->brushes[0].entity == ct::kNoEntity);
