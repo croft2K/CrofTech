@@ -1,5 +1,6 @@
 #pragma once
 
+#include "croftech/core/Math.h"
 #include "croftech/core/Schema.h"
 #include "croftech/sim/EntityId.h"
 
@@ -10,8 +11,8 @@
 
 namespace ct {
 
-// Components of the logic entities placed in levels (triggers, relays, counters, timers) and of
-// the inputs on their way between them. What a level sets (a counter's target, a timer's
+// Components of the logic entities placed in levels (triggers, relays, counters, timers, movers)
+// and of the inputs on their way between them. What a level sets (a counter's target, a timer's
 // interval, the wiring) is static and stays in the GameLevel; only what changes during play is
 // here, so it is saved, rewound and sent like any other state.
 
@@ -95,6 +96,42 @@ struct Schema<Timer> {
     static constexpr TypeSchema value{"timer", sizeof(Timer), kFields};
 };
 static_assert(describesEveryByte(Schema<Timer>::value));
+
+enum class MoverPhase : std::uint32_t { AtStart, ToEnd, AtEnd, ToStart };
+
+enum MoverFlags : std::uint32_t {
+    kMoverStopped = 1u << 0, // held by a stop input until resumed
+};
+
+// A mover's brushes are where they were built in the level, moved by the offset: zero at the
+// start, the mover's "move" at the end.
+struct Mover {
+    Vec3 offset;
+    float distance = 0.0f;   // travelled from the start, metres
+    std::uint32_t phase = 0; // MoverPhase
+    std::uint32_t flags = 0;
+    std::uint32_t departTick = 0; // at rest: when it sets off for the other end; 0 is never
+};
+
+template <>
+struct Schema<Mover> {
+    static constexpr std::array<std::string_view, 1> kFlagNames{"stopped"};
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Mover, offset)
+            .withHint(FieldHint::Distance)
+            .withDescription("How far its brushes are from where they were built"),
+        CT_FIELD(Mover, distance)
+            .withHint(FieldHint::Distance)
+            .withDescription("Travelled from the start"),
+        CT_FIELD(Mover, phase)
+            .withRange(0, 3)
+            .withDescription("0 at the start, 1 moving to the end, 2 at the end, 3 moving back"),
+        CT_FIELD(Mover, flags).withFlagNames(kFlagNames),
+        CT_FIELD(Mover, departTick).withDescription("Tick it sets off by itself; 0 is never"),
+    };
+    static constexpr TypeSchema value{"mover", sizeof(Mover), kFields};
+};
+static_assert(describesEveryByte(Schema<Mover>::value));
 
 // An output with a delay, waiting to be delivered: an entity of its own, destroyed once delivered.
 // The source entity and output number find the targets and input in the GameLevel. Inputs due on

@@ -1,4 +1,5 @@
 add_library(ct_sim STATIC
+    include/croftech/sim/CollisionScene.h
     include/croftech/sim/CollisionWorld.h
     include/croftech/sim/ComponentPool.h
     include/croftech/sim/Components.h
@@ -11,11 +12,13 @@ add_library(ct_sim STATIC
     include/croftech/sim/StateSave.h
     include/croftech/sim/UserCmd.h
     include/croftech/sim/World.h
+    src/CollisionScene.cpp
     src/CollisionWorld.cpp
     src/GameLevel.cpp
     src/LevelLogic.cpp
     src/LevelLogic.h
     src/MovementConfig.cpp
+    src/Movers.cpp
     src/PlayerMovement.cpp
     src/Simulation.cpp
     src/StateSave.cpp

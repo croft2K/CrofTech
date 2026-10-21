@@ -44,6 +44,9 @@ enum class LogicInput : std::uint8_t {
     Resume,
 };
 
+// What sets a mover going besides its inputs (the mover class's "activate").
+enum class MoverActivation : std::uint8_t { Input, Touch, Stand };
+
 std::string_view logicEventName(LogicEvent event);
 std::string_view logicInputName(LogicInput input);
 
@@ -75,7 +78,7 @@ public:
         LogicClass logicClass = LogicClass::None;
         EntityId id; // in the starting state; invalid if the entity isn't simulated
         std::span<const Output> outputs;
-        const CollisionWorld* model = nullptr; // its brushes: triggers
+        const CollisionWorld* model = nullptr; // its brushes: triggers and movers
 
         // Settings, read from the level through EntityClasses with every value clamped to its
         // range, so play never sees one the editor wouldn't allow.
@@ -85,6 +88,23 @@ public:
         std::uint32_t intervalTicks = 1; // timer
         bool repeat = true;              // timer
         bool startOn = false;            // timer
+
+        // Movers.
+        Vec3 move;      // from the start to the end
+        Vec3 direction; // of the move, unit length; zero if it doesn't move
+        float length = 0.0f;
+        float speed = 0.0f; // metres per tick
+        MoverActivation activate = MoverActivation::Input;
+        std::int32_t waitTicks = 0; // at the end before coming back; -1 stays there
+        bool loop = false;
+        bool startMoving = false;
+        bool startAtEnd = false;
+
+        // Where a mover's brushes are when it has travelled the distance: exactly its move at
+        // the end.
+        Vec3 moverOffset(float distance) const {
+            return distance >= length ? move : direction * distance;
+        }
     };
 
     explicit GameLevel(const Level& level);
@@ -92,6 +112,7 @@ public:
     GameLevel& operator=(const GameLevel&) = delete;
 
     // World geometry: world brushes and those of entities that don't move or vanish in play.
+    // Movers have their own models, which CollisionScene places.
     const CollisionWorld& collision() const { return m_collision; }
     std::span<const SpawnPoint> spawns() const { return m_spawns; }
     // Null if index isn't an entity of the level.

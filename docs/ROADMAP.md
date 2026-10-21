@@ -93,8 +93,10 @@ In order; each step builds, tests and commits on its own.
      that can't work); triggers, relays, counters and timers are components, and delayed outputs
      wait as entities, so logic is saved, rewound and sent like the rest of the state. Triggers
      are hidden in play.
-   - 8c. Doors and movers: player collision against moving brushes (pushed, carried, blocked), and
-     moved brushes drawn from the snapshots.
+   - 8c. *Done.* Doors and movers: player collision against moving brushes (pushed, carried,
+     blocked, and a closing door goes back up rather than crushing), doors that open when walked
+     into, lifts that rise when stood on, platforms that loop, and moved brushes drawn from the
+     snapshots. Movers slide in straight lines; paths and turning movers are in M4.
 9. **Saves, checkpoints and play from here.**
 
 ## Decisions

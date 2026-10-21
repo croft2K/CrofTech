@@ -286,6 +286,8 @@ int main(int argc, char** argv) {
     bool layoutBuilt = false;
     std::uint64_t meshChangeCount = ~0ull;
     bool meshForPlay = false;
+    std::vector<std::uint32_t> moverParts; // in play, the level entity of each moving part
+    std::vector<ct::Vec3> moverOffsets;
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
     int frameCount = 0;
@@ -567,7 +569,9 @@ int main(int argc, char** argv) {
             const ct::WorldMesh mesh =
                 ct::buildWorldMesh(document.level(), meshForPlay ? ct::MeshPurpose::Playing
                                                                  : ct::MeshPurpose::Editing);
-            renderer->setWorldMesh(mesh.vertices, mesh.indices);
+            renderer->setWorldMesh(mesh.vertices, mesh.indices, mesh.parts);
+            moverParts = mesh.partEntities;
+            moverOffsets.assign(moverParts.size(), {});
         }
         const std::string title =
             std::format("CrofTech Editor - {}{}", document.path().filename().string(),
@@ -582,6 +586,10 @@ int main(int argc, char** argv) {
             const ImVec2 scale = io.DisplayFramebufferScale;
             const ct::PixelRect rect{view.x * scale.x, view.y * scale.y, view.width * scale.x,
                                      view.height * scale.y};
+            for (std::size_t i = 0; i < moverParts.size(); ++i) {
+                moverOffsets[i] = play->game().moverOffset(moverParts[i], now);
+            }
+            renderer->setWorldPartOffsets(moverOffsets);
             renderer->drawFrame(play->camera(), ui, &rect);
         } else {
             std::vector<ct::WorldView> worldViews;

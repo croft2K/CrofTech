@@ -34,6 +34,9 @@ public:
     // Where the player's eyes are, drawn between the two newest snapshots by how long ago the
     // newest arrived. Nullopt until the server has let the player in.
     std::optional<Vec3> eyePosition(Clock::time_point now) const;
+    // How far the mover made from the level entity has moved, drawn between snapshots the same
+    // way; zero until known.
+    Vec3 moverOffset(std::uint32_t levelEntity, Clock::time_point now) const;
     // The newest state the client has, or null.
     const State* latestState() const { return m_client.current(); }
     EntityId player() const { return m_client.player(); }
@@ -45,6 +48,9 @@ public:
     std::uint64_t malformedPackets() const { return m_client.malformedPackets(); }
 
 private:
+    // How far from the previous snapshot towards the newest to draw, 0 to 1.
+    float blend(Clock::time_point now) const;
+
     MovementSettings m_movement;
     LoopbackLink m_link;
     Server m_server;

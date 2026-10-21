@@ -52,16 +52,20 @@ LogicClass logicClassOf(std::string_view className) {
     return LogicClass::None;
 }
 
-// Triggers are volumes players walk through, not walls.
-bool isSolid(const Level& level, const Brush& brush) {
-    return brush.entity >= level.entities.size() ||
-           logicClassOf(level.entities[brush.entity].className) != LogicClass::Trigger;
+// Whether the brush is fixed world geometry. Triggers are volumes players walk through, and
+// movers collide where they have moved to.
+bool isStatic(const Level& level, const Brush& brush) {
+    if (brush.entity >= level.entities.size()) {
+        return true;
+    }
+    const LogicClass logicClass = logicClassOf(level.entities[brush.entity].className);
+    return logicClass != LogicClass::Trigger && logicClass != LogicClass::Mover;
 }
 
-std::vector<Brush> solidBrushes(const Level& level) {
+std::vector<Brush> staticBrushes(const Level& level) {
     std::vector<Brush> brushes;
     for (const Brush& brush : level.brushes) {
-        if (isSolid(level, brush)) {
+        if (isStatic(level, brush)) {
             brushes.push_back(brush);
         }
     }
@@ -109,7 +113,7 @@ std::string_view logicInputName(LogicInput input) {
 }
 
 GameLevel::GameLevel(const Level& level)
-    : m_collision(solidBrushes(level)), m_entities(level.entities.size()) {
+    : m_collision(staticBrushes(level)), m_entities(level.entities.size()) {
     std::string error;
     if (std::optional<std::vector<SpawnPoint>> spawns = readSpawnPoints(level, error)) {
         m_spawns = std::move(*spawns);
@@ -120,13 +124,14 @@ GameLevel::GameLevel(const Level& level)
     // Each brush entity's brushes, gathered in one pass.
     std::vector<std::vector<Brush>> owned(level.entities.size());
     for (const Brush& brush : level.brushes) {
-        if (brush.entity < level.entities.size() && !isSolid(level, brush)) {
+        if (!isStatic(level, brush)) {
             owned[brush.entity].push_back(brush);
         }
     }
     for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
         readEntity(level, i);
-        if (m_entities[i].logicClass == LogicClass::Trigger) {
+        if (m_entities[i].logicClass == LogicClass::Trigger ||
+            m_entities[i].logicClass == LogicClass::Mover) {
             if (owned[i].empty()) {
                 m_warnings.push_back(std::format("{} has no brushes", describe(level, i)));
             } else {
@@ -171,7 +176,20 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index) {
         entity.repeat = flagProperty(levelEntity, *entityClass, "repeat");
         entity.startOn = flagProperty(levelEntity, *entityClass, "start_on");
         break;
-    case LogicClass::Mover:
+    case LogicClass::Mover: {
+        entity.move = vectorProperty(levelEntity, *entityClass, "move");
+        entity.length = length(entity.move);
+        entity.direction = entity.length > 0.0f ? entity.move / entity.length : Vec3{};
+        entity.speed = clampedNumber(levelEntity, *entityClass, "speed") * kTickSeconds;
+        entity.activate =
+            static_cast<MoverActivation>(choiceProperty(levelEntity, *entityClass, "activate"));
+        const float wait = clampedNumber(levelEntity, *entityClass, "wait");
+        entity.waitTicks = wait < 0.0f ? -1 : static_cast<std::int32_t>(secondsToTicks(wait));
+        entity.loop = flagProperty(levelEntity, *entityClass, "loop");
+        entity.startMoving = flagProperty(levelEntity, *entityClass, "start_moving");
+        entity.startAtEnd = flagProperty(levelEntity, *entityClass, "start_at_end");
+        break;
+    }
     case LogicClass::None:
         break;
     }
@@ -259,8 +277,7 @@ void GameLevel::spawnLogic() {
     std::uint32_t spawned = 0;
     for (std::uint32_t index = 0; index < m_entities.size(); ++index) {
         Entity& entity = m_entities[index];
-        // Movers keep to the world's collision until they can move.
-        if (entity.logicClass == LogicClass::None || entity.logicClass == LogicClass::Mover) {
+        if (entity.logicClass == LogicClass::None) {
             continue;
         }
         if (spawned == kMaxLevelLogicEntities) {
@@ -287,7 +304,17 @@ void GameLevel::spawnLogic() {
             world.timers.add(entity.id,
                              entity.startOn ? Timer{kLogicEnabled, entity.intervalTicks} : Timer{});
             break;
-        case LogicClass::Mover:
+        case LogicClass::Mover: {
+            Mover mover;
+            if (entity.startAtEnd) {
+                mover.distance = entity.length;
+                mover.offset = entity.move;
+                mover.phase = static_cast<std::uint32_t>(MoverPhase::AtEnd);
+            }
+            mover.departTick = entity.startMoving ? 1u : 0u;
+            world.movers.add(entity.id, mover);
+            break;
+        }
         case LogicClass::None:
             break;
         }

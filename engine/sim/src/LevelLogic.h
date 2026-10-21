@@ -1,6 +1,7 @@
 #pragma once
 
 #include "croftech/sim/GameLevel.h"
+#include "croftech/sim/LogicComponents.h"
 #include "croftech/sim/PlayerMovement.h"
 #include "croftech/sim/World.h"
 
@@ -23,6 +24,11 @@ public:
     // Inputs whose delay ends this tick, oldest first.
     void deliverPendingInputs();
     void runTimers();
+    // Movers set off, travel and arrive, pushing players out of the way and carrying the ones
+    // standing on them. Before players move, so they move against where movers now are.
+    void runMovers(const MovementSettings& movement);
+    // Players walking into doors and standing on lifts, after they have moved.
+    void activateMovers(const MovementSettings& movement);
     // Players going into and out of triggers, after they have moved.
     void updateTriggers(const MovementSettings& movement);
 
@@ -41,6 +47,17 @@ private:
     void queue(const GameLevel::Output& output, EntityId activator);
     void deliverQueued();
     void apply(const Queued& input);
+
+    // Movers (Movers.cpp).
+    void applyMoverInput(std::uint32_t index, const GameLevel::Entity& entity, Mover& mover,
+                         LogicInput input, EntityId activator);
+    void setOff(std::uint32_t index, Mover& mover, bool toEnd, EntityId activator);
+    void arrive(std::uint32_t index, const GameLevel::Entity& entity, Mover& mover, bool atEnd);
+    // Waiting at the end starts again, as when a player keeps a door open.
+    void extendWait(const GameLevel::Entity& entity, Mover& mover) const;
+    std::uint32_t departureTick(const GameLevel::Entity& entity, bool atEnd) const;
+    bool moveMover(EntityId id, const GameLevel::Entity& entity, Mover& mover, float distance,
+                   const MovementSettings& movement);
 
     const GameLevel& m_level;
     State& m_state;

@@ -2,11 +2,12 @@
 
 #include "croftech/core/Math.h"
 #include "croftech/sim/Components.h"
+#include "croftech/sim/EntityId.h"
 #include "croftech/sim/UserCmd.h"
 
 namespace ct {
 
-class CollisionWorld;
+class CollisionScene;
 
 // Every number that shapes how movement feels. Defaults are classic Quake values converted to
 // metres (1 Quake unit = 1 inch); the tuning file overrides them.
@@ -28,8 +29,12 @@ struct MovementSettings {
 };
 
 // Advances one player by one tick.
-void movePlayer(const CollisionWorld& world, const MovementSettings& settings, const UserCmd& cmd,
+void movePlayer(const CollisionScene& world, const MovementSettings& settings, const UserCmd& cmd,
                 Transform& transform, PlayerMotion& motion);
+
+// The mover the player is standing on, or an invalid id for the world, or when in the air.
+EntityId standingOn(const CollisionScene& world, const MovementSettings& settings,
+                    const Transform& transform, const PlayerMotion& motion);
 
 Vec3 eyePosition(const MovementSettings& settings, const Transform& transform);
 

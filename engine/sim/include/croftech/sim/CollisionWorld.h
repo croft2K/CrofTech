@@ -2,6 +2,7 @@
 
 #include "croftech/core/Math.h"
 #include "croftech/level/Level.h"
+#include "croftech/sim/EntityId.h"
 
 #include <cstdint>
 #include <span>
@@ -15,6 +16,7 @@ struct TraceResult {
     Vec3 normal;             // surface normal at the hit; zero if nothing was hit
     bool startSolid = false; // the box started inside a brush
     bool allSolid = false;   // the box never left solid
+    EntityId entity;         // the mover hit (CollisionScene); invalid for the world
 };
 
 // Immutable level collision. Built once from the level's brushes; never part of the per-tick state.
@@ -27,8 +29,9 @@ public:
 
     // Sweeps an axis-aligned box (centre, half extents) from start to end.
     TraceResult traceBox(Vec3 start, Vec3 end, Vec3 halfExtents) const;
-    // Whether the box (centre, half extents) is inside or touching any brush.
-    bool overlapsBox(Vec3 centre, Vec3 halfExtents) const;
+    // Whether the box (centre, half extents) is inside or touching any brush. With an inset it
+    // must be inside by more than that: touching, or overlapping by rounding, doesn't count.
+    bool overlapsBox(Vec3 centre, Vec3 halfExtents, float inset = 0.0f) const;
 
 private:
     struct CollisionBrush {

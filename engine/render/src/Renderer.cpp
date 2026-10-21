@@ -61,7 +61,11 @@ struct PushConstants {
     Mat4 viewProjection;
     float gridMinor = 1.0f;
     float gridMajor = 4.0f;
+    float padding[2]{}; // the shader's vec4 starts on a 16-byte boundary
+    Vec3 offset;        // added to the positions of the part being drawn
+    float offsetW = 0.0f;
 };
+static_assert(sizeof(PushConstants) == 96, "must match the push constants in world.vert/.frag");
 
 } // namespace
 
@@ -92,6 +96,9 @@ struct Renderer::Impl {
     Buffer vertexBuffer;
     Buffer indexBuffer;
     std::uint32_t indexCount = 0;
+    std::uint32_t staticIndexCount = 0; // the indices before the first part
+    std::vector<WorldMeshPart> parts;
+    std::vector<Vec3> partOffsets;
 
     UiRenderer ui;
 
@@ -584,15 +591,28 @@ void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
             vkCmdClearAttachments(cmd, 1, &clearColor, 1, &clearRect);
         }
         if (indexCount > 0 && view.drawWorld) {
-            const PushConstants push{view.viewProjection, gridMinor, gridMajor};
+            PushConstants push;
+            push.viewProjection = view.viewProjection;
+            push.gridMinor = gridMinor;
+            push.gridMajor = gridMajor;
             const VkDeviceSize offset = 0;
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            vkCmdPushConstants(cmd, pipelineLayout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                               sizeof(push), &push);
             vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &offset);
             vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+            const auto draw = [&](std::uint32_t firstIndex, std::uint32_t count, Vec3 moved) {
+                if (count == 0) {
+                    return;
+                }
+                push.offset = moved;
+                vkCmdPushConstants(cmd, pipelineLayout,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(push), &push);
+                vkCmdDrawIndexed(cmd, count, 1, firstIndex, 0, 0);
+            };
+            draw(0, staticIndexCount, {});
+            for (std::size_t i = 0; i < parts.size(); ++i) {
+                draw(parts[i].firstIndex, parts[i].indexCount, partOffsets[i]);
+            }
         }
     }
     ui.draw(cmd, frameIndex, uiData);
@@ -664,15 +684,31 @@ std::unique_ptr<Renderer> Renderer::create(SDL_Window* window,
 }
 
 void Renderer::setWorldMesh(std::span<const WorldVertex> vertices,
-                            std::span<const std::uint32_t> indices) {
+                            std::span<const std::uint32_t> indices,
+                            std::span<const WorldMeshPart> parts) {
     Impl& r = *m_impl;
     vkDeviceWaitIdle(r.device.device);
     r.destroyBuffer(r.vertexBuffer);
     r.destroyBuffer(r.indexBuffer);
     r.indexCount = 0;
+    r.staticIndexCount = 0;
+    r.parts.clear();
+    r.partOffsets.clear();
     if (vertices.empty() || indices.empty()) {
         return;
     }
+    // Parts that run past the indices are cut short, so a bad part can't draw outside the buffer.
+    r.staticIndexCount = parts.empty() ? static_cast<std::uint32_t>(indices.size())
+                                       : std::min(parts.front().firstIndex,
+                                                  static_cast<std::uint32_t>(indices.size()));
+    for (const WorldMeshPart& part : parts) {
+        const std::uint32_t first =
+            std::min(part.firstIndex, static_cast<std::uint32_t>(indices.size()));
+        const std::uint32_t count =
+            std::min(part.indexCount, static_cast<std::uint32_t>(indices.size()) - first);
+        r.parts.push_back({first, count});
+    }
+    r.partOffsets.assign(r.parts.size(), Vec3{});
     r.vertexBuffer = r.createHostBuffer(vertices.data(), vertices.size_bytes(),
                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     r.indexBuffer =
@@ -680,6 +716,12 @@ void Renderer::setWorldMesh(std::span<const WorldVertex> vertices,
     if (r.vertexBuffer.buffer != VK_NULL_HANDLE && r.indexBuffer.buffer != VK_NULL_HANDLE) {
         r.indexCount = static_cast<std::uint32_t>(indices.size());
     }
+}
+
+void Renderer::setWorldPartOffsets(std::span<const Vec3> offsets) {
+    Impl& r = *m_impl;
+    std::copy_n(offsets.begin(), std::min(offsets.size(), r.partOffsets.size()),
+                r.partOffsets.begin());
 }
 
 void Renderer::setWorldGrid(float minorSpacing, float majorSpacing) {

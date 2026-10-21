@@ -29,6 +29,7 @@ struct World {
     ComponentPool<Relay, kMaxEntities> relays;
     ComponentPool<Counter, kMaxEntities> counters;
     ComponentPool<Timer, kMaxEntities> timers;
+    ComponentPool<Mover, kMaxEntities> movers;
     ComponentPool<PendingInput, kMaxEntities> pendingInputs;
 
     void destroy(EntityId id) noexcept;
@@ -46,6 +47,7 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.relays);
     fn(world.counters);
     fn(world.timers);
+    fn(world.movers);
     fn(world.pendingInputs);
 }
 

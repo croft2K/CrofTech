@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace ct {
 namespace {
@@ -17,9 +18,9 @@ constexpr std::array kPalette{
     Vec3{0.33f, 0.50f, 0.48f},
 };
 
-bool isTrigger(const Level& level, const Brush& brush) {
+bool isClass(const Level& level, const Brush& brush, std::string_view className) {
     return brush.entity < level.entities.size() &&
-           level.entities[brush.entity].className == "trigger";
+           level.entities[brush.entity].className == className;
 }
 
 // Brushes of entities are coloured by what they are, so movers and triggers stand out.
@@ -37,25 +38,46 @@ Vec3 brushColor(const Level& level, std::size_t index) {
     return kPalette[index % kPalette.size()];
 }
 
+void addBrush(WorldMesh& mesh, const Level& level, std::size_t brushIndex) {
+    const Vec3 color = brushColor(level, brushIndex);
+    for (const BrushPolygon& face : brushPolygons(level.brushes[brushIndex])) {
+        const auto first = static_cast<std::uint32_t>(mesh.vertices.size());
+        for (const Vec3& position : face.vertices) {
+            mesh.vertices.push_back({position, face.plane.normal, color});
+        }
+        // Faces are convex, so a fan from the first vertex triangulates them.
+        for (std::uint32_t i = 1; i + 1 < face.vertices.size(); ++i) {
+            mesh.indices.insert(mesh.indices.end(), {first, first + i, first + i + 1});
+        }
+    }
+}
+
 } // namespace
 
 WorldMesh buildWorldMesh(const Level& level, MeshPurpose purpose) {
     WorldMesh mesh;
+    if (purpose == MeshPurpose::Editing) {
+        for (std::size_t brushIndex = 0; brushIndex < level.brushes.size(); ++brushIndex) {
+            addBrush(mesh, level, brushIndex);
+        }
+        return mesh;
+    }
     for (std::size_t brushIndex = 0; brushIndex < level.brushes.size(); ++brushIndex) {
-        if (purpose == MeshPurpose::Playing && isTrigger(level, level.brushes[brushIndex])) {
+        const Brush& brush = level.brushes[brushIndex];
+        if (!isClass(level, brush, "trigger") && !isClass(level, brush, "mover")) {
+            addBrush(mesh, level, brushIndex);
+        }
+    }
+    for (std::uint32_t entity = 0; entity < level.entities.size(); ++entity) {
+        if (level.entities[entity].className != "mover") {
             continue;
         }
-        const Vec3 color = brushColor(level, brushIndex);
-        for (const BrushPolygon& face : brushPolygons(level.brushes[brushIndex])) {
-            const auto first = static_cast<std::uint32_t>(mesh.vertices.size());
-            for (const Vec3& position : face.vertices) {
-                mesh.vertices.push_back({position, face.plane.normal, color});
-            }
-            // Faces are convex, so a fan from the first vertex triangulates them.
-            for (std::uint32_t i = 1; i + 1 < face.vertices.size(); ++i) {
-                mesh.indices.insert(mesh.indices.end(), {first, first + i, first + i + 1});
-            }
+        const auto first = static_cast<std::uint32_t>(mesh.indices.size());
+        for (const std::size_t brushIndex : entityBrushes(level, entity)) {
+            addBrush(mesh, level, brushIndex);
         }
+        mesh.parts.push_back({first, static_cast<std::uint32_t>(mesh.indices.size()) - first});
+        mesh.partEntities.push_back(entity);
     }
     return mesh;
 }

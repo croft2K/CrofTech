@@ -275,10 +275,14 @@ int main(int argc, char** argv) {
 
     std::unique_ptr<ct::LocalGame> localGame;
     ct::PlayerLook look;
+    std::vector<std::uint32_t> moverParts; // the level entity of each moving part of the mesh
+    std::vector<ct::Vec3> moverOffsets;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
         localGame.reset();
         const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level, ct::MeshPurpose::Playing);
-        renderer->setWorldMesh(mesh.vertices, mesh.indices);
+        renderer->setWorldMesh(mesh.vertices, mesh.indices, mesh.parts);
+        moverParts = mesh.partEntities;
+        moverOffsets.assign(moverParts.size(), {});
         localGame =
             std::make_unique<ct::LocalGame>(prepared.level, movement, client.linkConditions());
         for (const std::string& warning : localGame->level().warnings()) {
@@ -382,6 +386,10 @@ int main(int argc, char** argv) {
         if (const std::optional<ct::Vec3> playerEye = localGame->eyePosition(now)) {
             eye = *playerEye;
         }
+        for (std::size_t i = 0; i < moverParts.size(); ++i) {
+            moverOffsets[i] = localGame->moverOffset(moverParts[i], now);
+        }
+        renderer->setWorldPartOffsets(moverOffsets);
         if (const ct::State* latest = localGame->latestState()) {
             if (const ct::PlayerMotion* motion =
                     latest->world.playerMotions.get(localGame->player())) {

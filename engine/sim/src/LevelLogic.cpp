@@ -241,6 +241,10 @@ void LevelLogic::apply(const Queued& input) {
         }
         return;
     case LogicClass::Mover:
+        if (Mover* mover = world.movers.get(id)) {
+            applyMoverInput(input.target, *entity, *mover, input.input, input.activator);
+        }
+        return;
     case LogicClass::None:
         return;
     }

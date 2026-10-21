@@ -43,12 +43,32 @@ std::optional<Vec3> LocalGame::eyePosition(Clock::time_point now) const {
     if (from == nullptr) {
         from = to;
     }
-    const float alpha = std::clamp(
-        std::chrono::duration<float>(now - m_client.currentArrivedAt()).count() / kTickSeconds,
-        0.0f, 1.0f);
     const Vec3 a = ct::eyePosition(m_movement, *from);
     const Vec3 b = ct::eyePosition(m_movement, *to);
-    return a + (b - a) * alpha;
+    return a + (b - a) * blend(now);
+}
+
+Vec3 LocalGame::moverOffset(std::uint32_t levelEntity, Clock::time_point now) const {
+    const GameLevel::Entity* entity = level().entity(levelEntity);
+    const State* current = m_client.current();
+    if (entity == nullptr || current == nullptr) {
+        return {};
+    }
+    const Mover* to = current->world.movers.get(entity->id);
+    if (to == nullptr) {
+        return {};
+    }
+    const Mover* from = m_client.previous()->world.movers.get(entity->id);
+    if (from == nullptr) {
+        from = to;
+    }
+    return from->offset + (to->offset - from->offset) * blend(now);
+}
+
+float LocalGame::blend(Clock::time_point now) const {
+    return std::clamp(std::chrono::duration<float>(now - m_client.currentArrivedAt()).count() /
+                          kTickSeconds,
+                      0.0f, 1.0f);
 }
 
 } // namespace ct

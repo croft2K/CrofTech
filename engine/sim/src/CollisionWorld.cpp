@@ -78,7 +78,7 @@ TraceResult CollisionWorld::traceBox(Vec3 start, Vec3 end, Vec3 halfExtents) con
     return result;
 }
 
-bool CollisionWorld::overlapsBox(Vec3 centre, Vec3 halfExtents) const {
+bool CollisionWorld::overlapsBox(Vec3 centre, Vec3 halfExtents, float inset) const {
     const Aabb box{centre - halfExtents, centre + halfExtents};
     for (const CollisionBrush& brush : m_brushes) {
         if (!overlaps(box, brush.bounds)) {
@@ -86,7 +86,7 @@ bool CollisionWorld::overlapsBox(Vec3 centre, Vec3 halfExtents) const {
         }
         const std::span<const Plane> planes(m_planes.data() + brush.firstPlane, brush.planeCount);
         if (std::all_of(planes.begin(), planes.end(), [&](const Plane& plane) {
-                return expandedDistance(plane, centre, halfExtents) <= 0.0f;
+                return expandedDistance(plane, centre, halfExtents) <= -inset;
             })) {
             return true;
         }

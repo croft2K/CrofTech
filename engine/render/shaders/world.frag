@@ -11,6 +11,7 @@ layout(location = 2) in vec3 inColor;
 layout(push_constant) uniform PushConstants {
     mat4 viewProjection;
     vec2 gridSpacing; // minor, major
+    vec4 offset;      // used by world.vert
 } pc;
 
 layout(location = 0) out vec4 outColor;

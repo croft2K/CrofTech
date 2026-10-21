@@ -5,7 +5,7 @@
 #include "croftech/core/Assert.h"
 #include "croftech/core/Hash.h"
 #include "croftech/core/Profile.h"
-#include "croftech/sim/CollisionWorld.h"
+#include "croftech/sim/CollisionScene.h"
 #include "croftech/sim/GameLevel.h"
 
 #include <cstddef>
@@ -27,7 +27,9 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     LevelLogic logic(*m_level, next);
     logic.deliverPendingInputs();
     logic.runTimers();
+    logic.runMovers(m_movement);
 
+    const CollisionScene scene(*m_level, world);
     const std::span<const EntityId> controlled = world.playerControls.entities();
     const std::span<const PlayerControl> controls = world.playerControls.components();
     for (std::size_t i = 0; i < controlled.size(); ++i) {
@@ -37,8 +39,9 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
         if (slot >= kMaxPlayers || transform == nullptr || motion == nullptr) {
             continue;
         }
-        movePlayer(m_level->collision(), m_movement, inputs.commands[slot], *transform, *motion);
+        movePlayer(scene, m_movement, inputs.commands[slot], *transform, *motion);
     }
+    logic.activateMovers(m_movement);
     logic.updateTriggers(m_movement);
 }
 

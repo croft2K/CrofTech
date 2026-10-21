@@ -2,7 +2,7 @@
 
 #include "croftech/core/Angle.h"
 #include "croftech/core/Profile.h"
-#include "croftech/sim/CollisionWorld.h"
+#include "croftech/sim/CollisionScene.h"
 #include "croftech/sim/World.h"
 
 #include <algorithm>
@@ -24,9 +24,10 @@ constexpr float kGroundLift = 0.001f;
 struct Ground {
     bool onGround = false;
     Vec3 normal{0.0f, 0.0f, 1.0f};
+    EntityId entity; // the mover stood on; invalid for the world
 };
 
-Ground findGround(const CollisionWorld& world, const MovementSettings& settings, Vec3 position,
+Ground findGround(const CollisionScene& world, const MovementSettings& settings, Vec3 position,
                   Vec3 velocity) {
     const TraceResult trace = world.traceBox(
         position, position - Vec3{0.0f, 0.0f, kGroundProbeDistance}, settings.halfExtents);
@@ -34,7 +35,7 @@ Ground findGround(const CollisionWorld& world, const MovementSettings& settings,
         dot(velocity, trace.normal) > kLeaveGroundSpeed) {
         return {};
     }
-    return {true, trace.normal};
+    return {true, trace.normal, trace.entity};
 }
 
 // Removes the part of the velocity going into the plane, plus a hair more so the next trace
@@ -103,7 +104,7 @@ void accelerate(Vec3& velocity, Vec3 wishDirection, float wishSpeed, float speed
 }
 
 // Moves through the world for one tick, sliding along anything hit. Returns true if blocked.
-bool slideMove(const CollisionWorld& world, const MovementSettings& settings, const Ground& ground,
+bool slideMove(const CollisionScene& world, const MovementSettings& settings, const Ground& ground,
                Vec3& position, Vec3& velocity) {
     const Vec3 halfExtents = settings.halfExtents;
     std::array<Vec3, kMaxClipPlanes> planes{};
@@ -171,7 +172,7 @@ float horizontalDistance(Vec3 a, Vec3 b) { return length(Vec3{a.x - b.x, a.y - b
 
 // Slides along the ground. If blocked, also tries the same move from stepHeight higher and keeps
 // whichever got further, which is how players walk up stairs without jumping.
-void groundMove(const CollisionWorld& world, const MovementSettings& settings, const Ground& ground,
+void groundMove(const CollisionScene& world, const MovementSettings& settings, const Ground& ground,
                 Vec3& position, Vec3& velocity) {
     const Vec3 startPosition = position;
     const Vec3 startVelocity = velocity;
@@ -213,7 +214,7 @@ void groundMove(const CollisionWorld& world, const MovementSettings& settings, c
 
 // Keeps a walking player on the ground over stairs, slopes and the crest of a ramp instead of
 // launching off, and turns their velocity to follow the new ground.
-void stickToGround(const CollisionWorld& world, const MovementSettings& settings, Vec3& position,
+void stickToGround(const CollisionScene& world, const MovementSettings& settings, Vec3& position,
                    Vec3& velocity) {
     const TraceResult down = world.traceBox(
         position, position - Vec3{0.0f, 0.0f, settings.stepHeight}, settings.halfExtents);
@@ -225,7 +226,7 @@ void stickToGround(const CollisionWorld& world, const MovementSettings& settings
 
 } // namespace
 
-void movePlayer(const CollisionWorld& world, const MovementSettings& settings, const UserCmd& cmd,
+void movePlayer(const CollisionScene& world, const MovementSettings& settings, const UserCmd& cmd,
                 Transform& transform, PlayerMotion& motion) {
     CT_PROFILE_ZONE();
     transform.yaw = cmd.yaw;
@@ -284,6 +285,12 @@ void movePlayer(const CollisionWorld& world, const MovementSettings& settings, c
         }
     }
     motion.flags = (ground.onGround ? kPlayerOnGround : 0u) | (jumpHeld ? kPlayerJumpHeld : 0u);
+}
+
+EntityId standingOn(const CollisionScene& world, const MovementSettings& settings,
+                    const Transform& transform, const PlayerMotion& motion) {
+    const Ground ground = findGround(world, settings, transform.position, motion.velocity);
+    return ground.onGround ? ground.entity : EntityId{};
 }
 
 Vec3 eyePosition(const MovementSettings& settings, const Transform& transform) {

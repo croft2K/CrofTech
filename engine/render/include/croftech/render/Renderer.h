@@ -21,6 +21,12 @@ struct WorldVertex {
     Vec3 color; // linear RGB
 };
 
+// A run of the world mesh's indices that moves as one: the brushes of a mover.
+struct WorldMeshPart {
+    std::uint32_t firstIndex = 0;
+    std::uint32_t indexCount = 0;
+};
+
 // A region of the window in pixels, for drawing the world into part of it (an editor viewport).
 struct PixelRect {
     float x = 0.0f;
@@ -51,8 +57,12 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void setWorldMesh(std::span<const WorldVertex> vertices,
-                      std::span<const std::uint32_t> indices);
+    // Parts follow the indices that never move, in order. Each is drawn moved by its offset from
+    // setWorldPartOffsets, zero until set; its surface grid moves with it.
+    void setWorldMesh(std::span<const WorldVertex> vertices, std::span<const std::uint32_t> indices,
+                      std::span<const WorldMeshPart> parts = {});
+    // One offset per part of the current mesh, in order.
+    void setWorldPartOffsets(std::span<const Vec3> offsets);
     // Spacing of the grid lines drawn on every world surface, in metres (1 and 4 by default).
     void setWorldGrid(float minorSpacing, float majorSpacing);
     // ui (may be null) is this frame's ImGui::GetDrawData(), drawn over the world. The world fills
