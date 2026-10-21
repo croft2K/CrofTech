@@ -31,6 +31,14 @@ constexpr float kGizmoScale = 0.18f;
 constexpr float kPlaneHandleNear = 0.25f; // plane squares span this to kPlaneHandleFar of size
 constexpr float kPlaneHandleFar = 0.45f;
 constexpr int kRingSegments = 64;
+constexpr float kOrthoGizmoPixels = 110.0f;
+// Orthographic panes look from this far behind their centre, outside the world, so rays from them
+// start outside every brush.
+constexpr float kOrthoBackDistance = 4.0f * kMaxWorldCoordinate;
+constexpr float kMinMetresPerPixel = 0.0005f;
+constexpr float kMaxMetresPerPixel = 2.0f;
+constexpr float kZoomStep = 0.85f;     // per wheel notch
+constexpr float kMinGridPixels = 6.0f; // finer orthographic grid lines than this are not drawn
 
 constexpr ImU32 kHoverColor = IM_COL32(255, 255, 255, 140);
 constexpr ImU32 kSelectedColor = IM_COL32(255, 210, 40, 255);
@@ -43,6 +51,10 @@ constexpr ImU32 kMarqueeFill = IM_COL32(120, 180, 255, 40);
 constexpr ImU32 kExtentColor = IM_COL32(255, 255, 255, 110);
 constexpr ImU32 kHandleColor = IM_COL32(230, 230, 230, 200);
 constexpr ImU32 kHandleHoverColor = IM_COL32(255, 255, 255, 255);
+constexpr ImU32 kOrthoEdgeColor = IM_COL32(205, 205, 215, 170);
+constexpr ImU32 kOrthoGridColor = IM_COL32(255, 255, 255, 18);
+constexpr ImU32 kOrthoMajorGridColor = IM_COL32(255, 255, 255, 40);
+constexpr ImU32 kPaneBorderColor = IM_COL32(20, 20, 24, 255);
 constexpr ImU32 kGizmoActiveColor = IM_COL32(255, 230, 80, 255);
 constexpr std::array<ImU32, 3> kAxisColors{IM_COL32(235, 75, 75, 255), IM_COL32(115, 205, 65, 255),
                                            IM_COL32(75, 135, 245, 255)};
@@ -139,8 +151,8 @@ struct Clip {
 // World to screen for the 3D view.
 class Projector {
 public:
-    Projector(const Camera& camera, const ViewRect& rect)
-        : m_viewProjection(makeViewProjection(camera, rect.aspect())), m_rect(rect) {}
+    Projector(const Mat4& viewProjection, const ViewRect& rect)
+        : m_viewProjection(viewProjection), m_rect(rect) {}
 
     Clip clip(Vec3 p) const {
         // Rows 0, 1 and 3 of the column-major matrix; depth isn't needed.
@@ -155,7 +167,7 @@ public:
                 m_rect.y + (clip.y / clip.w * 0.5f + 0.5f) * m_rect.height};
     }
 
-    // Nullopt for points behind the camera.
+    // Nullopt for points behind the camera. Orthographic views have w = 1 everywhere.
     std::optional<ImVec2> screen(Vec3 p) const {
         const Clip c = clip(p);
         if (c.w < kCameraNearPlane) {
@@ -174,8 +186,8 @@ private:
 // Draws world-space lines over the view, clipped against the near plane.
 class LinePainter {
 public:
-    LinePainter(const Camera& camera, const ViewRect& rect)
-        : m_projector(camera, rect), m_drawList(ImGui::GetBackgroundDrawList()) {
+    LinePainter(const Mat4& viewProjection, const ViewRect& rect)
+        : m_projector(viewProjection, rect), m_drawList(ImGui::GetBackgroundDrawList()) {
         m_drawList->PushClipRect({rect.x, rect.y}, {rect.x + rect.width, rect.y + rect.height});
     }
     ~LinePainter() { m_drawList->PopClipRect(); }
@@ -242,39 +254,313 @@ double screenAngle(ImVec2 centre, ImVec2 point) {
                       static_cast<double>(point.x - centre.x));
 }
 
+// The world axis (0 = X, 1 = Y) closest to a direction's horizontal part, with its sign.
+Vec3 horizontalAxis(Vec3 direction) {
+    if (std::fabs(direction.x) >= std::fabs(direction.y)) {
+        return {direction.x < 0.0f ? -1.0f : 1.0f, 0.0f, 0.0f};
+    }
+    return {0.0f, direction.y < 0.0f ? -1.0f : 1.0f, 0.0f};
+}
+
+std::size_t axisIndex(Vec3 axis) { return axis.x != 0.0f ? 0 : (axis.y != 0.0f ? 1 : 2); }
+
+// The vector without its part along an axis direction (exact for axis-aligned directions).
+Vec3 withoutAxis(Vec3 v, Vec3 axis) {
+    setComponent(v, axisIndex(axis), 0.0f);
+    return v;
+}
+
+// Directions an orthographic pane looks along, and its screen right and up.
+struct OrthoBasis {
+    Vec3 forward;
+    Vec3 right;
+    Vec3 up;
+};
+
+OrthoBasis orthoBasis(ViewMode mode) {
+    switch (mode) {
+    case ViewMode::Top:
+        return {{0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}};
+    case ViewMode::Front:
+        return {{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+    case ViewMode::Side:
+    case ViewMode::Perspective:
+        break;
+    }
+    return {{-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+}
+
+// Ray-box slab test from outside, for skipping brushes a sight line can't touch.
+bool rayMayHit(const Aabb& box, Vec3 origin, Vec3 direction, float length) {
+    float enter = 0.0f;
+    float exit = length;
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        const float o = component(origin, axis);
+        const float d = component(direction, axis);
+        const float lo = component(box.min, axis);
+        const float hi = component(box.max, axis);
+        if (std::fabs(d) < 1e-9f) {
+            if (o < lo || o > hi) {
+                return false;
+            }
+            continue;
+        }
+        float t0 = (lo - o) / d;
+        float t1 = (hi - o) / d;
+        if (t0 > t1) {
+            std::swap(t0, t1);
+        }
+        enter = std::max(enter, t0);
+        exit = std::min(exit, t1);
+        if (enter > exit) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
+const char* viewModeName(ViewMode mode) {
+    switch (mode) {
+    case ViewMode::Perspective:
+        return "3D";
+    case ViewMode::Top:
+        return "Top (X, Y)";
+    case ViewMode::Front:
+        return "Front (X, Z)";
+    case ViewMode::Side:
+        return "Side (Y, Z)";
+    }
+    return "3D";
+}
+
+LevelViewport::LevelViewport(Camera camera) {
+    // The orthographic panes centre on what the camera looks at.
+    const Vec3 target = camera.position + cameraBasis(camera).forward * kPlacementDistance * 2.0f;
+    constexpr std::array<ViewMode, 4> kModes{ViewMode::Perspective, ViewMode::Top, ViewMode::Front,
+                                             ViewMode::Side};
+    for (std::size_t i = 0; i < m_panes.size(); ++i) {
+        m_panes[i].mode = kModes[i];
+        m_panes[i].camera = camera;
+        m_panes[i].centre = target;
+    }
+}
+
+void LevelViewport::setLayout(ViewLayout layout) {
+    m_layout = layout;
+    m_active = std::min(m_active, paneCount() - 1);
+}
+
+ViewRect LevelViewport::paneRect(const ViewRect& region, std::size_t pane) const {
+    if (m_layout == ViewLayout::One) {
+        return region;
+    }
+    // Two by two, with a pixel between neighbours for the border.
+    const float halfWidth = std::floor(region.width * 0.5f);
+    const float halfHeight = std::floor(region.height * 0.5f);
+    const bool right = (pane & 1) != 0;
+    const bool bottom = (pane & 2) != 0;
+    return {region.x + (right ? halfWidth + 1.0f : 0.0f),
+            region.y + (bottom ? halfHeight + 1.0f : 0.0f),
+            right ? region.width - halfWidth - 1.0f : halfWidth,
+            bottom ? region.height - halfHeight - 1.0f : halfHeight};
+}
+
+LevelViewport::PaneView LevelViewport::paneView(const ViewRect& region, std::size_t pane) const {
+    const ViewPane& source = m_panes[pane];
+    PaneView view;
+    view.rect = paneRect(region, pane);
+    if (source.mode == ViewMode::Perspective) {
+        const CameraBasis basis = cameraBasis(source.camera);
+        view.viewProjection = makeViewProjection(source.camera, view.rect.aspect());
+        view.camera = source.camera;
+        view.eye = source.camera.position;
+        view.forward = basis.forward;
+        view.right = basis.right;
+        view.up = basis.up;
+        return view;
+    }
+    const OrthoBasis basis = orthoBasis(source.mode);
+    view.orthographic = true;
+    view.forward = basis.forward;
+    view.right = basis.right;
+    view.up = basis.up;
+    view.metresPerPixel = source.metresPerPixel;
+    view.centre = source.centre;
+    view.eye = source.centre - basis.forward * kOrthoBackDistance;
+    const Vec3 r = basis.right;
+    const Vec3 u = basis.up;
+    const Vec3 f = basis.forward;
+    const Vec3 eye = view.eye;
+    Mat4 look;
+    look.m = {r.x, u.x, -f.x, 0.0f, r.y,          u.y,          -f.y,        0.0f,
+              r.z, u.z, -f.z, 0.0f, -dot(r, eye), -dot(u, eye), dot(f, eye), 1.0f};
+    // Reverse-Z like the 3D view: depth 1 at the eye, 0 twice the back distance away.
+    const float halfWidth = source.metresPerPixel * view.rect.width * 0.5f;
+    const float halfHeight = source.metresPerPixel * view.rect.height * 0.5f;
+    Mat4 projection;
+    projection.m[0] = 1.0f / std::max(halfWidth, 1e-6f);
+    projection.m[5] = -1.0f / std::max(halfHeight, 1e-6f);
+    projection.m[10] = 1.0f / (2.0f * kOrthoBackDistance);
+    projection.m[14] = 1.0f;
+    projection.m[15] = 1.0f;
+    view.viewProjection = projection * look;
+    return view;
+}
+
+LevelViewport::Ray LevelViewport::PaneView::rayThrough(float screenX, float screenY) const {
+    const float x = (screenX - rect.x) / rect.width * 2.0f - 1.0f;
+    const float y = (screenY - rect.y) / rect.height * 2.0f - 1.0f;
+    if (!orthographic) {
+        return {eye, cameraRayDirection(camera, rect.aspect(), x, y)};
+    }
+    const Vec3 onPlane = centre + right * (x * metresPerPixel * rect.width * 0.5f) -
+                         up * (y * metresPerPixel * rect.height * 0.5f);
+    return {onPlane - forward * kOrthoBackDistance, forward};
+}
+
+std::vector<LevelViewport::PaneDraw> LevelViewport::paneDraws(const ViewRect& region) const {
+    std::vector<PaneDraw> draws;
+    for (std::size_t i = 0; i < paneCount(); ++i) {
+        const PaneView view = paneView(region, i);
+        draws.push_back({view.viewProjection, view.rect, view.orthographic});
+    }
+    return draws;
+}
+
+void LevelViewport::drawPaneControls(const ViewRect& region) {
+    if (region.width <= 0.0f || region.height <= 0.0f) {
+        return;
+    }
+    constexpr ImGuiWindowFlags kFlags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_NoBackground;
+    const float padding = ImGui::GetStyle().WindowPadding.x;
+    for (std::size_t i = 0; i < paneCount(); ++i) {
+        const ViewRect rect = paneRect(region, i);
+        // Bottom left: the tool bar covers the top of the first pane.
+        ImGui::SetNextWindowPos({rect.x + padding, rect.y + rect.height - padding},
+                                ImGuiCond_Always, {0.0f, 1.0f});
+        const std::string name = std::format("Pane##{}", i);
+        if (ImGui::Begin(name.c_str(), nullptr, kFlags)) {
+            ViewPane& pane = m_panes[i];
+            if (ImGui::SmallButton(viewModeName(pane.mode))) {
+                ImGui::OpenPopup("mode");
+            }
+            ImGui::SetItemTooltip("What this pane shows");
+            if (ImGui::BeginPopup("mode")) {
+                for (const ViewMode mode : kViewModes) {
+                    if (ImGui::MenuItem(viewModeName(mode), nullptr, pane.mode == mode)) {
+                        pane.mode = mode;
+                    }
+                }
+                ImGui::EndPopup();
+            }
+        }
+        ImGui::End();
+    }
+}
+
 void LevelViewport::fly(const FlyInput& input) {
-    m_camera.yawRadians =
-        std::remainder(m_camera.yawRadians - input.lookX * kLookRadiansPerCount, 2.0f * kPi);
-    m_camera.pitchRadians = std::clamp(m_camera.pitchRadians - input.lookY * kLookRadiansPerCount,
-                                       -kMaxPitch, kMaxPitch);
-    const CameraBasis basis = cameraBasis(m_camera);
+    ViewPane& pane = m_panes[m_active];
+    if (pane.mode != ViewMode::Perspective) {
+        // Panning: the world follows the mouse.
+        const OrthoBasis basis = orthoBasis(pane.mode);
+        pane.centre += basis.right * (-input.lookX * pane.metresPerPixel) +
+                       basis.up * (input.lookY * pane.metresPerPixel);
+        return;
+    }
+    Camera& camera = pane.camera;
+    camera.yawRadians =
+        std::remainder(camera.yawRadians - input.lookX * kLookRadiansPerCount, 2.0f * kPi);
+    camera.pitchRadians =
+        std::clamp(camera.pitchRadians - input.lookY * kLookRadiansPerCount, -kMaxPitch, kMaxPitch);
+    const CameraBasis basis = cameraBasis(camera);
     Vec3 move;
     move += basis.forward * (static_cast<float>(input.forward) - static_cast<float>(input.back));
     move += basis.right * (static_cast<float>(input.right) - static_cast<float>(input.left));
     move.z += static_cast<float>(input.up) - static_cast<float>(input.down);
     const float speed = kFlySpeed * (input.fast ? kFastFlyFactor : 1.0f);
-    m_camera.position += normalize(move) * (speed * input.seconds);
+    camera.position += normalize(move) * (speed * input.seconds);
+}
+
+void LevelViewport::zoom(const ViewRect& region, float wheel) {
+    ViewPane& pane = m_panes[m_active];
+    if (pane.mode == ViewMode::Perspective) {
+        pane.camera.position += cameraBasis(pane.camera).forward * wheel;
+        return;
+    }
+    // About the mouse: the point under it stays under it.
+    const PaneView view = paneView(region, m_active);
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const float dx = mouse.x - (view.rect.x + view.rect.width * 0.5f);
+    const float dy = mouse.y - (view.rect.y + view.rect.height * 0.5f);
+    const Vec3 under = pane.centre + view.right * (dx * pane.metresPerPixel) -
+                       view.up * (dy * pane.metresPerPixel);
+    pane.metresPerPixel = std::clamp(pane.metresPerPixel * std::pow(kZoomStep, wheel),
+                                     kMinMetresPerPixel, kMaxMetresPerPixel);
+    pane.centre =
+        under - view.right * (dx * pane.metresPerPixel) + view.up * (dy * pane.metresPerPixel);
 }
 
 void LevelViewport::frame(Vec3 point, float distance) {
-    m_camera.position = point - cameraBasis(m_camera).forward * distance;
-}
-
-Vec3 LevelViewport::forwardOnGrid() const {
-    const Vec3 forward = cameraBasis(m_camera).forward;
-    if (std::fabs(forward.x) >= std::fabs(forward.y)) {
-        return {forward.x < 0.0f ? -1.0f : 1.0f, 0.0f, 0.0f};
+    ViewPane& pane = m_panes[m_active];
+    if (pane.mode == ViewMode::Perspective) {
+        pane.camera.position = point - cameraBasis(pane.camera).forward * distance;
+    } else {
+        pane.centre = point;
     }
-    return {0.0f, forward.y < 0.0f ? -1.0f : 1.0f, 0.0f};
 }
 
-LevelViewport::Ray LevelViewport::mouseRay(const ViewRect& rect) const {
+std::pair<Vec3, Vec3> LevelViewport::nudgeAxes() const {
+    const ViewPane& pane = m_panes[m_active];
+    if (pane.mode != ViewMode::Perspective) {
+        const OrthoBasis basis = orthoBasis(pane.mode);
+        return {basis.up, basis.right};
+    }
+    const Vec3 forward = horizontalAxis(cameraBasis(pane.camera).forward);
+    return {forward, {forward.y, -forward.x, 0.0f}};
+}
+
+Vec3 LevelViewport::dragPlaneNormal() const {
+    const ViewPane& pane = m_panes[m_active];
+    return pane.mode == ViewMode::Perspective ? Vec3{0.0f, 0.0f, 1.0f}
+                                              : orthoBasis(pane.mode).forward;
+}
+
+LevelViewport::Ray LevelViewport::mouseRay() const {
     const ImVec2 mouse = ImGui::GetIO().MousePos;
-    const float x = (mouse.x - rect.x) / rect.width * 2.0f - 1.0f;
-    const float y = (mouse.y - rect.y) / rect.height * 2.0f - 1.0f;
-    return {m_camera.position, cameraRayDirection(m_camera, rect.aspect(), x, y)};
+    return activeView().rayThrough(mouse.x, mouse.y);
+}
+
+bool LevelViewport::handleVisible(const EditorDocument& document, const PaneView& view,
+                                  Vec3 point) const {
+    if (view.orthographic) {
+        return true;
+    }
+    const Vec3 toPoint = point - view.eye;
+    const float distance = length(toPoint);
+    if (!(distance > 0.0f)) {
+        return true;
+    }
+    const Vec3 direction = toPoint / distance;
+    // A surface the point lies on is hit at the point itself; only one in front of it hides it.
+    const float slack = 1e-3f + distance * 1e-4f;
+    for (const Brush& brush : document.level().brushes) {
+        Aabb bounds;
+        if (!computeBrushBounds(brush, bounds) ||
+            !rayMayHit(bounds, view.eye, direction, distance)) {
+            continue;
+        }
+        const auto hit = rayCastBrush(brush, view.eye, direction);
+        if (hit && hit->distance < distance - slack) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::optional<LevelViewport::Pick> LevelViewport::pick(const EditorDocument& document,
@@ -313,7 +599,12 @@ std::optional<Vec3> LevelViewport::surfacePoint(const EditorDocument& document,
         }
     }
     if (!nearest) {
-        nearest = rayCastPlane({{0.0f, 0.0f, 1.0f}, 0.0f}, ray.origin, ray.direction);
+        // The ground in 3D; in an orthographic pane, the plane through its centre.
+        const PaneView view = activeView();
+        const Plane fallback = view.orthographic
+                                   ? Plane{view.forward, dot(view.forward, view.centre)}
+                                   : Plane{{0.0f, 0.0f, 1.0f}, 0.0f};
+        nearest = rayCastPlane(fallback, ray.origin, ray.direction);
     }
     if (!nearest) {
         return std::nullopt;
@@ -323,16 +614,23 @@ std::optional<Vec3> LevelViewport::surfacePoint(const EditorDocument& document,
 
 Vec3 LevelViewport::placementPoint(const EditorDocument& document,
                                    const EditorSettings& settings) const {
-    const Ray ray{m_camera.position, cameraBasis(m_camera).forward};
+    const PaneView view = activeView();
+    const Ray ray = view.rayThrough(view.rect.x + view.rect.width * 0.5f,
+                                    view.rect.y + view.rect.height * 0.5f);
     const std::optional<Vec3> surface = surfacePoint(document, ray);
-    const Vec3 point = surface && length(*surface - ray.origin) < 50.0f
-                           ? *surface
-                           : ray.origin + ray.direction * kPlacementDistance;
+    Vec3 point = view.centre;
+    if (!view.orthographic) {
+        point = surface && length(*surface - ray.origin) < 50.0f
+                    ? *surface
+                    : ray.origin + ray.direction * kPlacementDistance;
+    } else if (surface) {
+        point = *surface;
+    }
     return snapToGrid(point, settings.grid());
 }
 
-std::optional<LevelViewport::GizmoFrame>
-LevelViewport::gizmoFrame(const EditorDocument& document) const {
+std::optional<LevelViewport::GizmoFrame> LevelViewport::gizmoFrame(const EditorDocument& document,
+                                                                   const PaneView& view) const {
     if (!isGizmoTool(m_tool)) {
         return std::nullopt;
     }
@@ -343,18 +641,23 @@ LevelViewport::gizmoFrame(const EditorDocument& document) const {
     GizmoFrame frame;
     frame.extent = *extent;
     frame.centre = (extent->min + extent->max) * 0.5f;
-    const float depth = dot(frame.centre - m_camera.position, cameraBasis(m_camera).forward);
-    frame.size = std::max(depth, 1.0f) * kGizmoScale;
+    if (view.orthographic) {
+        frame.size = view.metresPerPixel * kOrthoGizmoPixels;
+    } else {
+        const float depth = dot(frame.centre - view.eye, view.forward);
+        frame.size = std::max(depth, 1.0f) * kGizmoScale;
+    }
     return frame;
 }
 
-std::optional<LevelViewport::GizmoHandle> LevelViewport::pickGizmo(const EditorDocument& document,
-                                                                   const ViewRect& rect) const {
-    const std::optional<GizmoFrame> frame = gizmoFrame(document);
+std::optional<LevelViewport::GizmoHandle>
+LevelViewport::pickGizmo(const EditorDocument& document) const {
+    const PaneView view = activeView();
+    const std::optional<GizmoFrame> frame = gizmoFrame(document, view);
     if (!frame) {
         return std::nullopt;
     }
-    const Projector projector(m_camera, rect);
+    const Projector projector(view.viewProjection, view.rect);
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const float reach = ImGui::GetFontSize() * 0.6f;
     std::optional<GizmoHandle> best;
@@ -370,7 +673,8 @@ std::optional<LevelViewport::GizmoHandle> LevelViewport::pickGizmo(const EditorD
         if (m_tool == EditorTool::Move) {
             const auto from = projector.screen(frame->centre);
             const auto to = projector.screen(frame->centre + axisVector(axis) * frame->size);
-            if (from && to) {
+            // An arrow pointing straight at the camera is a dot: nothing to grab.
+            if (from && to && distanceSquared(*from, *to) > reach * reach) {
                 consider({GizmoHandle::Kind::Arrow, axis}, distanceToSegment(mouse, *from, *to));
             }
             std::array<ImVec2, 4> quad;
@@ -411,11 +715,21 @@ std::optional<LevelViewport::GizmoHandle> LevelViewport::pickGizmo(const EditorD
 }
 
 void LevelViewport::update(EditorDocument& document, const EditorSettings& settings,
-                           const ViewRect& rect, bool mouseOverView) {
-    if (rect.width <= 0.0f || rect.height <= 0.0f) {
+                           const ViewRect& region, bool mouseOverView) {
+    if (region.width <= 0.0f || region.height <= 0.0f) {
         return;
     }
-    const Ray ray = mouseRay(rect);
+    m_region = region;
+    // The pane under the mouse becomes the one tools work in, except mid-drag.
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    if (!isDragging() && mouseOverView) {
+        for (std::size_t i = 0; i < paneCount(); ++i) {
+            if (paneRect(region, i).contains(mouse.x, mouse.y)) {
+                m_active = i;
+            }
+        }
+    }
+    const Ray ray = mouseRay();
     if (m_drag.kind == DragKind::ShapeHeight) {
         // The height follows the mouse up the vertical through the rectangle's far corner.
         const float grid = settings.grid();
@@ -439,7 +753,7 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             continueDrag(document, settings, ray);
         } else {
-            endDrag(document, settings, rect);
+            endDrag(document, settings);
         }
         return;
     }
@@ -459,23 +773,23 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
     if (m_tool == EditorTool::Clip) {
         clipKeys(document);
     }
-    m_hoverHandle = mouseOverView ? pickGizmo(document, rect) : std::nullopt;
-    m_hoverVertex = mouseOverView ? pickVertexHandle(document, rect) : std::nullopt;
+    m_hoverHandle = mouseOverView ? pickGizmo(document) : std::nullopt;
+    m_hoverVertex = mouseOverView ? pickVertexHandle(document, settings) : std::nullopt;
     m_hover = mouseOverView && !m_hoverHandle && !m_hoverVertex ? pick(document, settings, ray)
                                                                 : std::nullopt;
     if (mouseOverView && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        beginDrag(document, settings, rect, ray);
+        beginDrag(document, settings, ray);
     }
     if (mouseOverView && ImGui::GetIO().MouseWheel != 0.0f) {
-        m_camera.position += cameraBasis(m_camera).forward * ImGui::GetIO().MouseWheel;
+        zoom(region, ImGui::GetIO().MouseWheel);
     }
 }
 
 void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& settings,
-                              const ViewRect& rect, const Ray& ray) {
+                              const Ray& ray) {
     const ImGuiIO& io = ImGui::GetIO();
     if (m_hoverHandle) {
-        beginGizmoDrag(document, *m_hoverHandle, rect, ray);
+        beginGizmoDrag(document, *m_hoverHandle, ray);
         return;
     }
     if (m_hoverVertex) {
@@ -500,7 +814,15 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
             m_drag.boxStart = snapToGrid(*point, settings.grid());
             m_drag.boxEnd = m_drag.boxStart;
             m_drag.height = m_shapeHeight;
-            m_drag.forward = forwardOnGrid();
+            const PaneView view = activeView();
+            if (view.orthographic) {
+                // The shape stands out of the surface towards the camera.
+                m_drag.depthAxis = axisIndex(view.forward);
+                m_drag.depthSign = component(view.forward, m_drag.depthAxis) > 0.0f ? -1.0f : 1.0f;
+                m_drag.forward = horizontalAxis(view.forward.z != 0.0f ? view.up : view.forward);
+            } else {
+                m_drag.forward = horizontalAxis(view.forward);
+            }
         }
         return;
     }
@@ -533,7 +855,8 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
             m_drag.movedFace = hit.face;
             return;
         }
-        m_drag.kind = io.KeyAlt ? DragKind::MoveVertical : DragKind::Move;
+        const bool vertical = io.KeyAlt && !activeView().orthographic;
+        m_drag.kind = vertical ? DragKind::MoveVertical : DragKind::Move;
         m_drag.selection.emplace(document);
         return;
     }
@@ -577,7 +900,7 @@ void LevelViewport::beginCornerDrag(EditorDocument& document, const VertexHandle
     m_drag.grabPoint = handle.position;
     m_drag.corners = m_corners;
     m_drag.cornerOnGrid = handle.kind == VertexHandle::Kind::Corner;
-    m_drag.vertical = io.KeyAlt;
+    m_drag.vertical = io.KeyAlt && !activeView().orthographic;
     m_drag.selection.emplace(document);
 }
 
@@ -598,12 +921,14 @@ void LevelViewport::continueCornerDrag(EditorDocument& document, const EditorSet
         }
         offset.z = snapped(grab.z, *s);
     } else {
-        const auto t = rayCastPlane({{0.0f, 0.0f, 1.0f}, grab.z}, ray.origin, ray.direction);
+        const Vec3 normal = dragPlaneNormal();
+        const auto t = rayCastPlane({normal, dot(normal, grab)}, ray.origin, ray.direction);
         if (!t) {
             return;
         }
         const Vec3 moved = ray.origin + ray.direction * *t - grab;
-        offset = {snapped(grab.x, moved.x), snapped(grab.y, moved.y), 0.0f};
+        offset = withoutAxis(
+            {snapped(grab.x, moved.x), snapped(grab.y, moved.y), snapped(grab.z, moved.z)}, normal);
     }
     // A move the brushes refuse leaves them as they were at the last one they took.
     if (!(offset == m_drag.cornerOffset) &&
@@ -634,9 +959,15 @@ std::optional<DPlane> LevelViewport::clipPlane() const {
     if (m_clipPoints.size() == 3) {
         c = toDouble(m_clipPoints[2]);
     } else {
-        // Two points cut straight down through their line; a vertical line, facing the camera.
+        // Two points cut along the view in an orthographic pane. In 3D they cut straight down
+        // through their line, or for a vertical line, facing the camera.
+        const PaneView view = activeView();
         const bool vertical = a.x == b.x && a.y == b.y;
-        c = a + (vertical ? toDouble(cameraBasis(m_camera).right) : DVec3{0.0, 0.0, 1.0});
+        if (view.orthographic) {
+            c = a + toDouble(view.forward);
+        } else {
+            c = a + (vertical ? toDouble(view.right) : DVec3{0.0, 0.0, 1.0});
+        }
     }
     const DPlane plane = planeThroughPoints(a, b, c);
     if (!(length(plane.normal) > 0.0)) {
@@ -705,8 +1036,10 @@ LevelViewport::vertexHandles(const EditorDocument& document) const {
 }
 
 std::optional<LevelViewport::VertexHandle>
-LevelViewport::pickVertexHandle(const EditorDocument& document, const ViewRect& rect) const {
-    const Projector projector(m_camera, rect);
+LevelViewport::pickVertexHandle(const EditorDocument& document,
+                                const EditorSettings& settings) const {
+    const PaneView view = activeView();
+    const Projector projector(view.viewProjection, view.rect);
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const float reach = ImGui::GetFontSize() * 0.5f;
     // Corners win over edge middles, and edge middles over face middles, wherever they overlap.
@@ -718,7 +1051,8 @@ LevelViewport::pickVertexHandle(const EditorDocument& document, const ViewRect& 
             continue;
         }
         const float distance = std::sqrt(distanceSquared(mouse, *point));
-        if (distance > reach) {
+        if (distance > reach || (settings.hideHandlesBehindSurfaces &&
+                                 !handleVisible(document, view, handle.position))) {
             continue;
         }
         if (!best || handle.kind < best->kind ||
@@ -731,8 +1065,9 @@ LevelViewport::pickVertexHandle(const EditorDocument& document, const ViewRect& 
 }
 
 void LevelViewport::beginGizmoDrag(EditorDocument& document, const GizmoHandle& handle,
-                                   const ViewRect& rect, const Ray& ray) {
-    const std::optional<GizmoFrame> frame = gizmoFrame(document);
+                                   const Ray& ray) {
+    const PaneView view = activeView();
+    const std::optional<GizmoFrame> frame = gizmoFrame(document, view);
     if (!frame) {
         return;
     }
@@ -760,7 +1095,7 @@ void LevelViewport::beginGizmoDrag(EditorDocument& document, const GizmoHandle& 
         break;
     }
     case GizmoHandle::Kind::Ring: {
-        const auto centre = Projector(m_camera, rect).screen(frame->centre);
+        const auto centre = Projector(view.viewProjection, view.rect).screen(frame->centre);
         if (!centre) {
             return;
         }
@@ -788,18 +1123,21 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
     const float grid = settings.grid();
     switch (m_drag.kind) {
     case DragKind::ShapeBase: {
-        const Plane base{{0.0f, 0.0f, 1.0f}, m_drag.boxStart.z};
+        const Vec3 normal = axisVector(m_drag.depthAxis);
+        const Plane base{normal, dot(normal, m_drag.boxStart)};
         if (const auto t = rayCastPlane(base, ray.origin, ray.direction)) {
-            const Vec3 point = snapToGrid(ray.origin + ray.direction * *t, grid);
-            m_drag.boxEnd = {point.x, point.y, m_drag.boxStart.z};
+            Vec3 point = snapToGrid(ray.origin + ray.direction * *t, grid);
+            setComponent(point, m_drag.depthAxis, component(m_drag.boxStart, m_drag.depthAxis));
+            m_drag.boxEnd = point;
         }
         return;
     }
     case DragKind::Move: {
-        const Plane level{{0.0f, 0.0f, 1.0f}, m_drag.grabPoint.z};
-        if (const auto t = rayCastPlane(level, ray.origin, ray.direction)) {
-            Vec3 offset = snapToGrid(ray.origin + ray.direction * *t - m_drag.grabPoint, grid);
-            offset.z = 0.0f;
+        const Vec3 normal = dragPlaneNormal();
+        const Plane plane{normal, dot(normal, m_drag.grabPoint)};
+        if (const auto t = rayCastPlane(plane, ray.origin, ray.direction)) {
+            const Vec3 offset = withoutAxis(
+                snapToGrid(ray.origin + ray.direction * *t - m_drag.grabPoint, grid), normal);
             m_drag.selection->preview(document, AffineTransform::moveBy(offset));
         }
         return;
@@ -878,7 +1216,7 @@ void LevelViewport::continueGizmoDrag(EditorDocument& document, const EditorSett
         m_drag.lastScreenAngle = current;
         // Screen Y points down, so a turn that looks anticlockwise from the axis's tip lowers the
         // screen angle when the axis points at the camera, and raises it when it points away.
-        const bool facingCamera = dot(axis, cameraBasis(m_camera).forward) < 0.0f;
+        const bool facingCamera = dot(axis, activeView().forward) < 0.0f;
         m_drag.angle += (facingCamera ? -delta : delta) * 180.0 / std::numbers::pi;
         const double degrees = snapAngle(m_drag.angle, settings.rotationStep());
         m_drag.selection->preview(
@@ -908,18 +1246,23 @@ void LevelViewport::continueGizmoDrag(EditorDocument& document, const EditorSett
     }
 }
 
-void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& settings,
-                            const ViewRect& rect) {
+void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& settings) {
     Drag drag = std::move(m_drag);
     m_drag = {};
     switch (drag.kind) {
     case DragKind::ShapeBase: {
         const Vec3 size = drag.boxEnd - drag.boxStart;
-        if (std::fabs(size.x) < settings.grid() || std::fabs(size.y) < settings.grid()) {
-            return; // a click, not a drag
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (axis != drag.depthAxis && std::fabs(component(size, axis)) < settings.grid()) {
+                return; // a click, not a drag
+            }
         }
         m_drag = std::move(drag);
         m_drag.kind = DragKind::ShapeHeight;
+        // An orthographic pane can't show the height; the shape is as deep as the last one.
+        if (activeView().orthographic) {
+            placeShape(document, settings);
+        }
         return;
     }
     case DragKind::ShapeHeight:
@@ -966,7 +1309,7 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
         }
         return;
     case DragKind::Marquee:
-        finishMarquee(drag, document, settings, rect);
+        finishMarquee(drag, document, settings);
         return;
     case DragKind::None:
         return;
@@ -976,7 +1319,11 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
 Aabb LevelViewport::shapeBox() const {
     Vec3 min = ct::min(m_drag.boxStart, m_drag.boxEnd);
     Vec3 max = ct::max(m_drag.boxStart, m_drag.boxEnd);
-    max.z = min.z + m_drag.height;
+    const std::size_t axis = m_drag.depthAxis;
+    const float start = component(m_drag.boxStart, axis);
+    const float end = start + m_drag.depthSign * m_drag.height;
+    setComponent(min, axis, std::min(start, end));
+    setComponent(max, axis, std::max(start, end));
     return {min, max};
 }
 
@@ -1047,7 +1394,7 @@ void LevelViewport::adjustPlacedShape(EditorDocument& document, const EditorSett
 }
 
 void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
-                                  const EditorSettings& settings, const ViewRect& rect) {
+                                  const EditorSettings& settings) {
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const ImVec2 from{std::min(drag.screenStartX, mouse.x), std::min(drag.screenStartY, mouse.y)};
     const ImVec2 to{std::max(drag.screenStartX, mouse.x), std::max(drag.screenStartY, mouse.y)};
@@ -1066,7 +1413,8 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
         return;
     }
 
-    const Projector projector(m_camera, rect);
+    const PaneView view = activeView();
+    const Projector projector(view.viewProjection, view.rect);
     const auto inside = [&](Vec3 p) {
         const auto point = projector.screen(p);
         return point && point->x >= from.x && point->x <= to.x && point->y >= from.y &&
@@ -1075,7 +1423,9 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
     if (drag.selectCorners) {
         std::vector<Vec3> corners = drag.additive ? m_corners : std::vector<Vec3>{};
         for (const VertexHandle& handle : vertexHandles(document)) {
-            if (handle.kind == VertexHandle::Kind::Corner && inside(handle.position) &&
+            const bool hidden = settings.hideHandlesBehindSurfaces &&
+                                !handleVisible(document, view, handle.position);
+            if (handle.kind == VertexHandle::Kind::Corner && inside(handle.position) && !hidden &&
                 std::find(corners.begin(), corners.end(), handle.position) == corners.end()) {
                 corners.push_back(handle.position);
             }
@@ -1122,13 +1472,67 @@ void LevelViewport::cancelDrag(EditorDocument& document) {
 }
 
 void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSettings& settings,
-                                const ViewRect& rect) const {
-    if (rect.width <= 0.0f || rect.height <= 0.0f) {
+                                const ViewRect& region) const {
+    if (region.width <= 0.0f || region.height <= 0.0f) {
         return;
     }
-    const LinePainter painter(m_camera, rect);
+    for (std::size_t i = 0; i < paneCount(); ++i) {
+        drawPane(document, settings, paneView(region, i), i == m_active);
+    }
+    if (m_layout == ViewLayout::Four) {
+        ImDrawList& drawList = *ImGui::GetBackgroundDrawList();
+        const ViewRect topLeft = paneRect(region, 0);
+        const float x = topLeft.x + topLeft.width + 0.5f;
+        const float y = topLeft.y + topLeft.height + 0.5f;
+        drawList.AddLine({x, region.y}, {x, region.y + region.height}, kPaneBorderColor, 1.0f);
+        drawList.AddLine({region.x, y}, {region.x + region.width, y}, kPaneBorderColor, 1.0f);
+    }
+}
+
+void LevelViewport::drawPane(const EditorDocument& document, const EditorSettings& settings,
+                             const PaneView& view, bool active) const {
+    if (view.rect.width <= 0.0f || view.rect.height <= 0.0f) {
+        return;
+    }
+    const LinePainter painter(view.viewProjection, view.rect);
     const Level& level = document.level();
     const Vec3 halfExtents = settings.playerHalfExtents;
+
+    if (view.orthographic) {
+        // A grid behind everything, then every brush's edges: a plan of the level.
+        ImDrawList& drawList = painter.drawList();
+        float step = settings.grid();
+        while (step / view.metresPerPixel < kMinGridPixels) {
+            step *= 4.0f;
+        }
+        const float major = step * 8.0f;
+        const float halfWidth = view.metresPerPixel * view.rect.width * 0.5f;
+        const float halfHeight = view.metresPerPixel * view.rect.height * 0.5f;
+        const float cx = dot(view.centre, view.right);
+        const float cy = dot(view.centre, view.up);
+        const auto toScreenX = [&](float worldX) {
+            return view.rect.x + view.rect.width * 0.5f + (worldX - cx) / view.metresPerPixel;
+        };
+        const auto toScreenY = [&](float worldY) {
+            return view.rect.y + view.rect.height * 0.5f - (worldY - cy) / view.metresPerPixel;
+        };
+        for (float x = std::ceil((cx - halfWidth) / step) * step; x <= cx + halfWidth; x += step) {
+            const bool isMajor = std::fabs(std::remainder(x, major)) < step * 0.5f;
+            const float sx = toScreenX(x);
+            drawList.AddLine({sx, view.rect.y}, {sx, view.rect.y + view.rect.height},
+                             isMajor ? kOrthoMajorGridColor : kOrthoGridColor);
+        }
+        for (float y = std::ceil((cy - halfHeight) / step) * step; y <= cy + halfHeight;
+             y += step) {
+            const bool isMajor = std::fabs(std::remainder(y, major)) < step * 0.5f;
+            const float sy = toScreenY(y);
+            drawList.AddLine({view.rect.x, sy}, {view.rect.x + view.rect.width, sy},
+                             isMajor ? kOrthoMajorGridColor : kOrthoGridColor);
+        }
+        for (const Brush& brush : level.brushes) {
+            painter.brush(brush, kOrthoEdgeColor, 1.0f);
+        }
+    }
 
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
         if (const auto marker = entityMarker(level.entities[i], halfExtents)) {
@@ -1147,7 +1551,7 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
             painter.box(*marker, color, thickness);
         }
     };
-    if (m_hover && !isDragging() && !document.isSelected(m_hover->target)) {
+    if (active && m_hover && !isDragging() && !document.isSelected(m_hover->target)) {
         outline(m_hover->target, kHoverColor, 1.0f);
     }
     for (const LevelItem& item : document.selection()) {
@@ -1157,8 +1561,8 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
     // The face Shift-drag would move, or is moving.
     const std::optional<LevelItem> single = document.singleSelected();
     const bool showFace = m_drag.kind == DragKind::Face || m_drag.kind == DragKind::Extrude ||
-                          (!isDragging() && ImGui::GetIO().KeyShift && m_hover && single &&
-                           m_hover->target == *single);
+                          (active && !isDragging() && ImGui::GetIO().KeyShift && m_hover &&
+                           single && m_hover->target == *single);
     if (showFace && single && single->kind == LevelItem::Kind::Brush) {
         const Brush& brush = level.brushes[single->index];
         std::size_t face = m_hover ? m_hover->face : 0;
@@ -1194,19 +1598,21 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
     }
 
     ImDrawList& drawList = painter.drawList();
-    if (drawingShape) {
+    if (drawingShape && active) {
         // The size next to the mouse, and what to do next.
         const Aabb box = shapeBox();
         const Vec3 size = box.max - box.min;
-        const std::string label = std::format("{:g} x {:g} x {:g} m\n{}", size.x, size.y, size.z,
-                                              m_drag.kind == DragKind::ShapeBase
-                                                  ? "release, then move up for the height"
-                                                  : "click or Enter to place, Esc to cancel");
+        const char* next = "click or Enter to place, Esc to cancel";
+        if (m_drag.kind == DragKind::ShapeBase) {
+            next = view.orthographic ? "release to place" : "release, then move up for the height";
+        }
+        const std::string label =
+            std::format("{:g} x {:g} x {:g} m\n{}", size.x, size.y, size.z, next);
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         drawList.AddText({mouse.x + ImGui::GetFontSize(), mouse.y + ImGui::GetFontSize()},
                          kSelectedColor, label.c_str());
     }
-    if (m_drag.kind == DragKind::Marquee) {
+    if (m_drag.kind == DragKind::Marquee && active) {
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         const ImVec2 from{std::min(m_drag.screenStartX, mouse.x),
                           std::min(m_drag.screenStartY, mouse.y)};
@@ -1244,14 +1650,16 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
             }
         }
         static constexpr const char* kKeepNames[]{"back", "front", "both"};
-        const std::string label =
-            m_clipPoints.size() < 2
-                ? std::string("click 2 or 3 points on surfaces")
-                : std::format("keep {} (Tab)\nEnter to cut, Backspace to undo a point",
-                              kKeepNames[static_cast<int>(m_clipKeep)]);
-        const ImVec2 mouse = ImGui::GetIO().MousePos;
-        drawList.AddText({mouse.x + ImGui::GetFontSize(), mouse.y + ImGui::GetFontSize()},
-                         kFaceColor, label.c_str());
+        if (active) {
+            const std::string label =
+                m_clipPoints.size() < 2
+                    ? std::string("click 2 or 3 points on surfaces")
+                    : std::format("keep {} (Tab)\nEnter to cut, Backspace to undo a point",
+                                  kKeepNames[static_cast<int>(m_clipKeep)]);
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            drawList.AddText({mouse.x + ImGui::GetFontSize(), mouse.y + ImGui::GetFontSize()},
+                             kFaceColor, label.c_str());
+        }
     }
 
     if (m_tool == EditorTool::Vertex) {
@@ -1263,7 +1671,8 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
         const float half = ImGui::GetFontSize() * 0.22f;
         for (const VertexHandle& handle : vertexHandles(document)) {
             const auto point = painter.projector().screen(handle.position);
-            if (!point) {
+            if (!point || (settings.hideHandlesBehindSurfaces &&
+                           !handleVisible(document, view, handle.position))) {
                 continue;
             }
             const bool hovered = m_hoverVertex && m_hoverVertex->kind == handle.kind &&
@@ -1288,7 +1697,7 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
                 break;
             }
         }
-        if (movingCorners) {
+        if (movingCorners && active) {
             const Vec3 offset = m_drag.cornerOffset;
             const std::string label =
                 std::format("{:+g} {:+g} {:+g} m", offset.x, offset.y, offset.z);
@@ -1298,7 +1707,7 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
         }
     }
 
-    const std::optional<GizmoFrame> frame = gizmoFrame(document);
+    const std::optional<GizmoFrame> frame = gizmoFrame(document, view);
     if (!frame) {
         return;
     }
@@ -1371,7 +1780,7 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
     if (m_tool == EditorTool::Scale) {
         painter.box(frame->extent, kExtentColor, 1.0f);
     }
-    if (m_drag.kind == DragKind::Gizmo && m_drag.handle.kind == GizmoHandle::Kind::Ring) {
+    if (active && m_drag.kind == DragKind::Gizmo && m_drag.handle.kind == GizmoHandle::Kind::Ring) {
         const std::string angle =
             std::format("{:+g}\xC2\xB0", snapAngle(m_drag.angle, settings.rotationStep()));
         drawList.AddText({m_drag.screenStartX + ImGui::GetFontSize(),

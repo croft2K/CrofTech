@@ -2,12 +2,12 @@
 //
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
 // console docked around it, and the tool bar over the view. Hold the right mouse button in the view
-// to fly (WASD, Q/E down/up, Shift faster). Shortcuts: Q/W/E/R select, move, rotate and scale
-// tools, V vertex tool, C clip tool, B shape tool, Ctrl+H/J/K hollow, merge and subtract the
-// selected brushes, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all,
-// Ctrl+D duplicate, Del delete (in the vertex tool, the selected corners), arrow keys and Page
-// Up/Down nudge the selection (or selected corners) one grid step, F frame selection, [ and ] grid
-// size, Esc cancel or deselect.
+// to fly (WASD, Q/E down/up, Shift faster); in an orthographic pane it pans and the wheel zooms.
+// Shortcuts: Q/W/E/R select, move, rotate and scale tools, V vertex tool, C clip tool, B shape
+// tool, Ctrl+H/J/K hollow, merge and subtract the selected brushes, Ctrl+S save, Ctrl+Z/Ctrl+Y
+// undo/redo, Ctrl+A select all, Ctrl+D duplicate, Del delete (in the vertex tool, the selected
+// corners), arrow keys and Page Up/Down nudge the selection (or selected corners) one grid step, F
+// frame selection, [ and ] grid size, Esc cancel or deselect.
 
 #include "EditorPanels.h"
 #include "LevelViewport.h"
@@ -46,6 +46,7 @@ using Clock = std::chrono::steady_clock;
 
 const std::filesystem::path kSourceDirectory = CROFTECH_SOURCE_DIR;
 constexpr float kFrameDistance = 6.0f;
+constexpr ct::Vec3 kOrthoBackground{0.15f, 0.15f, 0.17f};
 
 struct CommandLine {
     std::string game = "sandbox";
@@ -147,13 +148,13 @@ std::optional<ct::EditorTool> toolShortcut() {
     return std::nullopt;
 }
 
-// Arrow keys nudge along the grid axes nearest the view: up moves away from the camera. Page Up
-// and Page Down nudge vertically. Held keys repeat.
-std::optional<ct::Vec3> nudgeShortcut(ct::Vec3 forward) {
+// Arrow keys nudge along the grid axes of the active pane: up moves away from the camera in 3D and
+// up the screen in an orthographic pane. Page Up and Page Down nudge vertically. Held keys repeat.
+std::optional<ct::Vec3> nudgeShortcut(const std::pair<ct::Vec3, ct::Vec3>& axes) {
     if (ImGui::GetIO().KeyMods != ImGuiMod_None) {
         return std::nullopt;
     }
-    const ct::Vec3 right{forward.y, -forward.x, 0.0f};
+    const auto& [forward, right] = axes;
     if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
         return forward;
     }
@@ -324,6 +325,7 @@ int main(int argc, char** argv) {
             view = {centre->Pos.x, centre->Pos.y, centre->Size.x, centre->Size.y};
         }
         panels.drawToolbar(viewport, settings, view);
+        viewport.drawPaneControls(view);
         const ImGuiIO& io = ImGui::GetIO();
         const bool mouseOverView =
             !flying && !io.WantCaptureMouse && view.contains(io.MousePos.x, io.MousePos.y);
@@ -377,7 +379,7 @@ int main(int argc, char** argv) {
                 }
             } else if (const auto tool = toolShortcut()) {
                 viewport.setTool(*tool);
-            } else if (const auto nudge = nudgeShortcut(viewport.forwardOnGrid());
+            } else if (const auto nudge = nudgeShortcut(viewport.nudgeAxes());
                        nudge && !viewport.isDragging()) {
                 const ct::Vec3 offset = *nudge * grid;
                 if (!editingCorners) {
@@ -465,12 +467,23 @@ int main(int argc, char** argv) {
             SDL_SetWindowTitle(window, title.c_str());
             shownTitle = title;
         }
-        const ct::PixelRect worldRect{
-            view.x * io.DisplayFramebufferScale.x, view.y * io.DisplayFramebufferScale.y,
-            view.width * io.DisplayFramebufferScale.x, view.height * io.DisplayFramebufferScale.y};
         const float grid = settings.grid();
         renderer->setWorldGrid(grid, grid < 1.0f ? 1.0f : grid * 8.0f);
-        renderer->drawFrame(viewport.camera(), ui, &worldRect);
+        std::vector<ct::WorldView> worldViews;
+        for (const ct::LevelViewport::PaneDraw& pane : viewport.paneDraws(view)) {
+            const ImVec2 scale = io.DisplayFramebufferScale;
+            ct::WorldView worldView;
+            worldView.viewProjection = pane.viewProjection;
+            worldView.rect = {pane.rect.x * scale.x, pane.rect.y * scale.y,
+                              pane.rect.width * scale.x, pane.rect.height * scale.y};
+            // Orthographic panes are wireframe plans (drawn by the viewport) on a dark background:
+            // shaded, the walls around a room would hide everything in it.
+            worldView.clearBackground = pane.orthographic;
+            worldView.background = kOrthoBackground;
+            worldView.drawWorld = !pane.orthographic;
+            worldViews.push_back(worldView);
+        }
+        renderer->drawFrame(worldViews, ui);
 
         ++frameCount;
         if (commandLine.frameLimit >= 0 && frameCount >= commandLine.frameLimit) {

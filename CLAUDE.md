@@ -36,7 +36,8 @@ one compound command. Moves, turns, flips and scales of any brush shape go throu
 `SelectionDrag`. New shapes (`Shapes.h`) are corner sets fitted to the drawn box and built as
 their convex hull. The Vertex tool moves corners with `withCornersMoved` (the hull of the moved
 corners, so corners are never recomputed); clip, subtract, hollow, merge and extrude are in
-`BrushOperations.h`. Editing logic lives in `engine/editor` and is unit-tested; `apps/editor` holds
+`BrushOperations.h`. The view has one or four panes (3D, or orthographic top, front and side as wireframe plans; View
+menu), and the tools work in whichever pane the mouse is in. Editing logic lives in `engine/editor` and is unit-tested; `apps/editor` holds
 only the ImGui panels, the 3D view, gizmos and input.
 
 Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described in

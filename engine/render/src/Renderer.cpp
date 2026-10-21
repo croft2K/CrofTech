@@ -48,6 +48,15 @@ struct FrameResources {
     VkFence inFlight = VK_NULL_HANDLE;
 };
 
+// A WorldView with its rectangle clamped to the swapchain.
+struct DrawnView {
+    VkRect2D rect{};
+    Mat4 viewProjection;
+    bool clear = false;
+    VkClearColorValue background{};
+    bool drawWorld = true;
+};
+
 struct PushConstants {
     Mat4 viewProjection;
     float gridMinor = 1.0f;
@@ -98,8 +107,8 @@ struct Renderer::Impl {
     bool createPipeline(const std::filesystem::path& shaderDirectory, std::string& error);
     Buffer createHostBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage);
     void destroyBuffer(Buffer& buffer);
-    void recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex, const Camera& camera,
-                     const VkRect2D& worldRect, const ImDrawData* uiData);
+    void recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
+                     std::span<const DrawnView> views, const ImDrawData* uiData);
 };
 
 bool Renderer::Impl::init(SDL_Window* sdlWindow, const std::filesystem::path& shaderDirectory,
@@ -484,8 +493,7 @@ void Renderer::Impl::destroyBuffer(Buffer& buffer) {
 }
 
 void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
-                                 const Camera& camera, const VkRect2D& worldRect,
-                                 const ImDrawData* uiData) {
+                                 std::span<const DrawnView> views, const ImDrawData* uiData) {
     const VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -553,27 +561,39 @@ void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
     };
     vkCmdBeginRendering(cmd, &renderingInfo);
 
-    const VkViewport viewport{static_cast<float>(worldRect.offset.x),
-                              static_cast<float>(worldRect.offset.y),
-                              static_cast<float>(worldRect.extent.width),
-                              static_cast<float>(worldRect.extent.height),
-                              0.0f,
-                              1.0f};
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-    vkCmdSetScissor(cmd, 0, 1, &worldRect);
-
-    if (indexCount > 0 && worldRect.extent.width > 0 && worldRect.extent.height > 0) {
-        const float aspect = static_cast<float>(worldRect.extent.width) /
-                             static_cast<float>(worldRect.extent.height);
-        const PushConstants push{makeViewProjection(camera, aspect), gridMinor, gridMajor};
-        const VkDeviceSize offset = 0;
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdPushConstants(cmd, pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), &push);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &offset);
-        vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+    for (const DrawnView& view : views) {
+        const VkRect2D& rect = view.rect;
+        if (rect.extent.width == 0 || rect.extent.height == 0) {
+            continue;
+        }
+        const VkViewport viewport{static_cast<float>(rect.offset.x),
+                                  static_cast<float>(rect.offset.y),
+                                  static_cast<float>(rect.extent.width),
+                                  static_cast<float>(rect.extent.height),
+                                  0.0f,
+                                  1.0f};
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &rect);
+        if (view.clear) {
+            const VkClearAttachment clearColor{
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .colorAttachment = 0,
+                .clearValue = {.color = view.background},
+            };
+            const VkClearRect clearRect{rect, 0, 1};
+            vkCmdClearAttachments(cmd, 1, &clearColor, 1, &clearRect);
+        }
+        if (indexCount > 0 && view.drawWorld) {
+            const PushConstants push{view.viewProjection, gridMinor, gridMajor};
+            const VkDeviceSize offset = 0;
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdPushConstants(cmd, pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(push), &push);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &offset);
+            vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+        }
     }
     ui.draw(cmd, frameIndex, uiData);
 
@@ -668,6 +688,19 @@ void Renderer::setWorldGrid(float minorSpacing, float majorSpacing) {
 }
 
 void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui, const PixelRect* worldRect) {
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(m_impl->window, &width, &height);
+    WorldView view;
+    view.rect = worldRect != nullptr
+                    ? *worldRect
+                    : PixelRect{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)};
+    const float aspect = view.rect.height > 0.0f ? view.rect.width / view.rect.height : 1.0f;
+    view.viewProjection = makeViewProjection(camera, aspect);
+    drawFrame(std::span<const WorldView>(&view, 1), ui);
+}
+
+void Renderer::drawFrame(std::span<const WorldView> views, const ImDrawData* ui) {
     CT_PROFILE_ZONE();
     Impl& r = *m_impl;
     const VkDevice device = r.device.device;
@@ -710,19 +743,25 @@ void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui, const Pixel
     vkResetFences(device, 1, &frame.inFlight);
     vkResetCommandPool(device, frame.commandPool, 0);
     const VkExtent2D extent = r.swapchain.extent;
-    VkRect2D world{{0, 0}, extent};
-    if (worldRect != nullptr) {
-        const auto clampTo = [](float value, std::uint32_t limit) {
-            return static_cast<std::uint32_t>(std::clamp(value, 0.0f, static_cast<float>(limit)));
-        };
-        const std::uint32_t x0 = clampTo(worldRect->x, extent.width);
-        const std::uint32_t y0 = clampTo(worldRect->y, extent.height);
-        const std::uint32_t x1 = clampTo(worldRect->x + worldRect->width, extent.width);
-        const std::uint32_t y1 = clampTo(worldRect->y + worldRect->height, extent.height);
-        world = {{static_cast<std::int32_t>(x0), static_cast<std::int32_t>(y0)},
-                 {x1 - x0, y1 - y0}};
+    const auto clampTo = [](float value, std::uint32_t limit) {
+        return static_cast<std::uint32_t>(std::clamp(value, 0.0f, static_cast<float>(limit)));
+    };
+    std::vector<DrawnView> drawn;
+    for (const WorldView& view : views) {
+        const std::uint32_t x0 = clampTo(view.rect.x, extent.width);
+        const std::uint32_t y0 = clampTo(view.rect.y, extent.height);
+        const std::uint32_t x1 = clampTo(view.rect.x + view.rect.width, extent.width);
+        const std::uint32_t y1 = clampTo(view.rect.y + view.rect.height, extent.height);
+        DrawnView out;
+        out.rect = {{static_cast<std::int32_t>(x0), static_cast<std::int32_t>(y0)},
+                    {x1 - x0, y1 - y0}};
+        out.viewProjection = view.viewProjection;
+        out.clear = view.clearBackground;
+        out.drawWorld = view.drawWorld;
+        out.background = {{view.background.x, view.background.y, view.background.z, 1.0f}};
+        drawn.push_back(out);
     }
-    r.recordFrame(frame.commandBuffer, imageIndex, camera, world, ui);
+    r.recordFrame(frame.commandBuffer, imageIndex, drawn, ui);
 
     const VkSemaphoreSubmitInfo waitInfo{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,

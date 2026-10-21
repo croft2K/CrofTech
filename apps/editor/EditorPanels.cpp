@@ -156,6 +156,26 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
     }
     if (ImGui::BeginMenu("View")) {
         requests.frameSelection = ImGui::MenuItem("Frame selection", "F", false, hasSelection);
+        ImGui::Separator();
+        if (ImGui::MenuItem("One pane", nullptr, viewport.layout() == ViewLayout::One)) {
+            viewport.setLayout(ViewLayout::One);
+        }
+        if (ImGui::MenuItem("Four panes", nullptr, viewport.layout() == ViewLayout::Four)) {
+            viewport.setLayout(ViewLayout::Four);
+        }
+        if (ImGui::BeginMenu("Active pane shows")) {
+            for (const ViewMode mode : kViewModes) {
+                if (ImGui::MenuItem(viewModeName(mode), nullptr, viewport.activeMode() == mode)) {
+                    viewport.setActiveMode(mode);
+                }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::MenuItem("Hide handles behind surfaces", nullptr,
+                        &settings.hideHandlesBehindSurfaces);
+        ImGui::SetItemTooltip("In 3D panes, the vertex tool shows and picks only handles in "
+                              "plain sight");
+        ImGui::Separator();
         if (ImGui::BeginMenu("Grid")) {
             for (std::size_t i = 0; i < kGridSizes.size(); ++i) {
                 if (ImGui::MenuItem(std::format("{:g} m", kGridSizes[i]).c_str(), nullptr,

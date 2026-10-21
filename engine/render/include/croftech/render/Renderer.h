@@ -2,6 +2,7 @@
 
 #include "croftech/core/Camera.h"
 #include "croftech/core/Math.h"
+#include "croftech/core/Matrix.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -28,6 +29,16 @@ struct PixelRect {
     float height = 0.0f;
 };
 
+// One view of the world drawn into part of the window: an editor pane, or the whole game view.
+struct WorldView {
+    Mat4 viewProjection; // world to clip space, reverse-Z (see makeViewProjection)
+    PixelRect rect;
+    // Cleared to this colour (as shown, sRGB) first; otherwise the sky colour shows behind.
+    bool clearBackground = false;
+    Vec3 background;
+    bool drawWorld = true; // false leaves just the background, for an overlay to draw on
+};
+
 // Vulkan renderer. Reads presentation data only; it never sees or writes simulation state.
 // It also draws Dear ImGui output (see ct::DevUi): create it after the ImGui context and destroy it
 // before, because it hands texture state back to ImGui on shutdown.
@@ -48,6 +59,8 @@ public:
     // worldRect, or the whole window if it is null; its aspect ratio comes from that rectangle.
     void drawFrame(const Camera& camera, const ImDrawData* ui = nullptr,
                    const PixelRect* worldRect = nullptr);
+    // Several views of the world side by side (they must not overlap), then ui over them.
+    void drawFrame(std::span<const WorldView> views, const ImDrawData* ui);
 
     struct Impl;
     // Use create(). Impl is only defined inside the renderer, so nothing else can build one.

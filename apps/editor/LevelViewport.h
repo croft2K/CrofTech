@@ -1,6 +1,7 @@
 #pragma once
 
 #include "croftech/core/Camera.h"
+#include "croftech/core/Matrix.h"
 #include "croftech/editor/BrushEditing.h"
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
@@ -16,7 +17,7 @@
 
 namespace ct {
 
-// The part of the window the 3D view covers, in ImGui coordinates.
+// The part of the window a view covers, in ImGui coordinates.
 struct ViewRect {
     float x = 0.0f;
     float y = 0.0f;
@@ -43,6 +44,8 @@ struct EditorSettings {
     ShapeFacing facing = ShapeFacing::AwayFromView;
     // The player's collision box, so spawn markers show the size the game uses.
     Vec3 playerHalfExtents{0.4f, 0.4f, 0.9f};
+    // Vertex tool handles behind a surface are hidden in 3D panes, and can't be picked there.
+    bool hideHandlesBehindSurfaces = true;
 
     float grid() const { return kGridSizes[gridIndex]; }
     double rotationStep() const { return kRotationSteps[rotationIndex]; }
@@ -52,6 +55,17 @@ struct EditorSettings {
 // gizmo on the selection. Vertex reshapes the selected brushes by their corners, edges and faces;
 // Clip cuts them with a plane. Draw makes a new shape (EditorSettings::shape).
 enum class EditorTool { Select, Move, Rotate, Scale, Vertex, Clip, Draw };
+
+// What a pane of the view shows: the 3D fly camera, or the level seen straight along an axis
+// without perspective: from above (X right, Y up), from the front (X right, Z up, looking along +Y)
+// or from the side (Y right, Z up, looking along -X).
+enum class ViewMode { Perspective, Top, Front, Side };
+inline constexpr ViewMode kViewModes[]{ViewMode::Perspective, ViewMode::Top, ViewMode::Front,
+                                       ViewMode::Side};
+const char* viewModeName(ViewMode mode);
+
+// One pane filling the view, or four: 3D, top, front and side.
+enum class ViewLayout { One, Four };
 
 // Camera movement while the right mouse button is held.
 struct FlyInput {
@@ -67,7 +81,10 @@ struct FlyInput {
     float seconds = 0.0f;
 };
 
-// The 3D view of the level being edited: a fly camera, picking, and the mouse tools.
+// The view of the level being edited: one or four panes (each 3D or orthographic), picking, and
+// the mouse tools, which work in whichever pane the mouse is in. In a 3D pane the right mouse
+// button flies the camera; in an orthographic pane it pans, and the wheel zooms about the mouse.
+// Drags in an orthographic pane move things across the screen, in the plane the pane shows.
 //
 // Click selects a brush or entity; Ctrl-click adds or removes it. Dragging a selected item moves
 // the whole selection across the grid (Alt: up and down); dragging from anywhere else selects
@@ -87,16 +104,35 @@ struct FlyInput {
 // keeping the back, the front or both, Enter cuts, Backspace takes back the last point.
 //
 // Draw: drag a rectangle on the surface under the mouse, release, move the mouse up to set the
-// height and click (or press Enter) to place the shape. Until something else is edited, changing
-// the shape settings remakes the shape just placed.
+// height and click (or press Enter) to place the shape; in an orthographic pane the rectangle is
+// drawn on the screen and the shape is placed on release, as deep as the last one was high,
+// towards the camera from the surface under the rectangle's first corner. Until something else is
+// edited, changing the shape settings remakes the shape just placed.
 class LevelViewport {
 public:
-    explicit LevelViewport(Camera camera) : m_camera(camera) {}
+    // Every pane starts looking at what the camera sees.
+    explicit LevelViewport(Camera camera);
 
-    const Camera& camera() const { return m_camera; }
+    ViewLayout layout() const { return m_layout; }
+    void setLayout(ViewLayout layout);
+    // The pane the mouse was last over, which flying, framing and nudging act on.
+    ViewMode activeMode() const { return m_panes[m_active].mode; }
+    void setActiveMode(ViewMode mode) { m_panes[m_active].mode = mode; }
+
+    // Flies the active pane's camera, or pans it if it is orthographic.
     void fly(const FlyInput& input);
-    // Moves the camera back from a point so it is in view.
+    // Brings a point into the middle of the active pane (a 3D pane backs off by distance).
     void frame(Vec3 point, float distance);
+
+    // What the renderer draws in each pane this frame. region is the whole view.
+    struct PaneDraw {
+        Mat4 viewProjection;
+        ViewRect rect;
+        bool orthographic = false;
+    };
+    std::vector<PaneDraw> paneDraws(const ViewRect& region) const;
+    // A button in each pane's corner to choose what it shows.
+    void drawPaneControls(const ViewRect& region);
 
     EditorTool tool() const { return m_tool; }
     // The Vertex tool's selected corners, by position.
@@ -111,18 +147,20 @@ public:
     void cancelDrag(EditorDocument& document);
 
     // Mouse editing for this frame. Call between DevUi::beginFrame() and endFrame(), with
-    // mouseOverView true only when the mouse is over the view and not over a panel.
-    void update(EditorDocument& document, const EditorSettings& settings, const ViewRect& rect,
+    // mouseOverView true only when the mouse is over the view and not over a panel. region is the
+    // whole view, which the panes share.
+    void update(EditorDocument& document, const EditorSettings& settings, const ViewRect& region,
                 bool mouseOverView);
-    // Entity markers, selection outlines, gizmos and tool previews over the 3D view.
+    // Entity markers, selection outlines, gizmos and tool previews over every pane.
     void drawOverlay(const EditorDocument& document, const EditorSettings& settings,
-                     const ViewRect& rect) const;
+                     const ViewRect& region) const;
 
-    // Where a new entity goes: the surface under the middle of the view, or a few metres ahead.
+    // Where a new entity goes: the surface under the middle of the active pane, or a few metres
+    // ahead.
     Vec3 placementPoint(const EditorDocument& document, const EditorSettings& settings) const;
-    // The world axis (0 = X, 1 = Y) closest to the camera's horizontal facing, and its sign:
-    // arrow keys nudge along it.
-    Vec3 forwardOnGrid() const;
+    // The grid axes the arrow keys nudge along in the active pane: up (away from the camera in 3D)
+    // and right.
+    std::pair<Vec3, Vec3> nudgeAxes() const;
 
 private:
     // ShapeBase is the rectangle drag; ShapeHeight follows the mouse, with no button held,
@@ -187,6 +225,8 @@ private:
         bool cornerOnGrid = false;        // Corners: a corner was grabbed, so it lands on the grid
         bool vertical = false;            // Corners with Alt
         float extrudeDistance = 0.0f;     // Extrude: how far out the new brush reaches
+        std::size_t depthAxis = 2;        // ShapeBase, ShapeHeight: the axis the height runs along
+        float depthSign = 1.0f;           // and which way
         std::optional<LevelItem> clicked; // Marquee: the item under the mouse when it began
         GizmoHandle handle;
         Aabb extent; // the selection's extent when a gizmo drag began
@@ -209,6 +249,29 @@ private:
         Vec3 direction;
     };
 
+    struct ViewPane {
+        ViewMode mode = ViewMode::Perspective;
+        Camera camera;                // Perspective
+        Vec3 centre;                  // orthographic: the point in the middle of the pane
+        float metresPerPixel = 0.03f; // orthographic zoom
+    };
+
+    // How a pane maps the world to its part of the screen this frame.
+    struct PaneView {
+        Mat4 viewProjection;
+        ViewRect rect;
+        bool orthographic = false;
+        Camera camera; // perspective
+        Vec3 eye;      // the camera, or for an orthographic pane a point far behind the centre
+        Vec3 forward;
+        Vec3 right;
+        Vec3 up;
+        float metresPerPixel = 0.0f; // orthographic
+        Vec3 centre;                 // orthographic
+
+        Ray rayThrough(float screenX, float screenY) const;
+    };
+
     // Where the gizmo sits and how big it is, for the current selection.
     struct GizmoFrame {
         Aabb extent;
@@ -216,20 +279,31 @@ private:
         float size = 1.0f; // metres, so the gizmo keeps one size on screen
     };
 
-    Ray mouseRay(const ViewRect& rect) const;
+    std::size_t paneCount() const { return m_layout == ViewLayout::Four ? 4 : 1; }
+    ViewRect paneRect(const ViewRect& region, std::size_t pane) const;
+    PaneView paneView(const ViewRect& region, std::size_t pane) const;
+    PaneView activeView() const { return paneView(m_region, m_active); }
+    // The plane drags move things in: horizontal in 3D, the screen in an orthographic pane.
+    Vec3 dragPlaneNormal() const;
+    void zoom(const ViewRect& region, float wheel);
+    void drawPane(const EditorDocument& document, const EditorSettings& settings,
+                  const PaneView& view, bool active) const;
+    // Whether a point on the selected brushes can be seen from the pane, not hidden behind a
+    // surface. Always true in orthographic panes.
+    bool handleVisible(const EditorDocument& document, const PaneView& view, Vec3 point) const;
+
+    Ray mouseRay() const;
     std::optional<Pick> pick(const EditorDocument& document, const EditorSettings& settings,
                              const Ray& ray) const;
     // A point on the surface under the ray: a brush, else the ground plane at z = 0.
     std::optional<Vec3> surfacePoint(const EditorDocument& document, const Ray& ray) const;
 
-    std::optional<GizmoFrame> gizmoFrame(const EditorDocument& document) const;
-    std::optional<GizmoHandle> pickGizmo(const EditorDocument& document,
-                                         const ViewRect& rect) const;
+    std::optional<GizmoFrame> gizmoFrame(const EditorDocument& document,
+                                         const PaneView& view) const;
+    std::optional<GizmoHandle> pickGizmo(const EditorDocument& document) const;
 
-    void beginDrag(EditorDocument& document, const EditorSettings& settings, const ViewRect& rect,
-                   const Ray& ray);
-    void beginGizmoDrag(EditorDocument& document, const GizmoHandle& handle, const ViewRect& rect,
-                        const Ray& ray);
+    void beginDrag(EditorDocument& document, const EditorSettings& settings, const Ray& ray);
+    void beginGizmoDrag(EditorDocument& document, const GizmoHandle& handle, const Ray& ray);
     void beginCornerDrag(EditorDocument& document, const VertexHandle& handle);
     void continueCornerDrag(EditorDocument& document, const EditorSettings& settings,
                             const Ray& ray);
@@ -237,7 +311,7 @@ private:
     // Every handle of the selected brushes, one per place.
     std::vector<VertexHandle> vertexHandles(const EditorDocument& document) const;
     std::optional<VertexHandle> pickVertexHandle(const EditorDocument& document,
-                                                 const ViewRect& rect) const;
+                                                 const EditorSettings& settings) const;
     bool isCornerSelected(Vec3 corner) const;
 
     // The plane through the clip points; nullopt until there are two that make one.
@@ -246,16 +320,18 @@ private:
     void continueDrag(EditorDocument& document, const EditorSettings& settings, const Ray& ray);
     void continueGizmoDrag(EditorDocument& document, const EditorSettings& settings,
                            const Ray& ray);
-    void endDrag(EditorDocument& document, const EditorSettings& settings, const ViewRect& rect);
+    void endDrag(EditorDocument& document, const EditorSettings& settings);
     Aabb shapeBox() const;
     ShapeSettings shapeSettings(const EditorSettings& settings, Vec3 awayForward) const;
     void placeShape(EditorDocument& document, const EditorSettings& settings);
     // Remakes the shape placed last when the settings changed since.
     void adjustPlacedShape(EditorDocument& document, const EditorSettings& settings);
-    void finishMarquee(const Drag& drag, EditorDocument& document, const EditorSettings& settings,
-                       const ViewRect& rect);
+    void finishMarquee(const Drag& drag, EditorDocument& document, const EditorSettings& settings);
 
-    Camera m_camera;
+    std::array<ViewPane, 4> m_panes;
+    ViewLayout m_layout = ViewLayout::One;
+    std::size_t m_active = 0;
+    ViewRect m_region; // the whole view, as of the last update
     EditorTool m_tool = EditorTool::Select;
     Drag m_drag;
     std::optional<Pick> m_hover;
