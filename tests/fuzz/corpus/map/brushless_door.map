@@ -1,0 +1,8 @@
+{
+"classname" "worldspawn"
+}
+{
+"classname" "func_door"
+"angle" "90"
+"targetname" "d"
+}

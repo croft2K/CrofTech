@@ -379,8 +379,9 @@ void Importer::convertDoor(const RawEntity& raw, LevelEntity& entity) {
             *number = parsed;
         }
     }
+    // A func_door with no brushes at all comes in as a point entity, with nothing to slide.
     Aabb bounds;
-    if (!computeBrushBounds(raw.brushes.front().second, bounds)) {
+    if (raw.brushes.empty() || !computeBrushBounds(raw.brushes.front().second, bounds)) {
         return;
     }
     for (const auto& [line, brush] : raw.brushes) {

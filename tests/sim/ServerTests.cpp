@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -135,14 +136,16 @@ TEST_CASE("goodbye takes the player out of the game") {
 TEST_CASE("a local game runs its server on a thread and shows the player moving") {
     const std::vector<ct::Brush> brushes{ct::test::floorBrush()};
     ct::LocalGame game(brushes, {ct::SpawnPoint{}}, {});
-    const auto end = Clock::now() + std::chrono::milliseconds(400);
-    while (Clock::now() < end) {
+    // Walking half a metre takes about 25 ticks (200 ms). Loaded test machines, sanitizer builds on
+    // CI especially, can run the thread far slower, so wait for it up to a generous deadline.
+    const auto deadline = Clock::now() + std::chrono::seconds(5);
+    std::optional<ct::Vec3> eye;
+    while (Clock::now() < deadline && !(eye && eye->x > 0.5f)) {
         game.update(forward(), Clock::now());
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        eye = game.eyePosition(Clock::now());
     }
-    const auto eye = game.eyePosition(Clock::now());
     REQUIRE(eye.has_value());
-    // About 50 ticks in 400 ms; allow a wide margin for loaded test machines.
     CHECK(eye->x > 0.5f);
     CHECK(game.malformedPackets() == 0);
 }

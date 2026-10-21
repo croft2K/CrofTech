@@ -230,6 +230,14 @@ TEST_CASE("imported levels always save as level files") {
     CHECK(ct::parseLevel(*text, error) == result.level);
 }
 
+TEST_CASE("a func_door with no brushes comes in as a door with nothing to move") {
+    const Import result = import("{\n\"classname\" \"func_door\"\n\"angle\" \"90\"\n}\n");
+    REQUIRE_MESSAGE(result.level.has_value(), result.error);
+    REQUIRE(result.level->entities.size() == 1);
+    CHECK(result.level->entities[0].className == "door");
+    CHECK(ct::findProperty(result.level->entities[0], "move") == nullptr);
+}
+
 TEST_CASE("a brush entity is skipped even when none of its brushes are valid") {
     const Import result = import("{\n"
                                  "\"classname\" \"func_door\"\n"
