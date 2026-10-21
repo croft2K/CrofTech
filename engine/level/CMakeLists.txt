@@ -2,10 +2,12 @@ add_library(ct_level STATIC
     include/croftech/level/BrushGeometry.h
     include/croftech/level/Level.h
     include/croftech/level/LevelFile.h
+    include/croftech/level/LevelLoad.h
     include/croftech/level/MapImport.h
     src/BrushGeometry.cpp
     src/Level.cpp
     src/LevelFile.cpp
+    src/LevelLoad.cpp
     src/MapImport.cpp
 )
 add_library(ct::level ALIAS ct_level)

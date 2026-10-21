@@ -6,6 +6,7 @@ layout(location = 2) in vec3 inColor;
 
 layout(push_constant) uniform PushConstants {
     mat4 viewProjection;
+    vec2 gridSpacing; // used by world.frag
 } pc;
 
 layout(location = 0) out vec3 outWorldPosition;

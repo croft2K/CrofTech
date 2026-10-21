@@ -1,5 +1,6 @@
 #pragma once
 
+#include "croftech/core/Camera.h"
 #include "croftech/core/Math.h"
 
 #include <cstdint>
@@ -19,12 +20,12 @@ struct WorldVertex {
     Vec3 color; // linear RGB
 };
 
-struct Camera {
-    Vec3 position;
-    float yawRadians = 0.0f;   // 0 faces +X, increasing towards +Y
-    float pitchRadians = 0.0f; // positive looks up
-    // Horizontal FOV at 16:9 (100 degrees by default); other aspects keep the same height.
-    float horizontalFovRadians16x9 = 1.745f;
+// A region of the window in pixels, for drawing the world into part of it (an editor viewport).
+struct PixelRect {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
 };
 
 // Vulkan renderer. Reads presentation data only; it never sees or writes simulation state.
@@ -41,8 +42,12 @@ public:
 
     void setWorldMesh(std::span<const WorldVertex> vertices,
                       std::span<const std::uint32_t> indices);
-    // ui (may be null) is this frame's ImGui::GetDrawData(), drawn over the world.
-    void drawFrame(const Camera& camera, const ImDrawData* ui = nullptr);
+    // Spacing of the grid lines drawn on every world surface, in metres (1 and 4 by default).
+    void setWorldGrid(float minorSpacing, float majorSpacing);
+    // ui (may be null) is this frame's ImGui::GetDrawData(), drawn over the world. The world fills
+    // worldRect, or the whole window if it is null; its aspect ratio comes from that rectangle.
+    void drawFrame(const Camera& camera, const ImDrawData* ui = nullptr,
+                   const PixelRect* worldRect = nullptr);
 
     struct Impl;
     // Use create(). Impl is only defined inside the renderer, so nothing else can build one.

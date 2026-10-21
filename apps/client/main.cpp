@@ -22,8 +22,7 @@
 #include "croftech/devui/DevUi.h"
 #include "croftech/devui/EntityInspector.h"
 #include "croftech/devui/StatsOverlay.h"
-#include "croftech/level/LevelFile.h"
-#include "croftech/level/MapImport.h"
+#include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/sim/CollisionWorld.h"
 #include "croftech/sim/MovementConfig.h"
@@ -148,31 +147,14 @@ struct PreparedLevel {
 
 std::optional<PreparedLevel> prepareLevel(const ct::ContentPaths& content, const std::string& name,
                                           std::string& error) {
-    std::filesystem::path path(name);
-    if (!path.has_extension()) {
-        const std::filesystem::path base = std::filesystem::path("levels") / name;
-        std::optional<std::filesystem::path> found =
-            content.find(std::filesystem::path(base).concat(ct::kLevelFileExtension));
-        if (!found) {
-            found = content.find(std::filesystem::path(base).concat(ct::kMapFileExtension));
-        }
-        if (!found) {
-            error = std::format("no level '{}' (looked for levels/{}{} and levels/{}{})", name,
-                                name, ct::kLevelFileExtension, name, ct::kMapFileExtension);
-            return std::nullopt;
-        }
-        path = *found;
+    const std::optional<std::filesystem::path> path = ct::findLevelFile(content, name, error);
+    if (!path) {
+        return std::nullopt;
     }
-
-    std::optional<ct::Level> level;
-    if (path.extension() == ct::kMapFileExtension) {
-        std::vector<std::string> warnings;
-        level = ct::importMapFile(path, {}, warnings, error);
-        for (const std::string& warning : warnings) {
-            ct::logWarning("{}: {}", path.filename().string(), warning);
-        }
-    } else {
-        level = ct::loadLevelFile(path, error);
+    std::vector<std::string> warnings;
+    std::optional<ct::Level> level = ct::loadAnyLevelFile(*path, warnings, error);
+    for (const std::string& warning : warnings) {
+        ct::logWarning("{}: {}", path->filename().string(), warning);
     }
     if (!level) {
         return std::nullopt;

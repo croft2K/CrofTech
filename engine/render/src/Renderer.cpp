@@ -16,6 +16,7 @@
 #include <vk_mem_alloc.h>
 // clang-format on
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -27,7 +28,6 @@ namespace {
 
 constexpr std::uint32_t kFramesInFlight = 2;
 constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
-constexpr float kNearPlane = 0.05f;
 constexpr VkClearColorValue kSkyColor{{0.66f, 0.75f, 0.86f, 1.0f}}; // already sRGB-encoded
 
 struct Buffer {
@@ -50,34 +50,9 @@ struct FrameResources {
 
 struct PushConstants {
     Mat4 viewProjection;
+    float gridMinor = 1.0f;
+    float gridMajor = 4.0f;
 };
-
-// World is Z up. View space is right-handed and looks down -Z; the projection is reverse-Z with an
-// infinite far plane (depth 1 at the near plane, 0 at infinity) and flips Y for Vulkan.
-Mat4 makeViewProjection(const Camera& camera, float aspect) {
-    const float cy = std::cos(camera.yawRadians);
-    const float sy = std::sin(camera.yawRadians);
-    const float cp = std::cos(camera.pitchRadians);
-    const float sp = std::sin(camera.pitchRadians);
-    const Vec3 forward{cp * cy, cp * sy, sp};
-    const Vec3 right{sy, -cy, 0.0f};
-    const Vec3 up = cross(right, forward);
-    const Vec3 eye = camera.position;
-
-    Mat4 view;
-    view.m = {right.x,          up.x,          -forward.x,        0.0f, right.y,    up.y,
-              -forward.y,       0.0f,          right.z,           up.z, -forward.z, 0.0f,
-              -dot(right, eye), -dot(up, eye), dot(forward, eye), 1.0f};
-
-    // Hor+: the FOV is defined horizontally at 16:9, so the vertical FOV is fixed.
-    const float focal = 1.0f / (std::tan(camera.horizontalFovRadians16x9 * 0.5f) * (9.0f / 16.0f));
-    Mat4 projection;
-    projection.m[0] = focal / aspect;
-    projection.m[5] = -focal;
-    projection.m[11] = -1.0f;
-    projection.m[14] = kNearPlane;
-    return projection * view;
-}
 
 } // namespace
 
@@ -98,6 +73,8 @@ struct Renderer::Impl {
     bool swapchainDirty = false;
 
     std::array<FrameResources, kFramesInFlight> frames{};
+    float gridMinor = 1.0f;
+    float gridMajor = 4.0f;
     std::uint32_t frameIndex = 0;
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
@@ -122,7 +99,7 @@ struct Renderer::Impl {
     Buffer createHostBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage);
     void destroyBuffer(Buffer& buffer);
     void recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex, const Camera& camera,
-                     const ImDrawData* uiData);
+                     const VkRect2D& worldRect, const ImDrawData* uiData);
 };
 
 bool Renderer::Impl::init(SDL_Window* sdlWindow, const std::filesystem::path& shaderDirectory,
@@ -362,7 +339,8 @@ bool Renderer::Impl::createPipeline(const std::filesystem::path& shaderDirectory
         return false;
     }
 
-    const VkPushConstantRange pushRange{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants)};
+    const VkPushConstantRange pushRange{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        0, sizeof(PushConstants)};
     const VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pushConstantRangeCount = 1,
@@ -506,7 +484,8 @@ void Renderer::Impl::destroyBuffer(Buffer& buffer) {
 }
 
 void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
-                                 const Camera& camera, const ImDrawData* uiData) {
+                                 const Camera& camera, const VkRect2D& worldRect,
+                                 const ImDrawData* uiData) {
     const VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -574,19 +553,24 @@ void Renderer::Impl::recordFrame(VkCommandBuffer cmd, std::uint32_t imageIndex,
     };
     vkCmdBeginRendering(cmd, &renderingInfo);
 
-    const VkViewport viewport{
-        0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
-        0.0f, 1.0f};
-    const VkRect2D scissor{{0, 0}, extent};
+    const VkViewport viewport{static_cast<float>(worldRect.offset.x),
+                              static_cast<float>(worldRect.offset.y),
+                              static_cast<float>(worldRect.extent.width),
+                              static_cast<float>(worldRect.extent.height),
+                              0.0f,
+                              1.0f};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdSetScissor(cmd, 0, 1, &worldRect);
 
-    if (indexCount > 0) {
-        const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-        const PushConstants push{makeViewProjection(camera, aspect)};
+    if (indexCount > 0 && worldRect.extent.width > 0 && worldRect.extent.height > 0) {
+        const float aspect = static_cast<float>(worldRect.extent.width) /
+                             static_cast<float>(worldRect.extent.height);
+        const PushConstants push{makeViewProjection(camera, aspect), gridMinor, gridMajor};
         const VkDeviceSize offset = 0;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        vkCmdPushConstants(cmd, pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(push), &push);
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
@@ -678,7 +662,12 @@ void Renderer::setWorldMesh(std::span<const WorldVertex> vertices,
     }
 }
 
-void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui) {
+void Renderer::setWorldGrid(float minorSpacing, float majorSpacing) {
+    m_impl->gridMinor = minorSpacing;
+    m_impl->gridMajor = majorSpacing;
+}
+
+void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui, const PixelRect* worldRect) {
     CT_PROFILE_ZONE();
     Impl& r = *m_impl;
     const VkDevice device = r.device.device;
@@ -719,7 +708,20 @@ void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui) {
 
     vkResetFences(device, 1, &frame.inFlight);
     vkResetCommandPool(device, frame.commandPool, 0);
-    r.recordFrame(frame.commandBuffer, imageIndex, camera, ui);
+    const VkExtent2D extent = r.swapchain.extent;
+    VkRect2D world{{0, 0}, extent};
+    if (worldRect != nullptr) {
+        const auto clampTo = [](float value, std::uint32_t limit) {
+            return static_cast<std::uint32_t>(std::clamp(value, 0.0f, static_cast<float>(limit)));
+        };
+        const std::uint32_t x0 = clampTo(worldRect->x, extent.width);
+        const std::uint32_t y0 = clampTo(worldRect->y, extent.height);
+        const std::uint32_t x1 = clampTo(worldRect->x + worldRect->width, extent.width);
+        const std::uint32_t y1 = clampTo(worldRect->y + worldRect->height, extent.height);
+        world = {{static_cast<std::int32_t>(x0), static_cast<std::int32_t>(y0)},
+                 {x1 - x0, y1 - y0}};
+    }
+    r.recordFrame(frame.commandBuffer, imageIndex, camera, world, ui);
 
     const VkSemaphoreSubmitInfo waitInfo{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,

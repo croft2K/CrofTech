@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <utility>
 
 namespace ct {
 namespace {
@@ -34,11 +35,34 @@ Vec3 vectorArea(const BrushFace& face) {
     return sum * 0.5f;
 }
 
+} // namespace
+
 std::string formatVec3(Vec3 v) {
     return std::format("{} {} {}", formatFloat(v.x), formatFloat(v.y), formatFloat(v.z));
 }
 
-} // namespace
+std::optional<Vec3> parseVec3(std::string_view text) {
+    std::array<float, 3> xyz{};
+    if (!parseFloats(text, xyz)) {
+        return std::nullopt;
+    }
+    return Vec3{xyz[0], xyz[1], xyz[2]};
+}
+
+std::optional<Vec3> entityOrigin(const LevelEntity& entity) {
+    const std::string* origin = findProperty(entity, "origin");
+    return origin != nullptr ? parseVec3(*origin) : std::nullopt;
+}
+
+void setProperty(LevelEntity& entity, std::string_view key, std::string value) {
+    for (EntityProperty& property : entity.properties) {
+        if (property.key == key) {
+            property.value = std::move(value);
+            return;
+        }
+    }
+    entity.properties.push_back({std::string(key), std::move(value)});
+}
 
 bool checkBrush(const Brush& brush, std::string& problem) {
     if (brush.planes.size() < 4 || brush.planes.size() > kMaxBrushPlanes) {
@@ -147,14 +171,13 @@ std::optional<std::vector<SpawnPoint>> readSpawnPoints(const Level& level, std::
             continue;
         }
         SpawnPoint spawn;
-        const std::string* origin = findProperty(entity, "origin");
-        std::array<float, 3> xyz{};
-        if (origin == nullptr || !parseFloats(*origin, xyz)) {
+        const std::optional<Vec3> origin = entityOrigin(entity);
+        if (!origin) {
             error =
                 std::format("entity {} ({}): origin must be three numbers", i, kPlayerSpawnClass);
             return std::nullopt;
         }
-        spawn.feetPosition = {xyz[0], xyz[1], xyz[2]};
+        spawn.feetPosition = *origin;
         if (!insideWorld(spawn.feetPosition)) {
             error =
                 std::format("entity {} ({}): origin is outside the world", i, kPlayerSpawnClass);

@@ -3,6 +3,7 @@ add_subdirectory(level)
 add_subdirectory(sim)
 add_subdirectory(platform)
 add_subdirectory(client)
+add_subdirectory(editor)
 
 if(CROFTECH_BUILD_CLIENT)
     add_subdirectory(render)

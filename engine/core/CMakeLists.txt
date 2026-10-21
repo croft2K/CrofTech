@@ -2,6 +2,7 @@ add_library(ct_core STATIC
     include/croftech/core/Angle.h
     include/croftech/core/Assert.h
     include/croftech/core/ByteStream.h
+    include/croftech/core/Camera.h
     include/croftech/core/ConfigFile.h
     include/croftech/core/Console.h
     include/croftech/core/Content.h
@@ -14,6 +15,7 @@ add_library(ct_core STATIC
     include/croftech/core/Schema.h
     src/Assert.cpp
     src/ByteStream.cpp
+    src/Camera.cpp
     src/ConfigFile.cpp
     src/Console.cpp
     src/Content.cpp

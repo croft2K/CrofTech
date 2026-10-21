@@ -15,11 +15,15 @@ namespace ct {
 
 class Console;
 
-// The drop-down developer console: shows the log and runs what is typed into it through a
-// ct::Console. Tab completes names; Up and Down recall earlier lines.
+// The developer console: shows the log and runs what is typed into it through a ct::Console. Tab
+// completes names; Up and Down recall earlier lines. In the game it drops down over the top of
+// the screen; in the editor it is an ordinary dockable panel that is always open.
+enum class ConsoleStyle { DropDown, Panel };
+
 class ConsoleWindow {
 public:
-    explicit ConsoleWindow(Console& console); // also adds the 'clear' command
+    // Also adds the 'clear' command.
+    explicit ConsoleWindow(Console& console, ConsoleStyle style = ConsoleStyle::DropDown);
     ~ConsoleWindow();
     ConsoleWindow(const ConsoleWindow&) = delete;
     ConsoleWindow& operator=(const ConsoleWindow&) = delete;
@@ -49,6 +53,7 @@ private:
     std::array<char, 512> m_input{};
     std::vector<std::string> m_history;
     int m_historyPosition = -1; // -1 = editing a new line
+    ConsoleStyle m_style;
     bool m_open = false;
     bool m_focusInput = false;
 };

@@ -39,7 +39,8 @@ ImVec4 lineColor(LogLevel level) {
 
 } // namespace
 
-ConsoleWindow::ConsoleWindow(Console& console) : m_console(console) {
+ConsoleWindow::ConsoleWindow(Console& console, ConsoleStyle style)
+    : m_console(console), m_style(style), m_open(style == ConsoleStyle::Panel) {
     m_logSink = addLogSink([this](LogLevel level, std::string_view message) {
         const std::lock_guard lock(m_linesMutex);
         m_lines.push_back({level, std::string(message)});
@@ -68,14 +69,17 @@ void ConsoleWindow::draw() {
     if (!m_open) {
         return;
     }
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize({viewport->WorkSize.x, viewport->WorkSize.y * kHeightFraction});
-    ImGui::SetNextWindowBgAlpha(0.92f);
-    constexpr ImGuiWindowFlags kWindowFlags =
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
-    if (ImGui::Begin("Console", nullptr, kWindowFlags)) {
+    ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
+    if (m_style == ConsoleStyle::DropDown) {
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize({viewport->WorkSize.x, viewport->WorkSize.y * kHeightFraction});
+        ImGui::SetNextWindowBgAlpha(0.92f);
+        windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
+    }
+    if (ImGui::Begin("Console", nullptr, windowFlags)) {
         const float inputHeight = ImGui::GetFrameHeightWithSpacing();
         if (ImGui::BeginChild("log", {0.0f, -inputHeight}, ImGuiChildFlags_None,
                               ImGuiWindowFlags_HorizontalScrollbar)) {

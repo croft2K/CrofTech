@@ -55,6 +55,9 @@ In order; each step builds, tests and commits on its own.
 5. **Editor shell.** Docked viewport, scene hierarchy, inspector, console; selection; undo/redo
    command stack from the first edit; basic brush editing (create, move, resize and delete box
    brushes on a snapping grid), enough to block out the M2 door puzzle without another editor.
+   *Done: `croftech_editor.exe` with docked hierarchy, inspector and console around the 3D view;
+   fly camera, picking, move, raise, face-drag resize, box tool, duplicate, delete, entity
+   property editing, grid sizes, save with an unsaved-changes prompt.*
 6. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
    transport, with the network conditioner for latency and loss.
 7. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which

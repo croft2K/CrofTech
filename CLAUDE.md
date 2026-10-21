@@ -28,6 +28,11 @@ automated smoke runs; `--exec` runs console commands once the config files have 
 client, the key below Esc opens the developer console; `map <name>` there switches level and
 `client.show_entities 1` opens a live, read-only view of every entity's components.
 
+Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
+edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
+drags preview live and record one command when released. Editing logic lives in `engine/editor`
+and is unit-tested; `apps/editor` holds only the ImGui panels, the 3D view and input.
+
 Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described in
 `level/LevelFile.h`): the editable source, diffable in git. A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
@@ -65,11 +70,15 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/platform  precise timers; later sockets                     (core)
     engine/client    simulation thread; later prediction, interpolation (sim, platform)
     engine/render    Vulkan renderer, incl. Dear ImGui drawing (Windows client only)  (core)
-    engine/devui     Dear ImGui context, developer console, stats overlay  (core)
+    engine/devui     Dear ImGui context, developer console, stats overlay, entity inspector
+                     (core)
+    engine/editor    editor document, undo/redo commands, brush editing and picking maths
+                     (core, level)
     engine/net       bitstream, transport, channels, crypto, protocol  (M6)
     engine/server    sessions, input buffers, lag compensation          (M6-M7)
     game/            weapons, damage, rules (simulation systems)
-    apps/            client (croftech.exe); later dedicated_server, editor, levelc
+    apps/            client (croftech.exe), editor (croftech_editor.exe), common (code both
+                     share); later dedicated_server, levelc
     content/         engine default content (config, levels; later assets)
     games/<name>/    a game: game.cfg, content/ overrides, later its gameplay code
     tests/           unit/, sim/ (headless), fuzz/

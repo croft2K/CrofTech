@@ -78,6 +78,15 @@ bool checkEntity(const LevelEntity& entity, std::string& problem);
 bool isValidEntityName(std::string_view name);
 
 const std::string* findProperty(const LevelEntity& entity, std::string_view key);
+// Replaces the value of an existing key, or adds the key at the end.
+void setProperty(LevelEntity& entity, std::string_view key, std::string value);
+
+// "x y z" in shortest exact form, as level files store positions.
+std::string formatVec3(Vec3 v);
+std::optional<Vec3> parseVec3(std::string_view text);
+
+// The "origin" property, the position of every point entity.
+std::optional<Vec3> entityOrigin(const LevelEntity& entity);
 
 struct SpawnPoint {
     Vec3 feetPosition;
