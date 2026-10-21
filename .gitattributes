@@ -9,3 +9,6 @@
 *.dds binary
 *.wav binary
 *.ogg binary
+
+# Fuzz seeds are raw bytes; some test unusual line endings.
+tests/fuzz/corpus/** binary
