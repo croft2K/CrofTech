@@ -26,7 +26,10 @@ Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--map na
 [--exec "cmds"]` (`--map` defaults to the game's `start_map`; `--frames` quits after N frames, for
 automated smoke runs; `--exec` runs console commands once the config files have loaded). In the
 client, the key below Esc opens the developer console; `map <name>` there switches level and
-`client.show_entities 1` opens a live, read-only view of every entity's components.
+`client.show_entities 1` opens a live, read-only view of every entity's components. The client
+and its game's server run in one process and talk only through packets over an in-memory link
+(`ct::LocalGame`); `net.fake_latency_ms`, `net.fake_jitter_ms` and `net.fake_loss_percent` make
+that link behave like a poor network.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -79,14 +82,18 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
                      (core)
     engine/sim       ECS world, components, collision, movement        (core, level)
     engine/platform  precise timers; later sockets                     (core)
-    engine/client    simulation thread; later prediction, interpolation (sim, platform)
+    engine/client    client connection, LocalGame (server thread + client over an in-memory
+                     link); later prediction, interpolation          (net, server, sim)
     engine/render    Vulkan renderer, incl. Dear ImGui drawing (Windows client only)  (core)
     engine/devui     Dear ImGui context, developer console, stats overlay, entity inspector
                      (core)
     engine/editor    editor document, undo/redo commands, brush editing and picking maths
                      (core, level)
-    engine/net       bitstream, transport, channels, crypto, protocol  (M6)
-    engine/server    sessions, input buffers, lag compensation          (M6-M7)
+    engine/net       protocol messages, Transport, LoopbackLink with the network
+                     conditioner; later bitstream, sockets, channels, crypto (M6) (core, sim)
+    engine/server    Server (players join over a Transport, inputs, ticks, snapshots),
+                     ServerThread; later input buffers, lag compensation (M6-M7)
+                     (net, sim, platform)
     game/            weapons, damage, rules (simulation systems)
     apps/            client (croftech.exe), editor (croftech_editor.exe), common (code both
                      share); later dedicated_server, levelc

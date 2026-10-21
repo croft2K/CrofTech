@@ -17,6 +17,8 @@ add_executable(ct_unit_tests
     unit/level/BrushGeometryTests.cpp
     unit/level/LevelFileTests.cpp
     unit/level/MapImportTests.cpp
+    unit/net/LoopbackLinkTests.cpp
+    unit/net/ProtocolTests.cpp
     unit/sim/CollisionWorldTests.cpp
     unit/sim/MovementConfigTests.cpp
     unit/sim/StateSaveTests.cpp
@@ -26,7 +28,7 @@ add_executable(ct_unit_tests
     sim/TestLevels.h
 )
 target_include_directories(ct_unit_tests PRIVATE unit ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ct_unit_tests PRIVATE ct::editor ct::sim doctest::doctest)
+target_link_libraries(ct_unit_tests PRIVATE ct::editor ct::net ct::sim doctest::doctest)
 target_compile_definitions(ct_unit_tests PRIVATE
     CROFTECH_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     CROFTECH_CONTENT_DIR="${PROJECT_SOURCE_DIR}/content")
@@ -38,8 +40,8 @@ add_executable(ct_sim_tests
     unit/Main.cpp
     sim/DeterminismTests.cpp
     sim/MovementTests.cpp
+    sim/ServerTests.cpp
     sim/SimHarness.h
-    sim/SimThreadTests.cpp
     sim/SlidingTests.cpp
     sim/TestLevels.cpp
     sim/TestLevels.h

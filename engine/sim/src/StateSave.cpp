@@ -237,6 +237,11 @@ bool StateLoader::skipComponents(const std::vector<SavedField>& fields, std::uin
 
 std::vector<std::byte> saveState(const State& state) {
     ByteWriter writer;
+    writeState(writer, state);
+    return writer.take();
+}
+
+void writeState(ByteWriter& writer, const State& state) {
     writer.writeU32(kMagic);
     writer.writeU32(kStateSaveVersion);
     writer.writeU32(state.tick);
@@ -275,7 +280,6 @@ std::vector<std::byte> saveState(const State& state) {
             }
         }
     });
-    return writer.take();
 }
 
 bool loadState(std::span<const std::byte> bytes, State& state, std::string& error) {

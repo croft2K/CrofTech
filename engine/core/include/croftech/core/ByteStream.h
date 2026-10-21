@@ -26,6 +26,8 @@ public:
     }
 
     const std::vector<std::byte>& bytes() const { return m_bytes; }
+    // Empties the writer but keeps its memory, so a writer reused every tick doesn't allocate.
+    void clear() { m_bytes.clear(); }
     std::vector<std::byte> take() { return std::move(m_bytes); }
 
 private:

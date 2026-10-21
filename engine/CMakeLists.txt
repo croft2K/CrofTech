@@ -2,6 +2,8 @@ add_subdirectory(core)
 add_subdirectory(level)
 add_subdirectory(sim)
 add_subdirectory(platform)
+add_subdirectory(net)
+add_subdirectory(server)
 add_subdirectory(client)
 add_subdirectory(editor)
 

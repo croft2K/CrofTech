@@ -1,8 +1,10 @@
-// CrofTech client: a window onto a locally running simulation.
+// CrofTech client: a window onto a game running in this process.
 //
-// The simulation runs on its own thread at 128 Hz. Every frame this thread sends the latest input,
-// then draws the player's view interpolated between the two most recent ticks. The camera angles
-// come straight from the mouse, so looking around never waits for a tick.
+// A local server runs the simulation on its own thread at 128 Hz, and this thread is its client:
+// every frame it sends the latest input as a packet and draws the player's view between the two
+// newest snapshots the server sent back. Everything between them goes through the bytes a network
+// would carry, over an in-memory link that the net.fake_* settings can slow down and make lossy.
+// The camera angles come straight from the mouse, so looking around never waits for a tick.
 //
 // Settings are console variables: config files set them (and reload when saved), and so does the
 // developer console, opened with the key below Esc.
@@ -12,7 +14,7 @@
 
 #include "WorldMesh.h"
 
-#include "croftech/client/SimThread.h"
+#include "croftech/client/LocalGame.h"
 #include "croftech/core/Angle.h"
 #include "croftech/core/Console.h"
 #include "croftech/core/Content.h"
@@ -24,7 +26,6 @@
 #include "croftech/devui/StatsOverlay.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
-#include "croftech/sim/CollisionWorld.h"
 #include "croftech/sim/MovementConfig.h"
 
 #include <SDL3/SDL.h>
@@ -81,6 +82,13 @@ struct ClientCVars {
     const ct::CVar& fov;
     const ct::CVar& showStats;
     const ct::CVar& showEntities;
+    const ct::CVar& fakeLatency;
+    const ct::CVar& fakeJitter;
+    const ct::CVar& fakeLoss;
+
+    ct::LinkConditions linkConditions() const {
+        return {fakeLatency.asFloat(), fakeJitter.asFloat(), fakeLoss.asFloat()};
+    }
 };
 
 ClientCVars registerClientCVars(ct::Console& console) {
@@ -94,6 +102,12 @@ ClientCVars registerClientCVars(ct::Console& console) {
                                        "frame rate, tick cost and speed overlay")),
         console.add(ct::CVar::makeBool("client.show_entities", false,
                                        "window listing every entity and its components")),
+        console.add(ct::CVar::makeFloat("net.fake_latency_ms", 0.0f, 0.0f, 1000.0f,
+                                        "delay added to every packet, each way")),
+        console.add(ct::CVar::makeFloat("net.fake_jitter_ms", 0.0f, 0.0f, 500.0f,
+                                        "random extra delay of up to this, each way")),
+        console.add(ct::CVar::makeFloat("net.fake_loss_percent", 0.0f, 0.0f, 100.0f,
+                                        "share of packets lost, each way")),
     };
 }
 
@@ -116,8 +130,6 @@ void reloadConfig(ct::Console& console, ConfigFile& file, bool announce) {
         ct::logInfo("{} reloaded", file.name);
     }
 }
-
-ct::Vec3 lerp(ct::Vec3 a, ct::Vec3 b, float t) { return a + (b - a) * t; }
 
 std::vector<ct::EntityInspector::Entity> inspectEntities(const ct::World& world) {
     std::vector<ct::EntityInspector::Entity> entities;
@@ -261,24 +273,16 @@ int main(int argc, char** argv) {
     ct::MovementSettings movement = ct::movementSettingsFromCVars(console);
     std::uint64_t seenChanges = console.changeCount();
 
-    // The simulation thread reads the collision world, so it stops before the world is replaced.
-    std::unique_ptr<ct::CollisionWorld> collision;
-    std::unique_ptr<ct::SimThread> sim;
-    ct::EntityId player;
+    std::unique_ptr<ct::LocalGame> localGame;
     float yaw = 0.0f;
     float pitch = 0.0f;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
-        sim.reset();
-        collision = std::make_unique<ct::CollisionWorld>(prepared.level.brushes);
+        localGame.reset();
         const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level);
         renderer->setWorldMesh(mesh.vertices, mesh.indices);
-
-        const ct::SpawnPoint& spawn = prepared.spawns.front();
-        auto initial = std::make_unique<ct::State>();
-        player = ct::spawnPlayer(initial->world, movement, spawn, 0);
-        sim = std::make_unique<ct::SimThread>(*collision, movement, *initial);
-        sim->start();
-        yaw = ct::angleToRadians(spawn.yaw);
+        localGame = std::make_unique<ct::LocalGame>(prepared.level.brushes, prepared.spawns,
+                                                    movement, client.linkConditions());
+        yaw = ct::angleToRadians(prepared.spawns.front().yaw);
         pitch = 0.0f;
         ct::logInfo("Level: {} ({} brushes, {} entities)", prepared.name,
                     prepared.level.brushes.size(), prepared.level.entities.size());
@@ -297,6 +301,7 @@ int main(int argc, char** argv) {
     };
     captureMouse(true);
 
+    ct::Vec3 eye; // kept until the server has let the player in
     Clock::time_point nextReload = Clock::now() + kReloadInterval;
     Clock::time_point lastFrame = Clock::now();
     int frameCount = 0;
@@ -375,9 +380,9 @@ int main(int argc, char** argv) {
             cmd.side = axis(SDL_SCANCODE_D, SDL_SCANCODE_A);
             cmd.buttons = keys[SDL_SCANCODE_SPACE] ? ct::kButtonJump : 0;
         }
-        sim->submitInput(0, cmd);
-
         const Clock::time_point now = Clock::now();
+        localGame->update(cmd, now);
+
         if (now >= nextReload) {
             nextReload = now + kReloadInterval;
             for (ConfigFile& file : configFiles) {
@@ -387,32 +392,26 @@ int main(int argc, char** argv) {
         if (console.changeCount() != seenChanges) {
             seenChanges = console.changeCount();
             movement = ct::movementSettingsFromCVars(console);
-            sim->setMovementSettings(movement);
+            localGame->setMovementSettings(movement);
+            localGame->setConditions(client.linkConditions());
         }
 
-        ct::Vec3 eye;
-        sim->readStates([&](const ct::State& previous, const ct::State& current,
-                            Clock::time_point publishedAt) {
-            const ct::Transform* from = previous.world.transforms.get(player);
-            const ct::Transform* to = current.world.transforms.get(player);
-            if (from == nullptr || to == nullptr) {
-                return;
-            }
-            const float alpha = std::clamp(std::chrono::duration<float>(now - publishedAt).count() /
-                                               ct::kTickSeconds,
-                                           0.0f, 1.0f);
-            eye = lerp(ct::eyePosition(movement, *from), ct::eyePosition(movement, *to), alpha);
-            if (const ct::PlayerMotion* motion = current.world.playerMotions.get(player)) {
+        if (const std::optional<ct::Vec3> playerEye = localGame->eyePosition(now)) {
+            eye = *playerEye;
+        }
+        if (const ct::State* latest = localGame->latestState()) {
+            if (const ct::PlayerMotion* motion =
+                    latest->world.playerMotions.get(localGame->player())) {
                 horizontalSpeed = std::sqrt(motion->velocity.x * motion->velocity.x +
                                             motion->velocity.y * motion->velocity.y);
             }
             if (client.showEntities.asBool()) {
-                *inspectedState = current;
+                *inspectedState = *latest;
             }
-        });
+        }
 
         stats.add({std::chrono::duration<float, std::milli>(now - lastFrame).count(),
-                   sim->lastStepMilliseconds(), horizontalSpeed});
+                   localGame->serverTickMilliseconds(), horizontalSpeed});
         lastFrame = now;
 
         devUi->beginFrame();
@@ -444,7 +443,7 @@ int main(int argc, char** argv) {
 
     console.removeCommand("quit");
     console.removeCommand("map");
-    sim.reset();
+    localGame.reset();
     renderer.reset(); // before the ImGui context it serves
     devUi.reset();
     SDL_DestroyWindow(window);

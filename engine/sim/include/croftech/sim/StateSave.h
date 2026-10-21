@@ -1,5 +1,6 @@
 #pragma once
 
+#include "croftech/core/ByteStream.h"
 #include "croftech/sim/World.h"
 
 #include <cstddef>
@@ -22,6 +23,8 @@ namespace ct {
 inline constexpr std::uint32_t kStateSaveVersion = 1;
 
 std::vector<std::byte> saveState(const State& state);
+// The same bytes, appended to writer.
+void writeState(ByteWriter& writer, const State& state);
 
 // On failure state is left unchanged and error says why.
 bool loadState(std::span<const std::byte> bytes, State& state, std::string& error);
