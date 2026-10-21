@@ -3,9 +3,10 @@
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
 // console docked around it, and the tool bar over the view. Hold the right mouse button in the view
 // to fly (WASD, Q/E down/up, Shift faster). Shortcuts: Q/W/E/R select, move, rotate and scale
-// tools, B shape tool, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all, Ctrl+D duplicate,
-// Del delete, arrow keys and Page Up/Down nudge the selection one grid step, F frame selection,
-// [ and ] grid size, Esc cancel or deselect.
+// tools, V vertex tool, B shape tool, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all,
+// Ctrl+D duplicate, Del delete (in the vertex tool, the selected corners), arrow keys and Page
+// Up/Down nudge the selection (or selected corners) one grid step, F frame selection, [ and ] grid
+// size, Esc cancel or deselect.
 
 #include "EditorPanels.h"
 #include "LevelViewport.h"
@@ -132,11 +133,10 @@ std::optional<ct::EditorTool> toolShortcut() {
     if (ImGui::GetIO().KeyMods != ImGuiMod_None) {
         return std::nullopt;
     }
-    constexpr std::pair<ImGuiKey, ct::EditorTool> kKeys[]{{ImGuiKey_Q, ct::EditorTool::Select},
-                                                          {ImGuiKey_W, ct::EditorTool::Move},
-                                                          {ImGuiKey_E, ct::EditorTool::Rotate},
-                                                          {ImGuiKey_R, ct::EditorTool::Scale},
-                                                          {ImGuiKey_B, ct::EditorTool::Draw}};
+    constexpr std::pair<ImGuiKey, ct::EditorTool> kKeys[]{
+        {ImGuiKey_Q, ct::EditorTool::Select}, {ImGuiKey_W, ct::EditorTool::Move},
+        {ImGuiKey_E, ct::EditorTool::Rotate}, {ImGuiKey_R, ct::EditorTool::Scale},
+        {ImGuiKey_V, ct::EditorTool::Vertex}, {ImGuiKey_B, ct::EditorTool::Draw}};
     for (const auto& [key, tool] : kKeys) {
         if (ImGui::IsKeyPressed(key, false)) {
             return tool;
@@ -344,6 +344,8 @@ int main(int argc, char** argv) {
         bool addSpawn = menu.addPlayerSpawn;
         if (!flying && !io.WantTextInput) {
             const float grid = settings.grid();
+            const bool editingCorners =
+                viewport.tool() == ct::EditorTool::Vertex && !viewport.selectedCorners().empty();
             if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
                 save(document);
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
@@ -358,13 +360,27 @@ int main(int argc, char** argv) {
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_A)) {
                 ct::selectAll(document);
             } else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && !viewport.isDragging()) {
-                ct::deleteSelection(document);
+                if (editingCorners) {
+                    if (ct::removeCorners(document, viewport.selectedCorners())) {
+                        viewport.setSelectedCorners({});
+                    }
+                } else {
+                    ct::deleteSelection(document);
+                }
             } else if (const auto tool = toolShortcut()) {
                 viewport.setTool(*tool);
             } else if (const auto nudge = nudgeShortcut(viewport.forwardOnGrid());
                        nudge && !viewport.isDragging()) {
-                ct::transformSelection(document, ct::AffineTransform::moveBy(*nudge * grid),
-                                       "Move");
+                const ct::Vec3 offset = *nudge * grid;
+                if (!editingCorners) {
+                    ct::transformSelection(document, ct::AffineTransform::moveBy(offset), "Move");
+                } else if (ct::moveCorners(document, viewport.selectedCorners(), offset)) {
+                    std::vector<ct::Vec3> moved = viewport.selectedCorners();
+                    for (ct::Vec3& corner : moved) {
+                        corner += offset;
+                    }
+                    viewport.setSelectedCorners(std::move(moved));
+                }
             } else if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
                 frameSelection = true;
             } else if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
@@ -374,6 +390,8 @@ int main(int argc, char** argv) {
             } else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                 if (viewport.isDragging()) {
                     viewport.cancelDrag(document);
+                } else if (editingCorners) {
+                    viewport.setSelectedCorners({});
                 } else if (viewport.tool() != ct::EditorTool::Select) {
                     viewport.setTool(ct::EditorTool::Select);
                 } else {

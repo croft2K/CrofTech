@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
+#include <vector>
 
 namespace ct {
 
@@ -46,8 +48,9 @@ struct EditorSettings {
 };
 
 // Select, Move, Rotate and Scale all select and drag items the same way; the last three add a
-// gizmo on the selection. Draw makes a new shape (EditorSettings::shape).
-enum class EditorTool { Select, Move, Rotate, Scale, Draw };
+// gizmo on the selection. Vertex reshapes the selected brushes by their corners, edges and faces.
+// Draw makes a new shape (EditorSettings::shape).
+enum class EditorTool { Select, Move, Rotate, Scale, Vertex, Draw };
 
 // Camera movement while the right mouse button is held.
 struct FlyInput {
@@ -73,6 +76,11 @@ struct FlyInput {
 // selection's box drag its sides. Every drag shows live and finishes as one undoable command;
 // Esc cancels it.
 //
+// Vertex: handles on the selected brushes' corners and on the middles of their edges and faces.
+// Click one to select its corners (Ctrl adds or removes), drag a box to select the corners inside
+// it, and drag a selected handle to move the selected corners across the grid (Alt: up and down).
+// Corners at the same place in several selected brushes move together.
+//
 // Draw: drag a rectangle on the surface under the mouse, release, move the mouse up to set the
 // height and click (or press Enter) to place the shape. Until something else is edited, changing
 // the shape settings remakes the shape just placed.
@@ -86,6 +94,9 @@ public:
     void frame(Vec3 point, float distance);
 
     EditorTool tool() const { return m_tool; }
+    // The Vertex tool's selected corners, by position.
+    const std::vector<Vec3>& selectedCorners() const { return m_corners; }
+    void setSelectedCorners(std::vector<Vec3> corners) { m_corners = std::move(corners); }
     void setTool(EditorTool tool) { m_tool = tool; }
     bool isDragging() const { return m_drag.kind != DragKind::None; }
     // Restores what the current drag changed.
@@ -108,7 +119,17 @@ public:
 private:
     // ShapeBase is the rectangle drag; ShapeHeight follows the mouse, with no button held,
     // until a click places the shape.
-    enum class DragKind { None, Marquee, Move, MoveVertical, Face, ShapeBase, ShapeHeight, Gizmo };
+    enum class DragKind {
+        None,
+        Marquee,
+        Move,
+        MoveVertical,
+        Face,
+        Corners,
+        ShapeBase,
+        ShapeHeight,
+        Gizmo
+    };
 
     struct Pick {
         LevelItem target;
@@ -127,6 +148,14 @@ private:
         friend bool operator==(const GizmoHandle&, const GizmoHandle&) = default;
     };
 
+    // A Vertex tool handle: a corner, or the middle of an edge or face, and the corners it moves.
+    struct VertexHandle {
+        enum class Kind { Corner, Edge, Face };
+        Kind kind = Kind::Corner;
+        Vec3 position;
+        std::vector<Vec3> corners;
+    };
+
     struct Drag {
         DragKind kind = DragKind::None;
         LevelItem target;
@@ -143,6 +172,11 @@ private:
         float screenStartX = 0.0f;        // Marquee, Ring
         float screenStartY = 0.0f;
         bool additive = false;            // Marquee with Ctrl
+        bool selectCorners = false;       // Marquee in the Vertex tool
+        std::vector<Vec3> corners;        // Corners: the corners moving, where they started
+        Vec3 cornerOffset;                // Corners: the move shown now
+        bool cornerOnGrid = false;        // Corners: a corner was grabbed, so it lands on the grid
+        bool vertical = false;            // Corners with Alt
         std::optional<LevelItem> clicked; // Marquee: the item under the mouse when it began
         GizmoHandle handle;
         Aabb extent; // the selection's extent when a gizmo drag began
@@ -186,6 +220,15 @@ private:
                    const Ray& ray);
     void beginGizmoDrag(EditorDocument& document, const GizmoHandle& handle, const ViewRect& rect,
                         const Ray& ray);
+    void beginCornerDrag(EditorDocument& document, const VertexHandle& handle);
+    void continueCornerDrag(EditorDocument& document, const EditorSettings& settings,
+                            const Ray& ray);
+
+    // Every handle of the selected brushes, one per place.
+    std::vector<VertexHandle> vertexHandles(const EditorDocument& document) const;
+    std::optional<VertexHandle> pickVertexHandle(const EditorDocument& document,
+                                                 const ViewRect& rect) const;
+    bool isCornerSelected(Vec3 corner) const;
     void continueDrag(EditorDocument& document, const EditorSettings& settings, const Ray& ray);
     void continueGizmoDrag(EditorDocument& document, const EditorSettings& settings,
                            const Ray& ray);
@@ -196,13 +239,15 @@ private:
     // Remakes the shape placed last when the settings changed since.
     void adjustPlacedShape(EditorDocument& document, const EditorSettings& settings);
     void finishMarquee(const Drag& drag, EditorDocument& document, const EditorSettings& settings,
-                       const ViewRect& rect) const;
+                       const ViewRect& rect);
 
     Camera m_camera;
     EditorTool m_tool = EditorTool::Select;
     Drag m_drag;
     std::optional<Pick> m_hover;
     std::optional<GizmoHandle> m_hoverHandle;
+    std::optional<VertexHandle> m_hoverVertex;
+    std::vector<Vec3> m_corners;
     float m_shapeHeight = 1.0f; // new shapes start as tall as the last one
     std::optional<PlacedShape> m_placedShape;
 };

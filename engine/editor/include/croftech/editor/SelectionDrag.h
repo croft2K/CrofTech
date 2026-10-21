@@ -4,14 +4,16 @@
 #include "croftech/editor/EditorDocument.h"
 
 #include <cstddef>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace ct {
 
-// Moves, rotates or scales the selected items while the mouse drags them: each frame shows the
-// items transformed from where they started, and the end records one command for the lot.
+// Moves, rotates or scales the selected items, or moves corners of the selected brushes, while
+// the mouse drags them: each frame shows the items changed from where they started, and the end
+// records one command for the lot.
 class SelectionDrag {
 public:
     // Remembers the selected items as they are now.
@@ -20,6 +22,9 @@ public:
     // False, keeping the previous preview, if a brush would become invalid (say, outside the
     // world).
     bool preview(EditorDocument& document, const AffineTransform& transform);
+    // Shows the selected brushes' corners at the positions moved by offset (withCornersMoved).
+    // False, keeping the previous preview, if any brush would refuse the move.
+    bool previewCorners(EditorDocument& document, std::span<const Vec3> corners, Vec3 offset);
     // Puts every item back where it started.
     void cancel(EditorDocument& document);
     // Records the change as one command. False if nothing moved.

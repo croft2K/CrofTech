@@ -8,6 +8,7 @@ add_executable(ct_unit_tests
     unit/core/HashTests.cpp
     unit/core/SchemaTests.cpp
     unit/editor/BrushEditingTests.cpp
+    unit/editor/CornerEditingTests.cpp
     unit/editor/EditorDocumentTests.cpp
     unit/editor/SelectionTests.cpp
     unit/editor/ShapesTests.cpp

@@ -191,4 +191,37 @@ bool flipSelection(EditorDocument& document, std::size_t axis, float grid) {
         document, AffineTransform::scale({factors[0], factors[1], factors[2]}, {}), grid, "Flip");
 }
 
+bool moveCorners(EditorDocument& document, std::span<const Vec3> corners, Vec3 offset) {
+    SelectionDrag drag(document);
+    if (corners.empty() || !drag.previewCorners(document, corners, offset)) {
+        drag.cancel(document);
+        return false;
+    }
+    return drag.commit(document, corners.size() == 1 ? "Move corner" : "Move corners");
+}
+
+bool removeCorners(EditorDocument& document, std::span<const Vec3> corners) {
+    const std::string name = corners.size() == 1 ? "Delete corner" : "Delete corners";
+    const Level& level = document.level();
+    std::vector<std::unique_ptr<Command>> commands;
+    for (const LevelItem& item : document.selection()) {
+        if (item.kind != LevelItem::Kind::Brush) {
+            continue;
+        }
+        const Brush& before = level.brushes[item.index];
+        std::optional<Brush> after = withCornersRemoved(before, corners);
+        if (!after) {
+            return false;
+        }
+        if (!(*after == before)) {
+            commands.push_back(makeSetBrush(name, item.index, before, std::move(*after)));
+        }
+    }
+    if (commands.empty()) {
+        return false;
+    }
+    runCommands(document, name, std::move(commands));
+    return true;
+}
+
 } // namespace ct

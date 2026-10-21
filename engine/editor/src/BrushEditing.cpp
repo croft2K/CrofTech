@@ -57,6 +57,62 @@ std::optional<Brush> withFacePushed(const Brush& brush, std::size_t face, float 
     return result;
 }
 
+std::vector<std::pair<std::uint32_t, std::uint32_t>> brushEdges(const Brush& brush) {
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> edges;
+    for (const BrushFace& face : brush.faces) {
+        for (std::size_t i = 0; i < face.corners.size(); ++i) {
+            const std::uint32_t a = face.corners[i];
+            const std::uint32_t b = face.corners[(i + 1) % face.corners.size()];
+            if (a < b) { // each edge is in two faces, once each way
+                edges.emplace_back(a, b);
+            }
+        }
+    }
+    std::sort(edges.begin(), edges.end());
+    return edges;
+}
+
+std::optional<Brush> withCornersMoved(const Brush& brush, std::span<const Vec3> corners,
+                                      Vec3 offset) {
+    if (offset == Vec3{}) {
+        return brush; // rebuilding would only renumber the corners
+    }
+    std::vector<Vec3> points;
+    bool anyMoved = false;
+    for (const Vec3& vertex : brush.vertices) {
+        const bool moves = std::find(corners.begin(), corners.end(), vertex) != corners.end();
+        points.push_back(moves ? vertex + offset : vertex);
+        anyMoved = anyMoved || moves;
+    }
+    if (!anyMoved) {
+        return brush;
+    }
+    std::optional<Brush> result = brushFromPoints(points);
+    if (!result) {
+        return std::nullopt;
+    }
+    for (const Vec3& point : points) {
+        if (std::find(result->vertices.begin(), result->vertices.end(), point) ==
+            result->vertices.end()) {
+            return std::nullopt;
+        }
+    }
+    return result;
+}
+
+std::optional<Brush> withCornersRemoved(const Brush& brush, std::span<const Vec3> corners) {
+    std::vector<Vec3> points;
+    for (const Vec3& vertex : brush.vertices) {
+        if (std::find(corners.begin(), corners.end(), vertex) == corners.end()) {
+            points.push_back(vertex);
+        }
+    }
+    if (points.size() == brush.vertices.size()) {
+        return brush;
+    }
+    return brushFromPoints(points);
+}
+
 bool isAxial(Vec3 normal) {
     const float ax = std::fabs(normal.x);
     const float ay = std::fabs(normal.y);

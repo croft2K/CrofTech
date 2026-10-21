@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,5 +53,11 @@ bool transformSelection(EditorDocument& document, const AffineTransform& transfo
 // selection on the grid stays on it.
 bool rotateSelection(EditorDocument& document, std::size_t axis, int quarterTurns, float grid);
 bool flipSelection(EditorDocument& document, std::size_t axis, float grid);
+
+// Moves the selected brushes' corners at the positions by offset (withCornersMoved), or removes
+// them (withCornersRemoved). Corners shared by several brushes move together, so their seams stay
+// closed. False, changing nothing, if any brush would refuse.
+bool moveCorners(EditorDocument& document, std::span<const Vec3> corners, Vec3 offset);
+bool removeCorners(EditorDocument& document, std::span<const Vec3> corners);
 
 } // namespace ct

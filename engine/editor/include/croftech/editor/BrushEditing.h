@@ -5,7 +5,11 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <span>
+#include <utility>
+#include <vector>
 
 namespace ct {
 
@@ -31,6 +35,22 @@ std::optional<Aabb> boxBounds(const Brush& brush);
 
 // True if the normal is one of the six axis directions.
 bool isAxial(Vec3 normal);
+
+// Every edge once, as the indices of its two corners (lower first), sorted.
+std::vector<std::pair<std::uint32_t, std::uint32_t>> brushEdges(const Brush& brush);
+
+// The brush with each corner found at one of the positions moved by offset, rebuilt as the convex
+// hull of all its corners: how corners, edges and faces are dragged. A corner moved onto another
+// merges with it, so a box becomes a wedge by moving an edge onto the one below. Nullopt if any
+// corner would not be a corner of the result (a moved one pushed inside the solid or onto a face
+// or edge, where only a concave brush could keep it, or one that stayed swallowed by the move), or
+// if the result is flat or invalid. The brush unchanged if none of its corners is at a position.
+// Corners are never recomputed, so corners on the grid stay exactly on it.
+std::optional<Brush> withCornersMoved(const Brush& brush, std::span<const Vec3> corners,
+                                      Vec3 offset);
+
+// The brush rebuilt without the corners at the positions. Nullopt if what is left is flat.
+std::optional<Brush> withCornersRemoved(const Brush& brush, std::span<const Vec3> corners);
 
 struct BrushHit {
     float distance = 0.0f;

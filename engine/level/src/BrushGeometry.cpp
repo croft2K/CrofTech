@@ -55,11 +55,15 @@ Brush toBrush(const Solid& solid) {
 void keepFaces(Solid& solid, const std::vector<bool>& keep) {
     std::size_t kept = 0;
     for (std::size_t i = 0; i < solid.faces.size(); ++i) {
-        if (keep[i]) {
+        if (!keep[i]) {
+            continue;
+        }
+        // Never move a vector onto itself: libstdc++ empties it.
+        if (kept != i) {
             solid.faces[kept] = std::move(solid.faces[i]);
             solid.planeOfFace[kept] = solid.planeOfFace[i];
-            ++kept;
         }
+        ++kept;
     }
     solid.faces.resize(kept);
     solid.planeOfFace.resize(kept);

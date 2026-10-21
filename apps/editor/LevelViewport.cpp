@@ -10,8 +10,10 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <map>
 #include <numbers>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace ct {
@@ -38,6 +40,8 @@ constexpr ImU32 kInvalidColor = IM_COL32(255, 80, 60, 255);
 constexpr ImU32 kMarqueeColor = IM_COL32(120, 180, 255, 255);
 constexpr ImU32 kMarqueeFill = IM_COL32(120, 180, 255, 40);
 constexpr ImU32 kExtentColor = IM_COL32(255, 255, 255, 110);
+constexpr ImU32 kHandleColor = IM_COL32(230, 230, 230, 200);
+constexpr ImU32 kHandleHoverColor = IM_COL32(255, 255, 255, 255);
 constexpr ImU32 kGizmoActiveColor = IM_COL32(255, 230, 80, 255);
 constexpr std::array<ImU32, 3> kAxisColors{IM_COL32(235, 75, 75, 255), IM_COL32(115, 205, 65, 255),
                                            IM_COL32(75, 135, 245, 255)};
@@ -440,8 +444,21 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
     }
 
     adjustPlacedShape(document, settings);
+    // Corners that are no longer corners of a selected brush (after an undo, say) drop out.
+    std::erase_if(m_corners, [&](Vec3 corner) {
+        return std::none_of(
+            document.selection().begin(), document.selection().end(), [&](const LevelItem& item) {
+                if (item.kind != LevelItem::Kind::Brush) {
+                    return false;
+                }
+                const auto& vertices = document.level().brushes[item.index].vertices;
+                return std::find(vertices.begin(), vertices.end(), corner) != vertices.end();
+            });
+    });
     m_hoverHandle = mouseOverView ? pickGizmo(document, rect) : std::nullopt;
-    m_hover = mouseOverView && !m_hoverHandle ? pick(document, settings, ray) : std::nullopt;
+    m_hoverVertex = mouseOverView ? pickVertexHandle(document, rect) : std::nullopt;
+    m_hover = mouseOverView && !m_hoverHandle && !m_hoverVertex ? pick(document, settings, ray)
+                                                                : std::nullopt;
     if (mouseOverView && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         beginDrag(document, settings, rect, ray);
     }
@@ -455,6 +472,10 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
     const ImGuiIO& io = ImGui::GetIO();
     if (m_hoverHandle) {
         beginGizmoDrag(document, *m_hoverHandle, rect, ray);
+        return;
+    }
+    if (m_hoverVertex) {
+        beginCornerDrag(document, *m_hoverVertex);
         return;
     }
     if (m_tool == EditorTool::Draw) {
@@ -473,8 +494,10 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
     m_drag = {};
     // Dragging a selected item moves the selection. Anywhere else, including unselected items
     // (in a level nearly every point is on some brush, the floor at least), a drag draws a
-    // selection box and a click selects what is under the mouse.
-    if (m_hover && !io.KeyCtrl && document.isSelected(m_hover->target)) {
+    // selection box and a click selects what is under the mouse. The Vertex tool moves corners
+    // only by their handles; its selection box picks corners.
+    const bool vertexTool = m_tool == EditorTool::Vertex;
+    if (m_hover && !io.KeyCtrl && !vertexTool && document.isSelected(m_hover->target)) {
         const Pick hit = *m_hover;
         m_drag.target = hit.target;
         m_drag.grabPoint = ray.origin + ray.direction * hit.distance;
@@ -494,9 +517,139 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
     m_drag.screenStartX = io.MousePos.x;
     m_drag.screenStartY = io.MousePos.y;
     m_drag.additive = io.KeyCtrl;
+    m_drag.selectCorners =
+        vertexTool &&
+        std::any_of(document.selection().begin(), document.selection().end(),
+                    [](const LevelItem& item) { return item.kind == LevelItem::Kind::Brush; });
     if (m_hover) {
         m_drag.clicked = m_hover->target;
     }
+}
+
+void LevelViewport::beginCornerDrag(EditorDocument& document, const VertexHandle& handle) {
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool allSelected = std::all_of(handle.corners.begin(), handle.corners.end(),
+                                         [&](Vec3 corner) { return isCornerSelected(corner); });
+    if (io.KeyCtrl) {
+        if (allSelected) {
+            std::erase_if(m_corners, [&](Vec3 corner) {
+                return std::find(handle.corners.begin(), handle.corners.end(), corner) !=
+                       handle.corners.end();
+            });
+        } else {
+            for (const Vec3& corner : handle.corners) {
+                if (!isCornerSelected(corner)) {
+                    m_corners.push_back(corner);
+                }
+            }
+        }
+        return;
+    }
+    if (!allSelected) {
+        m_corners = handle.corners;
+    }
+    m_drag = {};
+    m_drag.kind = DragKind::Corners;
+    m_drag.grabPoint = handle.position;
+    m_drag.corners = m_corners;
+    m_drag.cornerOnGrid = handle.kind == VertexHandle::Kind::Corner;
+    m_drag.vertical = io.KeyAlt;
+    m_drag.selection.emplace(document);
+}
+
+void LevelViewport::continueCornerDrag(EditorDocument& document, const EditorSettings& settings,
+                                       const Ray& ray) {
+    const float grid = settings.grid();
+    const Vec3 grab = m_drag.grabPoint;
+    // A grabbed corner lands on the grid; the middle of an edge or face moves in grid steps.
+    const auto snapped = [&](float start, float moved) {
+        return m_drag.cornerOnGrid ? snapToGrid(start + moved, grid) - start
+                                   : snapToGrid(moved, grid);
+    };
+    Vec3 offset;
+    if (m_drag.vertical) {
+        const auto s = closestAlongAxis(grab, {0.0f, 0.0f, 1.0f}, ray.origin, ray.direction);
+        if (!s) {
+            return;
+        }
+        offset.z = snapped(grab.z, *s);
+    } else {
+        const auto t = rayCastPlane({{0.0f, 0.0f, 1.0f}, grab.z}, ray.origin, ray.direction);
+        if (!t) {
+            return;
+        }
+        const Vec3 moved = ray.origin + ray.direction * *t - grab;
+        offset = {snapped(grab.x, moved.x), snapped(grab.y, moved.y), 0.0f};
+    }
+    // A move the brushes refuse leaves them as they were at the last one they took.
+    if (!(offset == m_drag.cornerOffset) &&
+        m_drag.selection->previewCorners(document, m_drag.corners, offset)) {
+        m_drag.cornerOffset = offset;
+    }
+}
+
+bool LevelViewport::isCornerSelected(Vec3 corner) const {
+    return std::find(m_corners.begin(), m_corners.end(), corner) != m_corners.end();
+}
+
+std::vector<LevelViewport::VertexHandle>
+LevelViewport::vertexHandles(const EditorDocument& document) const {
+    std::vector<VertexHandle> handles;
+    if (m_tool != EditorTool::Vertex) {
+        return handles;
+    }
+    // Brushes that touch share handles, so moving one keeps them sealed.
+    std::map<std::tuple<VertexHandle::Kind, float, float, float>, std::size_t> seen;
+    const auto add = [&](VertexHandle::Kind kind, Vec3 position, std::vector<Vec3> corners) {
+        if (seen.emplace(std::tuple{kind, position.x, position.y, position.z}, handles.size())
+                .second) {
+            handles.push_back({kind, position, std::move(corners)});
+        }
+    };
+    for (const LevelItem& item : document.selection()) {
+        if (item.kind != LevelItem::Kind::Brush) {
+            continue;
+        }
+        const Brush& brush = document.level().brushes[item.index];
+        for (const Vec3& corner : brush.vertices) {
+            add(VertexHandle::Kind::Corner, corner, {corner});
+        }
+        for (const auto& [a, b] : brushEdges(brush)) {
+            const Vec3 from = brush.vertices[a];
+            const Vec3 to = brush.vertices[b];
+            add(VertexHandle::Kind::Edge, (from + to) * 0.5f, {from, to});
+        }
+        for (std::size_t face = 0; face < brush.faces.size(); ++face) {
+            add(VertexHandle::Kind::Face, faceCentre(brush, face), faceVertices(brush, face));
+        }
+    }
+    return handles;
+}
+
+std::optional<LevelViewport::VertexHandle>
+LevelViewport::pickVertexHandle(const EditorDocument& document, const ViewRect& rect) const {
+    const Projector projector(m_camera, rect);
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const float reach = ImGui::GetFontSize() * 0.5f;
+    // Corners win over edge middles, and edge middles over face middles, wherever they overlap.
+    std::optional<VertexHandle> best;
+    float bestDistance = 0.0f;
+    for (VertexHandle& handle : vertexHandles(document)) {
+        const auto point = projector.screen(handle.position);
+        if (!point) {
+            continue;
+        }
+        const float distance = std::sqrt(distanceSquared(mouse, *point));
+        if (distance > reach) {
+            continue;
+        }
+        if (!best || handle.kind < best->kind ||
+            (handle.kind == best->kind && distance < bestDistance)) {
+            best = std::move(handle);
+            bestDistance = distance;
+        }
+    }
+    return best;
 }
 
 void LevelViewport::beginGizmoDrag(EditorDocument& document, const GizmoHandle& handle,
@@ -596,6 +749,9 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
         }
         return;
     }
+    case DragKind::Corners:
+        continueCornerDrag(document, settings, ray);
+        return;
     case DragKind::Gizmo:
         continueGizmoDrag(document, settings, ray);
         return;
@@ -707,6 +863,15 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
         }
         return;
     }
+    case DragKind::Corners:
+        if (drag.selection->commit(document,
+                                   drag.corners.size() == 1 ? "Move corner" : "Move corners")) {
+            m_corners = drag.corners;
+            for (Vec3& corner : m_corners) {
+                corner += drag.cornerOffset;
+            }
+        }
+        return;
     case DragKind::Marquee:
         finishMarquee(drag, document, settings, rect);
         return;
@@ -789,7 +954,7 @@ void LevelViewport::adjustPlacedShape(EditorDocument& document, const EditorSett
 }
 
 void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
-                                  const EditorSettings& settings, const ViewRect& rect) const {
+                                  const EditorSettings& settings, const ViewRect& rect) {
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const ImVec2 from{std::min(drag.screenStartX, mouse.x), std::min(drag.screenStartY, mouse.y)};
     const ImVec2 to{std::max(drag.screenStartX, mouse.x), std::max(drag.screenStartY, mouse.y)};
@@ -808,9 +973,26 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
         return;
     }
 
+    const Projector projector(m_camera, rect);
+    const auto inside = [&](Vec3 p) {
+        const auto point = projector.screen(p);
+        return point && point->x >= from.x && point->x <= to.x && point->y >= from.y &&
+               point->y <= to.y;
+    };
+    if (drag.selectCorners) {
+        std::vector<Vec3> corners = drag.additive ? m_corners : std::vector<Vec3>{};
+        for (const VertexHandle& handle : vertexHandles(document)) {
+            if (handle.kind == VertexHandle::Kind::Corner && inside(handle.position) &&
+                std::find(corners.begin(), corners.end(), handle.position) == corners.end()) {
+                corners.push_back(handle.position);
+            }
+        }
+        m_corners = std::move(corners);
+        return;
+    }
+
     // Everything whose bounds are wholly inside the rectangle, so a drag across a room picks its
     // contents rather than the floor and walls it overlaps.
-    const Projector projector(m_camera, rect);
     const Level& level = document.level();
     std::vector<LevelItem> items;
     if (drag.additive) {
@@ -822,9 +1004,7 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
             return;
         }
         for (const Vec3& corner : boxCorners(*bounds)) {
-            const auto point = projector.screen(corner);
-            if (!point || point->x < from.x || point->x > to.x || point->y < from.y ||
-                point->y > to.y) {
+            if (!inside(corner)) {
                 return;
             }
         }
@@ -929,6 +1109,50 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
                         std::max(m_drag.screenStartY, mouse.y)};
         drawList.AddRectFilled(from, to, kMarqueeFill);
         drawList.AddRect(from, to, kMarqueeColor);
+    }
+
+    if (m_tool == EditorTool::Vertex) {
+        const bool movingCorners = m_drag.kind == DragKind::Corners;
+        // While corners move, the selection still holds where they started.
+        const auto selected = [&](Vec3 corner) {
+            return isCornerSelected(movingCorners ? corner - m_drag.cornerOffset : corner);
+        };
+        const float half = ImGui::GetFontSize() * 0.22f;
+        for (const VertexHandle& handle : vertexHandles(document)) {
+            const auto point = painter.projector().screen(handle.position);
+            if (!point) {
+                continue;
+            }
+            const bool hovered = m_hoverVertex && m_hoverVertex->kind == handle.kind &&
+                                 m_hoverVertex->position == handle.position;
+            ImU32 color = kHandleColor;
+            if (std::all_of(handle.corners.begin(), handle.corners.end(), selected)) {
+                color = kSelectedColor;
+            } else if (hovered) {
+                color = kHandleHoverColor;
+            }
+            const ImVec2 low{point->x - half, point->y - half};
+            const ImVec2 high{point->x + half, point->y + half};
+            switch (handle.kind) {
+            case VertexHandle::Kind::Corner:
+                drawList.AddRectFilled(low, high, color);
+                break;
+            case VertexHandle::Kind::Edge:
+                drawList.AddCircleFilled(*point, half * 0.8f, color);
+                break;
+            case VertexHandle::Kind::Face:
+                drawList.AddRect(low, high, color, 0.0f, 0, 1.5f);
+                break;
+            }
+        }
+        if (movingCorners) {
+            const Vec3 offset = m_drag.cornerOffset;
+            const std::string label =
+                std::format("{:+g} {:+g} {:+g} m", offset.x, offset.y, offset.z);
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            drawList.AddText({mouse.x + ImGui::GetFontSize(), mouse.y + ImGui::GetFontSize()},
+                             kSelectedColor, label.c_str());
+        }
     }
 
     const std::optional<GizmoFrame> frame = gizmoFrame(document);

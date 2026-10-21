@@ -38,11 +38,14 @@ struct ToolInfo {
     const char* hint;
 };
 
-constexpr std::array<ToolInfo, 5> kTools{{
+constexpr std::array<ToolInfo, 6> kTools{{
     {EditorTool::Select, "Select", "Q", "Select: click, Ctrl-click to add, drag a box"},
     {EditorTool::Move, "Move", "W", "Move: drag an arrow, or a square to move in its plane"},
     {EditorTool::Rotate, "Rotate", "E", "Rotate: drag a ring"},
     {EditorTool::Scale, "Scale", "R", "Scale: drag a handle on the selection's box"},
+    {EditorTool::Vertex, "Vertex", "V",
+     "Vertex: drag the corners, edge middles or face middles of the selected brushes; "
+     "Ctrl-click or drag a box to pick several, Del removes corners"},
     {EditorTool::Draw, "Shape", "B",
      "Shape: drag a rectangle, release, move up for the height, click to place"},
 }};
@@ -398,7 +401,8 @@ void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSett
     }
     ImGui::Spacing();
     ImGui::TextDisabled("Drag to move, Alt-drag to raise or lower,");
-    ImGui::TextDisabled("Shift-drag a face to resize.");
+    ImGui::TextDisabled("Shift-drag a face to resize, or press V");
+    ImGui::TextDisabled("to drag corners, edges and faces.");
 }
 
 void EditorPanels::drawMultipleInspector(EditorDocument& document) {

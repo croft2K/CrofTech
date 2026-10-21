@@ -1,5 +1,6 @@
 #include "croftech/editor/SelectionDrag.h"
 
+#include "croftech/editor/BrushEditing.h"
 #include "croftech/editor/LevelCommands.h"
 
 #include <memory>
@@ -33,6 +34,23 @@ bool SelectionDrag::preview(EditorDocument& document, const AffineTransform& tra
     }
     for (const auto& [index, before] : m_entities) {
         document.previewEntity(index, transformedEntity(before, transform));
+    }
+    return true;
+}
+
+bool SelectionDrag::previewCorners(EditorDocument& document, std::span<const Vec3> corners,
+                                   Vec3 offset) {
+    std::vector<Brush> brushes;
+    brushes.reserve(m_brushes.size());
+    for (const auto& [index, before] : m_brushes) {
+        std::optional<Brush> after = withCornersMoved(before, corners, offset);
+        if (!after) {
+            return false;
+        }
+        brushes.push_back(std::move(*after));
+    }
+    for (std::size_t i = 0; i < m_brushes.size(); ++i) {
+        document.previewBrush(m_brushes[i].first, brushes[i]);
     }
     return true;
 }
