@@ -45,6 +45,58 @@ std::vector<LevelItem> withWholeEntities(const Level& level, std::span<const Lev
     return result;
 }
 
+std::uint32_t itemGroup(const Level& level, LevelItem item) {
+    if (!exists(level, item)) {
+        return kNoGroup;
+    }
+    if (item.kind == LevelItem::Kind::Entity) {
+        return level.entities[item.index].group;
+    }
+    const Brush& brush = level.brushes[item.index];
+    return brush.entity < level.entities.size() ? level.entities[brush.entity].group : brush.group;
+}
+
+std::vector<LevelItem> groupMembers(const Level& level, std::uint32_t group) {
+    std::vector<LevelItem> members;
+    if (group == kNoGroup) {
+        return members;
+    }
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        if (itemGroup(level, LevelItem::brush(i)) == group) {
+            members.push_back(LevelItem::brush(i));
+        }
+    }
+    for (std::size_t i = 0; i < level.entities.size(); ++i) {
+        if (level.entities[i].group == group) {
+            members.push_back(LevelItem::entity(i));
+        }
+    }
+    return members;
+}
+
+std::vector<LevelItem> withWholeGroups(const Level& level, std::span<const LevelItem> items) {
+    std::vector<bool> whole(level.groups.size(), false);
+    for (const LevelItem& item : items) {
+        const std::uint32_t group = itemGroup(level, item);
+        if (group < whole.size()) {
+            whole[group] = true;
+        }
+    }
+    std::vector<LevelItem> result(items.begin(), items.end());
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        const std::uint32_t group = itemGroup(level, LevelItem::brush(i));
+        if (group < whole.size() && whole[group]) {
+            result.push_back(LevelItem::brush(i));
+        }
+    }
+    for (std::size_t i = 0; i < level.entities.size(); ++i) {
+        if (level.entities[i].group < whole.size() && whole[level.entities[i].group]) {
+            result.push_back(LevelItem::entity(i));
+        }
+    }
+    return withWholeEntities(level, result);
+}
+
 std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExtents) {
     const std::optional<Vec3> origin = entityOrigin(entity);
     if (!origin) {

@@ -187,13 +187,29 @@ private:
     bool addEntity(const RawEntity& raw, std::string& error);
     std::optional<LevelEntity> convertEntity(const RawEntity& raw, const std::string& className);
     void convertDoor(const RawEntity& raw, LevelEntity& entity);
+    // A group for one of TrenchBroom's, named after it; kNoGroup if the level has too many.
+    std::uint32_t addGroup(const RawEntity& raw, std::string_view name);
+    // Puts entities into the groups TrenchBroom put them in, once every group is known.
+    void resolveGroups();
 
     MapReader m_reader;
     const MapImportOptions& m_options;
     std::vector<std::string>& m_warnings;
     std::size_t m_suppressedWarnings = 0;
     Level m_level;
+    std::vector<std::pair<std::string, std::uint32_t>> m_groupIds; // TrenchBroom's id, our group
+    std::vector<std::pair<std::uint32_t, std::string>> m_entityGroups; // entity, TrenchBroom id
 };
+
+const std::string* findRaw(const std::vector<std::pair<std::string, std::string>>& properties,
+                           std::string_view key) {
+    for (const auto& [rawKey, value] : properties) {
+        if (rawKey == key) {
+            return &value;
+        }
+    }
+    return nullptr;
+}
 
 void Importer::warn(int line, std::string_view message) {
     if (m_warnings.size() < kMaxImportWarnings) {
@@ -215,10 +231,55 @@ std::optional<Level> Importer::run(std::string& error) {
             return std::nullopt;
         }
     }
+    resolveGroups();
     if (m_suppressedWarnings > 0) {
         m_warnings.push_back(std::format("and {} more warnings", m_suppressedWarnings));
     }
     return std::move(m_level);
+}
+
+std::uint32_t Importer::addGroup(const RawEntity& raw, std::string_view name) {
+    if (m_level.groups.size() >= kMaxLevelGroups) {
+        warn(raw.line, std::format("more than {} groups; brushes left ungrouped", kMaxLevelGroups));
+        return kNoGroup;
+    }
+    std::string base;
+    for (const char c : name) {
+        if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7f &&
+            base.size() < kMaxNameLength - 4) {
+            base += c;
+        }
+    }
+    while (!base.empty() && base.back() == ' ') {
+        base.pop_back();
+    }
+    while (!base.empty() && base.front() == ' ') {
+        base.erase(base.begin());
+    }
+    if (base.empty()) {
+        base = "Group";
+    }
+    // Names must be unique; TrenchBroom's needn't be.
+    std::string unique = base;
+    for (std::size_t n = 2;
+         std::any_of(m_level.groups.begin(), m_level.groups.end(),
+                     [&](const LevelGroup& group) { return group.name == unique; });
+         ++n) {
+        unique = std::format("{} {}", base, n);
+    }
+    m_level.groups.push_back({std::move(unique)});
+    return static_cast<std::uint32_t>(m_level.groups.size() - 1);
+}
+
+void Importer::resolveGroups() {
+    for (const auto& [entity, id] : m_entityGroups) {
+        for (const auto& [groupId, group] : m_groupIds) {
+            if (groupId == id) {
+                m_level.entities[entity].group = group;
+                break;
+            }
+        }
+    }
 }
 
 bool Importer::readEntity(RawEntity& entity, std::string& error) {
@@ -337,8 +398,21 @@ bool Importer::addEntity(const RawEntity& raw, std::string& error) {
         return fail(raw.line, std::format("more than {} brushes", kMaxLevelBrushes), error);
     }
     if (world) {
+        // TrenchBroom keeps each group as a func_group of its brushes (nested groups come in
+        // as groups of their own); layers are func_groups too, but stay world geometry.
+        std::uint32_t group = kNoGroup;
+        const std::string* type = findRaw(raw.properties, "_tb_type");
+        if (*className == "func_group" && type != nullptr && *type == "_tb_group") {
+            const std::string* name = findRaw(raw.properties, "_tb_name");
+            group = addGroup(raw, name != nullptr ? *name : std::string_view("Group"));
+            if (const std::string* id = findRaw(raw.properties, "_tb_id");
+                id != nullptr && group != kNoGroup) {
+                m_groupIds.emplace_back(*id, group);
+            }
+        }
         for (const auto& [line, brush] : raw.brushes) {
             m_level.brushes.push_back(brush);
+            m_level.brushes.back().group = group;
         }
         return true;
     }
@@ -358,6 +432,9 @@ bool Importer::addEntity(const RawEntity& raw, std::string& error) {
     for (const auto& [line, brush] : raw.brushes) {
         m_level.brushes.push_back(brush);
         m_level.brushes.back().entity = owner;
+    }
+    if (const std::string* id = findRaw(raw.properties, "_tb_group")) {
+        m_entityGroups.emplace_back(owner, *id);
     }
     m_level.entities.push_back(std::move(*entity));
     return true;

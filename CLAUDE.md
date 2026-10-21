@@ -26,7 +26,9 @@ Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--map na
 [--exec "cmds"]` (`--map` defaults to the game's `start_map`; `--frames` quits after N frames, for
 automated smoke runs; `--exec` runs console commands once the config files have loaded). In the
 client, the key below Esc opens the developer console; `map <name>` there switches level and
-`client.show_entities 1` opens a live, read-only view of every entity's components. The client
+`client.show_entities 1` opens a live, read-only view of every entity's components, and
+`client.step_smoothing` sets how long the view takes to follow a step up or down stairs
+(`client/StepSmoothing.h`; play-in-editor uses the default). The client
 and its game's server run in one process and talk only through packets over an in-memory link
 (`ct::LocalGame`); `net.fake_latency_ms`, `net.fake_jitter_ms` and `net.fake_loss_percent` make
 that link behave like a poor network. F5 saves and F9 loads the newest save (`save [name]` and
@@ -60,7 +62,9 @@ drift off the grid by millimetres far from the origin. Brush geometry is built i
 (`brushFromPlanes`, `brushFromPoints`, `clipBrush`) and rounded to float once, so corners on the
 grid stay exact through any number of edits. Entities are point entities (an "origin") or brush
 entities (doors, movers, triggers: the brushes whose `Brush::entity` is theirs; the file nests them
-in the entity's block). Outputs wire entities together: when an event happens, an input is sent
+in the entity's block). Groups (`Level::groups`) are named sets of world brushes and entities that
+the editor selects and moves as one; a brush of an entity is in its entity's group. Brushes can
+have names. Both only organise the level; play ignores them. TrenchBroom groups import as groups. Outputs wire entities together: when an event happens, an input is sent
 to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
 properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform, Trigger, Checkpoint, Hurt, Kill);
 the editor's inspector and the game both read it. To play a level, the server builds a
@@ -72,8 +76,10 @@ else. Movers have their own collision models, placed at each mover's offset by `
 which player movement traces against; each tick movers move before players, pushing players out
 of the way and carrying riders, and a move that would leave a player inside something is undone
 (a closing door goes back up). The client draws each mover's brushes as a separate part of the
-world mesh, moved by its offset between snapshots. Problems in the wiring are warnings, logged when play starts. In the editor a click picks a whole entity,
-Alt-click one brush; a selected mover shows a see-through copy at its end with a drag handle, and
+world mesh, moved by its offset between snapshots. Problems in the wiring are warnings, logged when play starts. In the editor a click in the view
+picks a whole group or entity, Alt-click one brush; Ctrl+G groups the selection, Ctrl+Shift+G
+ungroups. The hierarchy shows groups and entities as trees and selects exactly the row clicked
+(Ctrl toggles, Shift selects a range); F2 or a double-click renames a brush, entity or group; a selected mover shows a see-through copy at its end with a drag handle, and
 selected entities show their wires (`editor/EntityLinks.h`). A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
 content layers; a name with an extension is a path. Shipped games will later cook levels and

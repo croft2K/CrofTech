@@ -13,6 +13,7 @@ add_executable(ct_unit_tests
     unit/editor/CornerEditingTests.cpp
     unit/editor/EditorDocumentTests.cpp
     unit/editor/EntityLinksTests.cpp
+    unit/editor/GroupTests.cpp
     unit/editor/SelectionTests.cpp
     unit/editor/ShapesTests.cpp
     unit/editor/AffineTransformTests.cpp
@@ -51,6 +52,7 @@ add_executable(ct_sim_tests
     sim/ServerTests.cpp
     sim/SimHarness.h
     sim/SlidingTests.cpp
+    sim/StepSmoothingTests.cpp
     sim/TestLevels.cpp
     sim/TestLevels.h
 )

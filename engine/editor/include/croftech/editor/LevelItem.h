@@ -32,6 +32,16 @@ bool exists(const Level& level, LevelItem item);
 // entity, so a door is picked and edited as one thing. Sorted, with no repeats.
 std::vector<LevelItem> withWholeEntities(const Level& level, std::span<const LevelItem> items);
 
+// The group the item is in (a brush of an entity is in its entity's group), or kNoGroup.
+std::uint32_t itemGroup(const Level& level, LevelItem item);
+
+// The world brushes and entities of the group, with the brushes of those entities. Sorted.
+std::vector<LevelItem> groupMembers(const Level& level, std::uint32_t group);
+
+// withWholeEntities, plus every member of each group one of the items is in, so a click in the
+// view picks a whole group as it does a whole door. Sorted, with no repeats.
+std::vector<LevelItem> withWholeGroups(const Level& level, std::span<const LevelItem> items);
+
 // The box drawn and picked for an entity: a player-sized box standing on a spawn point, a small
 // cube for anything else. Nullopt if the entity has no readable origin.
 std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExtents);

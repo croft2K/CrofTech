@@ -4,6 +4,7 @@
 #include "PlayerInput.h"
 
 #include "croftech/client/LocalGame.h"
+#include "croftech/client/StepSmoothing.h"
 #include "croftech/core/Camera.h"
 #include "croftech/level/Level.h"
 
@@ -62,6 +63,7 @@ private:
     LocalGame m_game;
     PlayerLook m_look;
     GameHud m_hud;
+    StepSmoothing m_stepSmoothing;
     std::uint32_t m_timeline = 0;
     std::vector<std::byte> m_lastSave;
     std::string m_notice;

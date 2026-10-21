@@ -101,8 +101,10 @@ void replaceBrushes(EditorDocument& document, const std::string& name,
         commands.push_back(makeSetBrush(name, index, level.brushes[index], brushes.front()));
         added.push_back(index);
         for (std::size_t i = 1; i < brushes.size(); ++i) {
-            // Pieces stay in the entity of the brush they came from.
+            // Pieces stay in the entity and group of the brush they came from.
             brushes[i].entity = level.brushes[index].entity;
+            brushes[i].group = level.brushes[index].group;
+            brushes[i].name = level.brushes[index].name;
             commands.push_back(makeInsertBrush(name, end, std::move(brushes[i])));
             added.push_back(end++);
         }
@@ -158,6 +160,66 @@ std::vector<LevelItem> selectedEntities(const EditorDocument& document) {
     return entities;
 }
 
+// What groups hold among the items: world brushes and entities, the selected ones and the entities
+// of selected brushes. Sorted, with no repeats.
+std::vector<LevelItem> topLevelItems(const Level& level, std::span<const LevelItem> items) {
+    std::vector<LevelItem> result;
+    for (const LevelItem& item : items) {
+        if (!exists(level, item)) {
+            continue;
+        }
+        const std::uint32_t entity =
+            item.kind == LevelItem::Kind::Brush ? level.brushes[item.index].entity : kNoEntity;
+        result.push_back(entity < level.entities.size() ? LevelItem::entity(entity) : item);
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
+// How many world brushes and entities each group has.
+std::vector<std::size_t> groupSizes(const Level& level) {
+    std::vector<std::size_t> sizes(level.groups.size(), 0);
+    for (const Brush& brush : level.brushes) {
+        if (brush.entity == kNoEntity && brush.group < sizes.size()) {
+            ++sizes[brush.group];
+        }
+    }
+    for (const LevelEntity& entity : level.entities) {
+        if (entity.group < sizes.size()) {
+            ++sizes[entity.group];
+        }
+    }
+    return sizes;
+}
+
+// Commands removing the groups that had members before and have none after, last first.
+void removeEmptiedGroups(const Level& level, std::span<const std::size_t> before,
+                         std::span<const std::size_t> after, const std::string& name,
+                         std::vector<std::unique_ptr<Command>>& commands) {
+    for (std::size_t i = level.groups.size(); i-- > 0;) {
+        if (before[i] > 0 && after[i] == 0) {
+            commands.push_back(makeRemoveGroup(name, i, level.groups[i]));
+        }
+    }
+}
+
+std::string unusedName(std::span<const std::string> taken, std::string_view base) {
+    std::string name(base);
+    for (std::size_t n = 2; std::find(taken.begin(), taken.end(), name) != taken.end(); ++n) {
+        name = std::format("{} {}", base, n);
+    }
+    return name;
+}
+
+std::vector<std::string> groupNames(const Level& level) {
+    std::vector<std::string> names;
+    for (const LevelGroup& group : level.groups) {
+        names.push_back(group.name);
+    }
+    return names;
+}
+
 std::size_t brushCountAfter(const Level& level, const std::vector<BrushReplacement>& replacements) {
     std::size_t count = level.brushes.size();
     for (const auto& [index, brushes] : replacements) {
@@ -200,10 +262,12 @@ void selectAll(EditorDocument& document) {
     document.setSelection(std::move(items));
 }
 
-void selectClicked(EditorDocument& document, LevelItem item, bool toggle, bool wholeEntity) {
+void selectClicked(EditorDocument& document, LevelItem item, bool toggle, SelectScope scope) {
     const std::vector<LevelItem> clicked{item};
     const std::vector<LevelItem> items =
-        wholeEntity ? withWholeEntities(document.level(), clicked) : clicked;
+        scope == SelectScope::Group    ? withWholeGroups(document.level(), clicked)
+        : scope == SelectScope::Entity ? withWholeEntities(document.level(), clicked)
+                                       : clicked;
     if (!toggle) {
         document.setSelection(items);
         return;
@@ -219,12 +283,169 @@ void selectClicked(EditorDocument& document, LevelItem item, bool toggle, bool w
     document.setSelection(std::move(selection));
 }
 
+void selectGroup(EditorDocument& document, std::uint32_t group, bool toggle) {
+    const std::vector<LevelItem> members = groupMembers(document.level(), group);
+    if (!toggle) {
+        document.setSelection(members);
+        return;
+    }
+    std::vector<LevelItem> selection = document.selection();
+    const bool all = std::all_of(members.begin(), members.end(), [&](const LevelItem& member) {
+        return document.isSelected(member);
+    });
+    if (all) {
+        std::erase_if(selection, [&](const LevelItem& selected) {
+            return std::binary_search(members.begin(), members.end(), selected);
+        });
+    } else {
+        selection.insert(selection.end(), members.begin(), members.end());
+    }
+    document.setSelection(std::move(selection));
+}
+
+std::string unusedGroupName(const Level& level, std::string_view base) {
+    return unusedName(groupNames(level), base);
+}
+
+bool groupSelection(EditorDocument& document) {
+    const Level& level = document.level();
+    const std::vector<LevelItem> members = topLevelItems(level, document.selection());
+    if (members.empty() || level.groups.size() >= kMaxLevelGroups) {
+        return false;
+    }
+    const std::string name = "Group";
+    const auto added = static_cast<std::uint32_t>(level.groups.size());
+    const std::vector<std::size_t> before = groupSizes(level);
+    std::vector<std::size_t> after = before;
+    std::vector<std::unique_ptr<Command>> commands;
+    commands.push_back(makeInsertGroup(name, added, {unusedGroupName(level, "Group")}));
+    for (const LevelItem& member : members) {
+        const std::uint32_t old = itemGroup(level, member);
+        commands.push_back(makeSetItemGroup(name, member, old, added));
+        if (old < after.size()) {
+            --after[old];
+        }
+    }
+    // Every removed group comes before the new one, so each removal moves it down one.
+    const std::size_t commandsBefore = commands.size();
+    removeEmptiedGroups(level, before, after, name, commands);
+    const std::size_t removed = commands.size() - commandsBefore;
+    runCommands(document, name, std::move(commands));
+    document.setSelection(
+        groupMembers(document.level(), static_cast<std::uint32_t>(added - removed)));
+    return true;
+}
+
+bool ungroupSelection(EditorDocument& document) {
+    const Level& level = document.level();
+    std::vector<bool> ungroup(level.groups.size(), false);
+    bool any = false;
+    for (const LevelItem& item : document.selection()) {
+        const std::uint32_t group = itemGroup(level, item);
+        if (group < ungroup.size()) {
+            ungroup[group] = true;
+            any = true;
+        }
+    }
+    if (!any) {
+        return false;
+    }
+    const std::string name = "Ungroup";
+    std::vector<std::unique_ptr<Command>> commands;
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        const Brush& brush = level.brushes[i];
+        if (brush.entity == kNoEntity && brush.group < ungroup.size() && ungroup[brush.group]) {
+            commands.push_back(makeSetItemGroup(name, LevelItem::brush(i), brush.group, kNoGroup));
+        }
+    }
+    for (std::size_t i = 0; i < level.entities.size(); ++i) {
+        const std::uint32_t group = level.entities[i].group;
+        if (group < ungroup.size() && ungroup[group]) {
+            commands.push_back(makeSetItemGroup(name, LevelItem::entity(i), group, kNoGroup));
+        }
+    }
+    for (std::size_t i = level.groups.size(); i-- > 0;) {
+        if (ungroup[i]) {
+            commands.push_back(makeRemoveGroup(name, i, level.groups[i]));
+        }
+    }
+    runCommands(document, name, std::move(commands));
+    return true;
+}
+
+bool renameItem(EditorDocument& document, LevelItem item, std::string_view name,
+                std::string& problem) {
+    const Level& level = document.level();
+    if (!exists(level, item)) {
+        problem = "nothing to rename";
+        return false;
+    }
+    if (item.kind == LevelItem::Kind::Brush) {
+        if (!name.empty() && !isValidLabel(name)) {
+            problem = std::format("a name is up to {} characters, with no spaces at either end",
+                                  kMaxNameLength);
+            return false;
+        }
+        const Brush& brush = level.brushes[item.index];
+        if (brush.name != name) {
+            document.execute(
+                makeSetBrushName("Rename brush", item.index, brush.name, std::string(name)));
+        }
+        return true;
+    }
+    if (!name.empty() && !isValidEntityName(name)) {
+        problem = std::format("an entity's name is up to {} letters, digits, '_', '.' or '-'; "
+                              "outputs target it",
+                              kMaxNameLength);
+        return false;
+    }
+    const LevelEntity& entity = level.entities[item.index];
+    LevelEntity renamed = entity;
+    if (name.empty()) {
+        std::erase_if(renamed.properties,
+                      [](const EntityProperty& property) { return property.key == "name"; });
+    } else {
+        setProperty(renamed, "name", std::string(name));
+    }
+    if (!(renamed == entity)) {
+        document.execute(makeSetEntity("Rename entity", item.index, entity, std::move(renamed)));
+    }
+    return true;
+}
+
+bool renameGroup(EditorDocument& document, std::uint32_t group, std::string_view name,
+                 std::string& problem) {
+    const Level& level = document.level();
+    if (group >= level.groups.size()) {
+        problem = "no such group";
+        return false;
+    }
+    if (!isValidLabel(name)) {
+        problem = std::format("a group's name is 1 to {} characters, with no spaces at either end",
+                              kMaxNameLength);
+        return false;
+    }
+    if (level.groups[group].name == name) {
+        return true;
+    }
+    for (const LevelGroup& other : level.groups) {
+        if (other.name == name) {
+            problem = "another group has that name";
+            return false;
+        }
+    }
+    document.execute(makeSetGroup("Rename group", group, level.groups[group], {std::string(name)}));
+    return true;
+}
+
 bool deleteSelection(EditorDocument& document) {
     const auto& selection = document.selection();
     if (selection.empty()) {
         return false;
     }
     const Level& level = document.level();
+    const std::vector<std::size_t> groupsBefore = groupSizes(level);
+    std::vector<std::size_t> groupsAfter = groupsBefore;
     std::vector<bool> deleteEntity(level.entities.size(), false);
     for (const LevelItem& item : selection) {
         if (item.kind == LevelItem::Kind::Entity) {
@@ -241,6 +462,9 @@ bool deleteSelection(EditorDocument& document) {
             (owner < deleteEntity.size() && deleteEntity[owner])) {
             commands.push_back(makeRemoveBrush("Delete brush", i, level.brushes[i]));
             owners[i] = kNoEntity;
+            if (owner == kNoEntity && level.brushes[i].group < groupsAfter.size()) {
+                --groupsAfter[level.brushes[i].group];
+            }
         }
     }
     for (const std::size_t emptied : emptiedEntities(level, owners)) {
@@ -249,8 +473,12 @@ bool deleteSelection(EditorDocument& document) {
     for (std::size_t i = level.entities.size(); i-- > 0;) {
         if (deleteEntity[i]) {
             commands.push_back(makeRemoveEntity("Delete entity", i, level.entities[i]));
+            if (level.entities[i].group < groupsAfter.size()) {
+                --groupsAfter[level.entities[i].group];
+            }
         }
     }
+    removeEmptiedGroups(level, groupsBefore, groupsAfter, "Delete group", commands);
     runCommands(document, "Delete " + describeSelection(document), std::move(commands));
     document.clearSelection();
     return true;
@@ -267,13 +495,36 @@ bool duplicateSelection(EditorDocument& document, Vec3 offset) {
     std::vector<LevelItem> copies;
     std::size_t nextBrush = level.brushes.size();
     std::size_t nextEntity = level.entities.size();
-    // Entities first, so the brush copies can belong to them.
+
+    // Groups first, so copies can be in them: a new group for each group wholly selected.
+    std::vector<std::size_t> selectedOfGroup(level.groups.size(), 0);
+    for (const LevelItem& item : topLevelItems(level, selection)) {
+        const std::uint32_t group = itemGroup(level, item);
+        if (group < selectedOfGroup.size()) {
+            ++selectedOfGroup[group];
+        }
+    }
+    const std::vector<std::size_t> sizes = groupSizes(level);
+    std::vector<std::string> names = groupNames(level);
+    std::vector<std::uint32_t> groupCopy(level.groups.size(), kNoGroup);
+    for (std::size_t i = 0; i < level.groups.size(); ++i) {
+        if (sizes[i] > 0 && selectedOfGroup[i] == sizes[i] && names.size() < kMaxLevelGroups) {
+            groupCopy[i] = static_cast<std::uint32_t>(names.size());
+            names.push_back(unusedName(names, level.groups[i].name));
+            commands.push_back(makeInsertGroup("Duplicate group", groupCopy[i], {names.back()}));
+        }
+    }
+    const auto copyGroup = [&groupCopy](std::uint32_t group) {
+        return group < groupCopy.size() && groupCopy[group] != kNoGroup ? groupCopy[group] : group;
+    };
+
+    // Entities next, so the brush copies can belong to them.
     std::vector<std::uint32_t> copyOf(level.entities.size(), kNoEntity);
     for (const LevelItem& item : selection) {
         if (item.kind == LevelItem::Kind::Entity) {
-            commands.push_back(
-                makeInsertEntity("Duplicate entity", nextEntity,
-                                 transformedEntity(level.entities[item.index], move)));
+            LevelEntity copy = transformedEntity(level.entities[item.index], move);
+            copy.group = copyGroup(copy.group);
+            commands.push_back(makeInsertEntity("Duplicate entity", nextEntity, std::move(copy)));
             copies.push_back(LevelItem::entity(nextEntity));
             copyOf[item.index] = static_cast<std::uint32_t>(nextEntity++);
         }
@@ -287,6 +538,7 @@ bool duplicateSelection(EditorDocument& document, Vec3 offset) {
             if (copy->entity < copyOf.size() && copyOf[copy->entity] != kNoEntity) {
                 copy->entity = copyOf[copy->entity];
             }
+            copy->group = copyGroup(copy->group);
             commands.push_back(makeInsertBrush("Duplicate brush", nextBrush, std::move(*copy)));
             copies.push_back(LevelItem::brush(nextBrush++));
         }
@@ -353,12 +605,14 @@ bool createBrushEntity(EditorDocument& document, const EntityPreset& preset) {
 
     const std::string name = std::format("Make {}", preset.name);
     const auto added = static_cast<std::uint32_t>(level.entities.size());
+    entity.group = itemGroup(level, LevelItem::brush(brushes.front()));
     std::vector<std::unique_ptr<Command>> commands;
     commands.push_back(makeInsertEntity(name, added, std::move(entity)));
     std::vector<std::uint32_t> owners = brushOwners(level);
     std::vector<LevelItem> selection;
     for (const std::size_t index : brushes) {
-        commands.push_back(makeSetBrushEntity(name, index, owners[index], added));
+        commands.push_back(makeSetBrushOwner(
+            name, index, {owners[index], level.brushes[index].group}, {added, kNoGroup}));
         owners[index] = added;
         selection.push_back(LevelItem::brush(index));
     }
@@ -412,7 +666,9 @@ bool moveSelectionToWorld(EditorDocument& document) {
     for (const std::size_t index : selectedBrushes(document)) {
         selection.push_back(LevelItem::brush(index));
         if (owners[index] != kNoEntity) {
-            commands.push_back(makeSetBrushEntity(name, index, owners[index], kNoEntity));
+            commands.push_back(makeSetBrushOwner(name, index,
+                                                 {owners[index], level.brushes[index].group},
+                                                 {kNoEntity, level.entities[owners[index]].group}));
             owners[index] = kNoEntity;
         }
     }

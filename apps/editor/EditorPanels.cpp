@@ -22,23 +22,32 @@ namespace {
 
 std::string brushLabel(const Level& level, std::size_t index) {
     const Brush& brush = level.brushes[index];
-    std::string label = std::format("Brush {}  {} faces", index, brush.faces.size());
+    const std::string name = brush.name.empty() ? std::format("Brush {}", index) : brush.name;
     if (const auto box = boxBounds(brush)) {
         const Vec3 size = box->max - box->min;
-        label = std::format("Brush {}  box {:g} x {:g} x {:g} m", index, size.x, size.y, size.z);
+        return std::format("{}  box {:g} x {:g} x {:g} m", name, size.x, size.y, size.z);
     }
-    if (brush.entity < level.entities.size()) {
-        label += std::format("  ({} {})", level.entities[brush.entity].className, brush.entity);
-    }
-    return std::format("{}##{}", label, index);
+    return std::format("{}  {} faces", name, brush.faces.size());
 }
 
 std::string entityLabel(const LevelEntity& entity, std::size_t index) {
     const std::string* name = findProperty(entity, "name");
     if (name != nullptr && !name->empty()) {
-        return std::format("Entity {}  {}  {}##entity{}", index, entity.className, *name, index);
+        return std::format("{}  {} (entity {})", *name, entity.className, index);
     }
-    return std::format("Entity {}  {}##entity{}", index, entity.className, index);
+    return std::format("Entity {}  {}", index, entity.className);
+}
+
+// The group whose members are exactly the selection, if there is one.
+std::optional<std::uint32_t> selectedGroup(const EditorDocument& document) {
+    if (document.selection().empty()) {
+        return std::nullopt;
+    }
+    const std::uint32_t group = itemGroup(document.level(), document.selection().front());
+    if (group == kNoGroup || groupMembers(document.level(), group) != document.selection()) {
+        return std::nullopt;
+    }
+    return group;
 }
 
 void tooltip(std::string_view text) {
@@ -208,6 +217,13 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         }
         if (ImGui::MenuItem("Delete", "Del", false, hasSelection)) {
             deleteSelection(document);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Group", "Ctrl+G", false, hasSelection)) {
+            groupSelection(document);
+        }
+        if (ImGui::MenuItem("Ungroup", "Ctrl+Shift+G", false, hasSelection)) {
+            ungroupSelection(document);
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Hollow", "Ctrl+H", false, hasSelection)) {
@@ -473,37 +489,266 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
         return;
     }
     const Level& level = document.level();
-    // As in the view: a click selects an item with the rest of its entity, Alt-click just the
-    // item, and Ctrl adds to or takes from the selection.
-    const auto clicked = [&](LevelItem item) {
-        const ImGuiIO& io = ImGui::GetIO();
-        selectClicked(document, item, io.KeyCtrl, !io.KeyAlt);
-    };
-    if (ImGui::CollapsingHeader(std::format("Brushes ({})###brushes", level.brushes.size()).c_str(),
+    m_shownRows.swap(m_rows);
+    m_rows.clear();
+    if (m_renaming &&
+        (m_renameIsGroup ? m_renameGroup >= level.groups.size() : !exists(level, m_renameItem))) {
+        m_renaming = false; // undone away
+    }
+
+    // Each entity's brushes, each group's members, and what is in no group, gathered once.
+    std::vector<std::vector<std::size_t>> owned(level.entities.size());
+    std::vector<std::vector<LevelItem>> grouped(level.groups.size());
+    std::vector<std::size_t> looseBrushes;
+    std::vector<std::size_t> looseEntities;
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        const Brush& brush = level.brushes[i];
+        if (brush.entity < owned.size()) {
+            owned[brush.entity].push_back(i);
+        } else if (brush.group < grouped.size()) {
+            grouped[brush.group].push_back(LevelItem::brush(i));
+        } else {
+            looseBrushes.push_back(i);
+        }
+    }
+    for (std::size_t i = 0; i < level.entities.size(); ++i) {
+        if (level.entities[i].group < grouped.size()) {
+            grouped[level.entities[i].group].push_back(LevelItem::entity(i));
+        } else {
+            looseEntities.push_back(i);
+        }
+    }
+
+    if (!level.groups.empty() &&
+        ImGui::CollapsingHeader(std::format("Groups ({})###groups", level.groups.size()).c_str(),
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (std::uint32_t group = 0; group < level.groups.size(); ++group) {
+            drawGroupRow(document, group, grouped[group], owned);
+        }
+    }
+    if (ImGui::CollapsingHeader(std::format("Brushes ({})###brushes", looseBrushes.size()).c_str(),
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Levels can have many thousands, so only the rows on screen are drawn; all are rows for
+        // Shift-click ranges.
+        const std::size_t first = m_rows.size();
+        for (const std::size_t index : looseBrushes) {
+            m_rows.push_back(LevelItem::brush(index));
+        }
         ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(level.brushes.size()));
+        clipper.Begin(static_cast<int>(looseBrushes.size()));
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
-                const auto i = static_cast<std::size_t>(row);
-                if (ImGui::Selectable(brushLabel(level, i).c_str(),
-                                      document.isSelected(LevelItem::brush(i)))) {
-                    clicked(LevelItem::brush(i));
-                }
+                drawBrushRow(document, looseBrushes[static_cast<std::size_t>(row)]);
             }
         }
+        // drawBrushRow adds its row too; the ones added above already stand for them.
+        m_rows.resize(first + looseBrushes.size());
     }
     if (ImGui::CollapsingHeader(
-            std::format("Entities ({})###entities", level.entities.size()).c_str(),
+            std::format("Entities ({})###entities", looseEntities.size()).c_str(),
             ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (std::size_t i = 0; i < level.entities.size(); ++i) {
-            const std::string label = entityLabel(level.entities[i], i);
-            if (ImGui::Selectable(label.c_str(), document.isSelected(LevelItem::entity(i)))) {
-                clicked(LevelItem::entity(i));
-            }
+        for (const std::size_t index : looseEntities) {
+            drawEntityRow(document, index, owned[index]);
         }
     }
+
+    const bool any = !document.selection().empty();
+    if (ImGui::BeginPopupContextWindow("hierarchy")) {
+        if (ImGui::MenuItem("Group", "Ctrl+G", false, any)) {
+            groupSelection(document);
+        }
+        if (ImGui::MenuItem("Ungroup", "Ctrl+Shift+G", false, any)) {
+            ungroupSelection(document);
+        }
+        if (ImGui::MenuItem("Rename", "F2", false, any)) {
+            startRename(document);
+        }
+        ImGui::EndPopup();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && !ImGui::GetIO().WantTextInput) {
+        startRename(document);
+    }
     ImGui::End();
+}
+
+void EditorPanels::drawGroupRow(EditorDocument& document, std::uint32_t group,
+                                std::span<const LevelItem> members,
+                                std::span<const std::vector<std::size_t>> owned) {
+    if (drawRenameField(document, true, group, {})) {
+        return;
+    }
+    const bool selected =
+        !members.empty() && std::all_of(members.begin(), members.end(), [&](LevelItem member) {
+            return document.isSelected(member);
+        });
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (selected) {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
+    if (members.empty()) {
+        flags |= ImGuiTreeNodeFlags_Leaf;
+    }
+    const std::string id = std::format("group{}", group);
+    const bool open =
+        ImGui::TreeNodeEx(id.c_str(), flags, "%s  (%zu)",
+                          document.level().groups[group].name.c_str(), members.size());
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        selectGroup(document, group, ImGui::GetIO().KeyCtrl);
+        m_anchor.reset();
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        selectGroup(document, group, false);
+        startRename(document);
+    }
+    if (!open) {
+        return;
+    }
+    for (const LevelItem& member : members) {
+        if (member.kind == LevelItem::Kind::Entity) {
+            drawEntityRow(document, member.index, owned[member.index]);
+        } else {
+            drawBrushRow(document, member.index);
+        }
+    }
+    ImGui::TreePop();
+}
+
+void EditorPanels::drawEntityRow(EditorDocument& document, std::size_t index,
+                                 std::span<const std::size_t> brushes) {
+    const LevelItem item = LevelItem::entity(index);
+    m_rows.push_back(item);
+    if (drawRenameField(document, false, 0, item)) {
+        return;
+    }
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (document.isSelected(item)) {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
+    if (brushes.empty()) {
+        flags |= ImGuiTreeNodeFlags_Leaf;
+    }
+    const std::string id = std::format("entity{}", index);
+    const bool open = ImGui::TreeNodeEx(
+        id.c_str(), flags, "%s", entityLabel(document.level().entities[index], index).c_str());
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        rowClicked(document, item, SelectScope::Entity);
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        startRename(document);
+    }
+    if (!open) {
+        return;
+    }
+    for (const std::size_t brush : brushes) {
+        drawBrushRow(document, brush);
+    }
+    ImGui::TreePop();
+}
+
+void EditorPanels::drawBrushRow(EditorDocument& document, std::size_t index) {
+    const LevelItem item = LevelItem::brush(index);
+    m_rows.push_back(item);
+    if (drawRenameField(document, false, 0, item)) {
+        return;
+    }
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                               ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (document.isSelected(item)) {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
+    const std::string id = std::format("brush{}", index);
+    ImGui::TreeNodeEx(id.c_str(), flags, "%s", brushLabel(document.level(), index).c_str());
+    if (ImGui::IsItemClicked()) {
+        rowClicked(document, item, SelectScope::Item);
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        startRename(document);
+    }
+}
+
+void EditorPanels::rowClicked(EditorDocument& document, LevelItem item, SelectScope scope) {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.KeyShift && m_anchor) {
+        const auto from = std::find(m_shownRows.begin(), m_shownRows.end(), *m_anchor);
+        const auto to = std::find(m_shownRows.begin(), m_shownRows.end(), item);
+        if (from != m_shownRows.end() && to != m_shownRows.end()) {
+            std::vector<LevelItem> range(std::min(from, to), std::max(from, to) + 1);
+            // Entity rows bring their brushes, as a click on one does.
+            std::vector<LevelItem> entities;
+            for (const LevelItem& row : range) {
+                if (row.kind == LevelItem::Kind::Entity) {
+                    entities.push_back(row);
+                }
+            }
+            for (const LevelItem& brush : withWholeEntities(document.level(), entities)) {
+                range.push_back(brush);
+            }
+            if (io.KeyCtrl) {
+                range.insert(range.end(), document.selection().begin(), document.selection().end());
+            }
+            document.setSelection(std::move(range));
+            return;
+        }
+    }
+    selectClicked(document, item, io.KeyCtrl, scope);
+    m_anchor = item;
+}
+
+void EditorPanels::startRename(const EditorDocument& document) {
+    m_renameProblem.clear();
+    if (const std::optional<std::uint32_t> group = selectedGroup(document)) {
+        m_renaming = true;
+        m_renameIsGroup = true;
+        m_renameGroup = *group;
+        m_renameText = document.level().groups[*group].name;
+    } else if (const std::optional<std::size_t> entity = selectedEntity(document)) {
+        m_renaming = true;
+        m_renameIsGroup = false;
+        m_renameItem = LevelItem::entity(*entity);
+        const std::string* name = findProperty(document.level().entities[*entity], "name");
+        m_renameText = name != nullptr ? *name : std::string();
+    } else if (const std::optional<LevelItem> single = document.singleSelected()) {
+        m_renaming = true;
+        m_renameIsGroup = false;
+        m_renameItem = *single;
+        m_renameText = document.level().brushes[single->index].name;
+    } else {
+        return;
+    }
+    m_renameFocus = true;
+}
+
+bool EditorPanels::drawRenameField(EditorDocument& document, bool isGroup, std::uint32_t group,
+                                   LevelItem item) {
+    if (!m_renaming || m_renameIsGroup != isGroup ||
+        (isGroup ? m_renameGroup != group : !(m_renameItem == item))) {
+        return false;
+    }
+    if (m_renameFocus) {
+        ImGui::SetKeyboardFocusHere();
+        m_renameFocus = false;
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    const bool entered = ImGui::InputTextWithHint(
+        "##rename", isGroup ? "group name" : "name", &m_renameText,
+        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+    const bool left = ImGui::IsItemDeactivated();
+    if (!m_renameProblem.empty()) {
+        ImGui::TextColored({1.0f, 0.45f, 0.35f, 1.0f}, "%s", m_renameProblem.c_str());
+    }
+    if (entered || left) {
+        if (!entered && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            m_renaming = false;
+        } else if (isGroup ? renameGroup(document, group, m_renameText, m_renameProblem)
+                           : renameItem(document, item, m_renameText, m_renameProblem)) {
+            m_renaming = false;
+        } else if (entered) {
+            m_renameFocus = true; // stay, and say why
+        } else {
+            m_renaming = false;
+        }
+    }
+    return true;
 }
 
 void EditorPanels::drawInspector(EditorDocument& document, const EditorSettings& settings) {
@@ -550,6 +795,11 @@ void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSett
                             brush.entity);
     }
     ImGui::Separator();
+    constexpr int kBrushNameField = -3;
+    std::string name;
+    if (textField("Name", kBrushNameField, brush.name, name, "optional")) {
+        renameItem(document, LevelItem::brush(index), name, m_problem);
+    }
 
     if (const auto box = boxBounds(brush)) {
         Aabb edited = *box;
@@ -596,6 +846,14 @@ void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSett
 }
 
 void EditorPanels::drawMultipleInspector(EditorDocument& document) {
+    if (const std::optional<std::uint32_t> group = selectedGroup(document)) {
+        constexpr int kGroupNameField = -4;
+        std::string name;
+        if (textField("Group", kGroupNameField, document.level().groups[*group].name, name)) {
+            renameGroup(document, *group, name, m_problem);
+        }
+        ImGui::Separator();
+    }
     std::size_t brushes = 0;
     for (const LevelItem& item : document.selection()) {
         brushes += item.kind == LevelItem::Kind::Brush ? 1 : 0;

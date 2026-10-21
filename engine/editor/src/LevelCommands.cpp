@@ -93,9 +93,9 @@ private:
     bool m_remove;
 };
 
-class SetBrushEntity final : public Command {
+class SetBrushOwner final : public Command {
 public:
-    SetBrushEntity(std::string name, std::size_t index, std::uint32_t before, std::uint32_t after)
+    SetBrushOwner(std::string name, std::size_t index, BrushOwner before, BrushOwner after)
         : m_name(std::move(name)), m_index(index), m_before(before), m_after(after) {}
 
     std::string_view name() const override { return m_name; }
@@ -103,16 +103,92 @@ public:
     void revert(Level& level) const override { set(level, m_before); }
 
 private:
-    void set(Level& level, std::uint32_t entity) const {
+    void set(Level& level, BrushOwner owner) const {
         CT_ASSERT(m_index < level.brushes.size());
-        CT_ASSERT(entity == kNoEntity || entity < level.entities.size());
-        level.brushes[m_index].entity = entity;
+        CT_ASSERT(owner.entity == kNoEntity || owner.entity < level.entities.size());
+        CT_ASSERT(owner.group == kNoGroup ||
+                  (owner.entity == kNoEntity && owner.group < level.groups.size()));
+        level.brushes[m_index].entity = owner.entity;
+        level.brushes[m_index].group = owner.group;
     }
 
     std::string m_name;
     std::size_t m_index;
+    BrushOwner m_before;
+    BrushOwner m_after;
+};
+
+class SetBrushName final : public Command {
+public:
+    SetBrushName(std::string name, std::size_t index, std::string before, std::string after)
+        : m_name(std::move(name)), m_index(index), m_before(std::move(before)),
+          m_after(std::move(after)) {}
+
+    std::string_view name() const override { return m_name; }
+    void apply(Level& level) const override { set(level, m_after); }
+    void revert(Level& level) const override { set(level, m_before); }
+
+private:
+    void set(Level& level, const std::string& value) const {
+        CT_ASSERT(m_index < level.brushes.size());
+        level.brushes[m_index].name = value;
+    }
+
+    std::string m_name;
+    std::size_t m_index;
+    std::string m_before;
+    std::string m_after;
+};
+
+class SetItemGroup final : public Command {
+public:
+    SetItemGroup(std::string name, LevelItem item, std::uint32_t before, std::uint32_t after)
+        : m_name(std::move(name)), m_item(item), m_before(before), m_after(after) {}
+
+    std::string_view name() const override { return m_name; }
+    void apply(Level& level) const override { set(level, m_after); }
+    void revert(Level& level) const override { set(level, m_before); }
+
+private:
+    void set(Level& level, std::uint32_t group) const {
+        CT_ASSERT(exists(level, m_item));
+        CT_ASSERT(group == kNoGroup || group < level.groups.size());
+        if (m_item.kind == LevelItem::Kind::Entity) {
+            level.entities[m_item.index].group = group;
+        } else {
+            CT_ASSERT(level.brushes[m_item.index].entity == kNoEntity);
+            level.brushes[m_item.index].group = group;
+        }
+    }
+
+    std::string m_name;
+    LevelItem m_item;
     std::uint32_t m_before;
     std::uint32_t m_after;
+};
+
+class InsertGroup final : public Command {
+public:
+    InsertGroup(std::string name, std::size_t index, LevelGroup group, bool remove)
+        : m_name(std::move(name)), m_index(index), m_group(std::move(group)), m_remove(remove) {}
+
+    std::string_view name() const override { return m_name; }
+    void apply(Level& level) const override { change(level, !m_remove); }
+    void revert(Level& level) const override { change(level, m_remove); }
+
+private:
+    void change(Level& level, bool insert) const {
+        if (insert) {
+            insertGroup(level, m_index, m_group);
+        } else {
+            removeGroup(level, m_index);
+        }
+    }
+
+    std::string m_name;
+    std::size_t m_index;
+    LevelGroup m_group;
+    bool m_remove;
 };
 
 class Compound final : public Command {
@@ -142,6 +218,8 @@ private:
 std::unique_ptr<Command> makeSetBrush(std::string name, std::size_t index, Brush before,
                                       Brush after) {
     after.entity = before.entity;
+    after.name = before.name;
+    after.group = before.group;
     return std::make_unique<SetElement<Brush>>(std::move(name), &Level::brushes, index,
                                                std::move(before), std::move(after));
 }
@@ -158,13 +236,39 @@ std::unique_ptr<Command> makeRemoveBrush(std::string name, std::size_t index, Br
 
 std::unique_ptr<Command> makeSetEntity(std::string name, std::size_t index, LevelEntity before,
                                        LevelEntity after) {
+    after.group = before.group;
     return std::make_unique<SetElement<LevelEntity>>(std::move(name), &Level::entities, index,
                                                      std::move(before), std::move(after));
 }
 
-std::unique_ptr<Command> makeSetBrushEntity(std::string name, std::size_t index,
-                                            std::uint32_t before, std::uint32_t after) {
-    return std::make_unique<SetBrushEntity>(std::move(name), index, before, after);
+std::unique_ptr<Command> makeSetBrushOwner(std::string name, std::size_t index, BrushOwner before,
+                                           BrushOwner after) {
+    return std::make_unique<SetBrushOwner>(std::move(name), index, before, after);
+}
+
+std::unique_ptr<Command> makeSetBrushName(std::string name, std::size_t index, std::string before,
+                                          std::string after) {
+    return std::make_unique<SetBrushName>(std::move(name), index, std::move(before),
+                                          std::move(after));
+}
+
+std::unique_ptr<Command> makeSetItemGroup(std::string name, LevelItem item, std::uint32_t before,
+                                          std::uint32_t after) {
+    return std::make_unique<SetItemGroup>(std::move(name), item, before, after);
+}
+
+std::unique_ptr<Command> makeInsertGroup(std::string name, std::size_t index, LevelGroup group) {
+    return std::make_unique<InsertGroup>(std::move(name), index, std::move(group), false);
+}
+
+std::unique_ptr<Command> makeRemoveGroup(std::string name, std::size_t index, LevelGroup group) {
+    return std::make_unique<InsertGroup>(std::move(name), index, std::move(group), true);
+}
+
+std::unique_ptr<Command> makeSetGroup(std::string name, std::size_t index, LevelGroup before,
+                                      LevelGroup after) {
+    return std::make_unique<SetElement<LevelGroup>>(std::move(name), &Level::groups, index,
+                                                    std::move(before), std::move(after));
 }
 
 std::unique_ptr<Command> makeInsertEntity(std::string name, std::size_t index, LevelEntity entity) {

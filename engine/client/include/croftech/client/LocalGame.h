@@ -32,6 +32,7 @@ public:
 
     void setConditions(const LinkConditions& conditions) { m_link.setConditions(conditions); }
     void setSettings(const GameSettings& settings);
+    const GameSettings& settings() const { return m_settings; }
 
     // Once a frame: sends the player's command and reads the snapshots that have arrived.
     void update(const UserCmd& command, Clock::time_point now);

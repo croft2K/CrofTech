@@ -200,7 +200,7 @@ bool checkEntity(const LevelEntity& entity, std::string& problem) {
     for (std::size_t i = 0; i < entity.properties.size(); ++i) {
         const EntityProperty& property = entity.properties[i];
         if (!isValidEntityName(property.key) || property.key == "brush" ||
-            property.key == "output") {
+            property.key == "output" || property.key == "group") {
             problem = "invalid property key";
             return false;
         }
@@ -232,6 +232,89 @@ bool checkBrushOwners(const Level& level, std::string& problem) {
         }
     }
     return true;
+}
+
+bool isValidLabel(std::string_view label) {
+    return !label.empty() && label.size() <= kMaxNameLength && label.front() != ' ' &&
+           label.back() != ' ' && std::none_of(label.begin(), label.end(), [](char c) {
+               return static_cast<unsigned char>(c) < 0x20 || c == 0x7f;
+           });
+}
+
+bool checkGroups(const Level& level, std::string& problem) {
+    if (level.groups.size() > kMaxLevelGroups) {
+        problem = std::format("more than {} groups", kMaxLevelGroups);
+        return false;
+    }
+    std::vector<std::string_view> names;
+    for (const LevelGroup& group : level.groups) {
+        if (!isValidLabel(group.name)) {
+            problem = "a group has an invalid name";
+            return false;
+        }
+        names.push_back(group.name);
+    }
+    std::sort(names.begin(), names.end());
+    if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
+        problem = "two groups have the same name";
+        return false;
+    }
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        const Brush& brush = level.brushes[i];
+        if (brush.group != kNoGroup &&
+            (brush.group >= level.groups.size() || brush.entity != kNoEntity)) {
+            problem = std::format("brush {} is in a group it can't be in", i);
+            return false;
+        }
+        if (!brush.name.empty() && !isValidLabel(brush.name)) {
+            problem = std::format("brush {} has an invalid name", i);
+            return false;
+        }
+    }
+    for (std::size_t i = 0; i < level.entities.size(); ++i) {
+        if (level.entities[i].group != kNoGroup && level.entities[i].group >= level.groups.size()) {
+            problem = std::format("entity {} is in a group that does not exist", i);
+            return false;
+        }
+    }
+    return true;
+}
+
+void insertGroup(Level& level, std::size_t index, LevelGroup group) {
+    CT_ASSERT(index <= level.groups.size());
+    const auto shift = [index](std::uint32_t& member) {
+        if (member != kNoGroup && member >= index) {
+            ++member;
+        }
+    };
+    for (Brush& brush : level.brushes) {
+        shift(brush.group);
+    }
+    for (LevelEntity& entity : level.entities) {
+        shift(entity.group);
+    }
+    level.groups.insert(level.groups.begin() + static_cast<std::ptrdiff_t>(index),
+                        std::move(group));
+}
+
+LevelGroup removeGroup(Level& level, std::size_t index) {
+    CT_ASSERT(index < level.groups.size());
+    const auto shift = [index](std::uint32_t& member) {
+        CT_ASSERT(member != index);
+        if (member != kNoGroup && member > index) {
+            --member;
+        }
+    };
+    for (Brush& brush : level.brushes) {
+        shift(brush.group);
+    }
+    for (LevelEntity& entity : level.entities) {
+        shift(entity.group);
+    }
+    const auto position = level.groups.begin() + static_cast<std::ptrdiff_t>(index);
+    LevelGroup removed = std::move(*position);
+    level.groups.erase(position);
+    return removed;
 }
 
 void insertEntity(Level& level, std::size_t index, LevelEntity entity) {

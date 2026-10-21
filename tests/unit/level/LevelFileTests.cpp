@@ -124,7 +124,7 @@ TEST_CASE("a box brush loads with its corners and faces in file order") {
     CHECK(level->brushes[0] == ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}));
 }
 
-TEST_CASE("version 1 brushes, made of planes, load as corners and save as version 3") {
+TEST_CASE("version 1 brushes, made of planes, load as corners and save as version 4") {
     std::string error;
     const auto level = ct::parseLevel(planeBoxText(), error);
     REQUIRE_MESSAGE(level.has_value(), error);
@@ -141,14 +141,14 @@ TEST_CASE("version 1 brushes, made of planes, load as corners and save as versio
 
     const auto text = ct::formatLevel(*level, error);
     REQUIRE(text.has_value());
-    CHECK(text->starts_with("croftech_level 3\n"));
+    CHECK(text->starts_with("croftech_level 4\n"));
     CHECK(ct::parseLevel(*text, error) == level);
 }
 
 TEST_CASE("malformed level files are rejected with the line of the problem") {
     CHECK(parseError("") == "line 1: not a level file (it is empty)");
     CHECK(parseError("brush\nend\n").starts_with("line 1: not a level file"));
-    CHECK(parseError("croftech_level 4\n") == "line 1: unsupported level file version");
+    CHECK(parseError("croftech_level 5\n") == "line 1: unsupported level file version");
     CHECK(parseError("croftech_level 2\nwall\n") == "line 2: expected 'brush' or 'entity'");
     CHECK(parseError("croftech_level 2\nbrush extra\n") == "line 2: expected 'brush' or 'entity'");
     CHECK(parseError("croftech_level 2\n\nbrush\n    vertex 1 0 0\n") ==
@@ -347,4 +347,60 @@ TEST_CASE("the content hash tells a level from an edited copy") {
     CHECK(ct::levelContentHash(level) != 0);
     ct::setProperty(same.entities.front(), "yaw", "45");
     CHECK(ct::levelContentHash(same) != ct::levelContentHash(level));
+}
+
+TEST_CASE("groups and brush names save and load back") {
+    ct::Level level;
+    level.groups = {{"Stairs"}, {"Room 2 furniture"}};
+    ct::Brush step = ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.25f});
+    step.name = "bottom step";
+    step.group = 0;
+    level.brushes.push_back(step);
+    ct::Brush gate = ct::makeBoxBrush({2.0f, 0.0f, 0.0f}, {3.0f, 0.25f, 2.0f});
+    gate.entity = 1;
+    gate.name = "gate leaf";
+    level.brushes.push_back(gate);
+    level.entities.push_back(ct::makePlayerSpawn({0.0f, 0.0f, 1.0f}, 0.0f));
+    level.entities.push_back({"mover", {{"move", "0 0 2"}}});
+    level.entities[1].group = 1;
+
+    std::string error;
+    const std::optional<std::string> text = ct::formatLevel(level, error);
+    REQUIRE_MESSAGE(text.has_value(), error);
+    CHECK(text->find("group Stairs\ngroup Room 2 furniture\n") != std::string::npos);
+    CHECK(text->find("brush\n    name bottom step\n    group Stairs\n") != std::string::npos);
+    CHECK(text->find("entity mover\n    group Room 2 furniture\n") != std::string::npos);
+    CHECK(text->find("    brush\n        name gate leaf\n") != std::string::npos);
+    const std::optional<ct::Level> loaded = ct::parseLevel(*text, error);
+    REQUIRE_MESSAGE(loaded.has_value(), error);
+    CHECK(*loaded == level);
+}
+
+TEST_CASE("malformed groups and names are rejected") {
+    const std::string brush = boxText().substr(boxText().find('\n') + 1);
+    const std::string body = brush.substr(brush.find('\n') + 1);
+    CHECK(parseError("croftech_level 4\ngroup  \n") == "line 2: invalid group name");
+    CHECK(parseError("croftech_level 4\ngroup a\ngroup a\n") ==
+          "line 3: two groups have the same name");
+    CHECK(parseError("croftech_level 4\nbrush\n    group a\n" + body) ==
+          "line 3: no group of that name is declared above");
+    CHECK(parseError("croftech_level 4\nentity relay\n    group a\nend\n") ==
+          "line 3: no group of that name is declared above");
+    CHECK(parseError("croftech_level 4\ngroup a\nentity mover\n    brush\n        group a\n") ==
+          "line 5: a brush of an entity is in its entity's group");
+    CHECK(parseError("croftech_level 4\nbrush\n    name \x01\n" + body) ==
+          "line 3: invalid brush name");
+    // Version 3 files knew no groups.
+    CHECK(parseError("croftech_level 3\ngroup a\n") == "line 2: expected 'brush' or 'entity'");
+}
+
+TEST_CASE("formatLevel refuses groups that would not load again") {
+    std::string error;
+    ct::Level level;
+    level.groups = {{"a"}, {"a"}};
+    CHECK_FALSE(ct::formatLevel(level, error).has_value());
+    level.groups = {{"a"}};
+    level.entities.push_back({"relay", {}});
+    level.entities[0].group = 3;
+    CHECK_FALSE(ct::formatLevel(level, error).has_value());
 }

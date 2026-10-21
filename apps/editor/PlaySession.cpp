@@ -10,9 +10,10 @@
 namespace ct {
 namespace {
 
-// The game's defaults (client.sensitivity, client.fov).
+// The game's defaults (client.sensitivity, client.fov, client.step_smoothing).
 constexpr float kSensitivity = 3.0f;
 constexpr float kFovDegrees = 100.0f;
+constexpr float kStepSmoothingSeconds = 0.1f;
 constexpr auto kNoticeTime = std::chrono::seconds(2);
 
 std::optional<SpawnPoint> spawnAt(const std::optional<Camera>& camera,
@@ -72,7 +73,7 @@ void PlaySession::update(const bool* keys, Clock::time_point now) {
         }
     }
     if (const std::optional<Vec3> eye = m_game.eyePosition(now)) {
-        m_eye = *eye;
+        m_eye = m_stepSmoothing.apply(m_game, *eye, kStepSmoothingSeconds, now);
     }
     if (const State* latest = m_game.latestState()) {
         if (const PlayerMotion* motion = latest->world.playerMotions.get(m_game.player())) {

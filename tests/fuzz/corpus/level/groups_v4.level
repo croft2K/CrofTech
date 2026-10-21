@@ -1,0 +1,45 @@
+croftech_level 4
+
+group Stairs
+group Room 2
+
+brush
+    name bottom step
+    group Stairs
+    vertex 0 0 0
+    vertex 1 0 0
+    vertex 0 1 0
+    vertex 1 1 0
+    vertex 0 0 0.25
+    vertex 1 0 0.25
+    vertex 0 1 0.25
+    vertex 1 1 0.25
+    face 1 3 7 5
+    face 0 4 6 2
+    face 2 6 7 3
+    face 0 1 5 4
+    face 4 5 7 6
+    face 0 2 3 1
+end
+
+entity mover
+    group Room 2
+    move 0 0 2
+    brush
+        name leaf
+        vertex 2 0 0
+        vertex 3 0 0
+        vertex 2 0.25 0
+        vertex 3 0.25 0
+        vertex 2 0 2
+        vertex 3 0 2
+        vertex 2 0.25 2
+        vertex 3 0.25 2
+        face 1 3 7 5
+        face 0 4 6 2
+        face 2 6 7 3
+        face 0 1 5 4
+        face 4 5 7 6
+        face 0 2 3 1
+    end
+end

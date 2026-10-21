@@ -267,3 +267,36 @@ TEST_CASE("the TrenchBroom sample map imports its world, light and quoted text")
     CHECK(ct::findProperty(light, "_tb_layer") == nullptr);
     CHECK(warnings.size() == 3); // the door's flat brush, the door itself, the patch
 }
+
+TEST_CASE("TrenchBroom groups come in as groups, and layers as world geometry") {
+    const std::string text =
+        worldspawn(kStandardBrush) +
+        "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"Stairs\"\n"
+        "\"_tb_id\" \"7\"\n" +
+        kStandardBrush +
+        "}\n"
+        "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"Stairs\"\n"
+        "\"_tb_id\" \"8\"\n" +
+        kStandardBrush +
+        "}\n"
+        "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\"_tb_name\" \"Detail\"\n"
+        "\"_tb_id\" \"9\"\n" +
+        kStandardBrush +
+        "}\n"
+        "{\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 32\"\n\"_tb_group\" \"7\"\n}\n";
+    const Import result = import(text);
+    REQUIRE_MESSAGE(result.level.has_value(), result.error);
+    const ct::Level& level = *result.level;
+    REQUIRE(level.groups.size() == 2);
+    CHECK(level.groups[0].name == "Stairs");
+    CHECK(level.groups[1].name == "Stairs 2");
+    REQUIRE(level.brushes.size() == 4);
+    CHECK(level.brushes[0].group == ct::kNoGroup);
+    CHECK(level.brushes[1].group == 0);
+    CHECK(level.brushes[2].group == 1);
+    CHECK(level.brushes[3].group == ct::kNoGroup);
+    REQUIRE(level.entities.size() == 1);
+    CHECK(level.entities[0].group == 0);
+    std::string error;
+    CHECK(ct::formatLevel(level, error).has_value());
+}

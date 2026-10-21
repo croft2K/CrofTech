@@ -1474,9 +1474,9 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
     case DragKind::Move:
     case DragKind::MoveVertical:
         // A click on one item of several, without moving, selects just that one (with the rest
-        // of its entity).
+        // of its entity and group).
         if (!drag.selection->commit(document, "Move " + describeSelection(document))) {
-            selectClicked(document, drag.target, false, true);
+            selectClicked(document, drag.target, false, SelectScope::Group);
         }
         return;
     case DragKind::Gizmo: {
@@ -1604,11 +1604,12 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
     const ImVec2 from{std::min(drag.screenStartX, mouse.x), std::min(drag.screenStartY, mouse.y)};
     const ImVec2 to{std::max(drag.screenStartX, mouse.x), std::max(drag.screenStartY, mouse.y)};
     if (to.x - from.x < kMarqueeMinPixels && to.y - from.y < kMarqueeMinPixels) {
-        // A click: select what was under the mouse with the rest of its entity (just it with
-        // Alt), or add them to or take them from the selection with Ctrl. A click on nothing
-        // clears the selection.
+        // A click: select what was under the mouse with the rest of its entity and group (just
+        // it with Alt), or add them to or take them from the selection with Ctrl. A click on
+        // nothing clears the selection.
         if (drag.clicked) {
-            selectClicked(document, *drag.clicked, drag.additive, !drag.single);
+            selectClicked(document, *drag.clicked, drag.additive,
+                          drag.single ? SelectScope::Item : SelectScope::Group);
         } else if (!drag.additive) {
             document.clearSelection();
         }
@@ -1661,7 +1662,7 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
         consider(LevelItem::entity(i));
     }
-    document.setSelection(drag.single ? std::move(items) : withWholeEntities(level, items));
+    document.setSelection(drag.single ? std::move(items) : withWholeGroups(level, items));
 }
 
 void LevelViewport::cancelDrag(EditorDocument& document) {

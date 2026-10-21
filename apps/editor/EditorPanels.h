@@ -2,6 +2,7 @@
 
 #include "LevelViewport.h"
 
+#include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
 #include "croftech/level/EntityClasses.h"
 
@@ -23,9 +24,9 @@ struct MenuRequests {
     bool playFromHere = false; // from the 3D camera
 };
 
-// The editor's panels: menu bar, tool bar (over the 3D view), hierarchy (every brush and entity)
-// and inspector (the selection's details, editable). Inspector edits preview live and finish as
-// one undoable command.
+// The editor's panels: menu bar, tool bar (over the 3D view), hierarchy (groups, world brushes and
+// entities with their brushes) and inspector (the selection's details, editable). Inspector edits
+// preview live and finish as one undoable command.
 class EditorPanels {
 public:
     MenuRequests drawMenuBar(EditorDocument& document, EditorSettings& settings,
@@ -38,6 +39,20 @@ public:
 private:
     // Sides, steps, thickness and facing for the shape being drawn.
     void drawShapeSettings(EditorSettings& settings);
+    // Hierarchy rows. Each row selects what it shows: a group all its members, an entity itself
+    // with its brushes, a brush just itself.
+    void drawGroupRow(EditorDocument& document, std::uint32_t group,
+                      std::span<const LevelItem> members,
+                      std::span<const std::vector<std::size_t>> owned);
+    void drawEntityRow(EditorDocument& document, std::size_t index,
+                       std::span<const std::size_t> brushes);
+    void drawBrushRow(EditorDocument& document, std::size_t index);
+    // A click on a row: Ctrl adds or takes away, Shift selects the rows from the last one clicked.
+    void rowClicked(EditorDocument& document, LevelItem item, SelectScope scope);
+    void startRename(const EditorDocument& document);
+    // The text field that replaces a row being renamed. True while it is drawn in its place.
+    bool drawRenameField(EditorDocument& document, bool isGroup, std::uint32_t group,
+                         LevelItem item);
     void drawBrushInspector(EditorDocument& document, const EditorSettings& settings,
                             std::size_t index);
     void drawEntityInspector(EditorDocument& document, std::size_t index);
@@ -66,6 +81,20 @@ private:
     std::string m_newValue;
     EntityOutput m_newOutput;
     std::string m_problem;
+
+    // The rows shown in the hierarchy, in order, for Shift-click ranges: this frame's so far and
+    // last frame's, which every click sees in full.
+    std::vector<LevelItem> m_rows;
+    std::vector<LevelItem> m_shownRows;
+    std::optional<LevelItem> m_anchor; // the row a Shift-click range starts from
+    // Renaming in the hierarchy (F2 or a double-click): a group, or an item.
+    bool m_renaming = false;
+    bool m_renameIsGroup = false;
+    std::uint32_t m_renameGroup = 0;
+    LevelItem m_renameItem;
+    std::string m_renameText;
+    std::string m_renameProblem;
+    bool m_renameFocus = false;
 };
 
 } // namespace ct

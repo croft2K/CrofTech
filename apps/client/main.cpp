@@ -22,6 +22,7 @@
 #include "WorldMesh.h"
 
 #include "croftech/client/LocalGame.h"
+#include "croftech/client/StepSmoothing.h"
 #include "croftech/core/Angle.h"
 #include "croftech/core/Console.h"
 #include "croftech/core/Content.h"
@@ -94,6 +95,7 @@ struct ClientCVars {
     const ct::CVar& fov;
     const ct::CVar& showStats;
     const ct::CVar& showEntities;
+    const ct::CVar& stepSmoothing;
     const ct::CVar& fakeLatency;
     const ct::CVar& fakeJitter;
     const ct::CVar& fakeLoss;
@@ -114,6 +116,9 @@ ClientCVars registerClientCVars(ct::Console& console) {
                                        "frame rate, tick cost and speed overlay")),
         console.add(ct::CVar::makeBool("client.show_entities", false,
                                        "window listing every entity and its components")),
+        console.add(ct::CVar::makeFloat(
+            "client.step_smoothing", 0.1f, 0.0f, 1.0f,
+            "seconds the view takes to follow a step up or down stairs; 0 follows at once")),
         console.add(ct::CVar::makeFloat("net.fake_latency_ms", 0.0f, 0.0f, 1000.0f,
                                         "delay added to every packet, each way")),
         console.add(ct::CVar::makeFloat("net.fake_jitter_ms", 0.0f, 0.0f, 500.0f,
@@ -365,6 +370,7 @@ int main(int argc, char** argv) {
 
     ct::PlayerLook look;
     ct::GameHud hud;
+    ct::StepSmoothing stepSmoothing;
     std::uint32_t seenTimeline = 0;
     std::optional<PreparedLevel> enteredLevel;
     std::vector<std::uint32_t> moverParts; // the level entity of each moving part of the mesh
@@ -508,7 +514,7 @@ int main(int argc, char** argv) {
             }
         }
         if (const std::optional<ct::Vec3> playerEye = localGame->eyePosition(now)) {
-            eye = *playerEye;
+            eye = stepSmoothing.apply(*localGame, *playerEye, client.stepSmoothing.asFloat(), now);
         }
         for (std::size_t i = 0; i < moverParts.size(); ++i) {
             moverOffsets[i] = localGame->moverOffset(moverParts[i], now);

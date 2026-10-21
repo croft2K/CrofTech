@@ -68,15 +68,15 @@ TEST_CASE("a brush picks its whole entity") {
 
 TEST_CASE("a click selects a whole entity, Alt-click one brush, Ctrl-click toggles") {
     ct::EditorDocument document(doorAndTrigger(), "test.level");
-    ct::selectClicked(document, LevelItem::brush(1), false, true);
+    ct::selectClicked(document, LevelItem::brush(1), false, ct::SelectScope::Entity);
     CHECK(document.selection() ==
           std::vector<LevelItem>{LevelItem::brush(1), LevelItem::brush(2), LevelItem::entity(1)});
-    ct::selectClicked(document, LevelItem::brush(3), true, true);
+    ct::selectClicked(document, LevelItem::brush(3), true, ct::SelectScope::Entity);
     CHECK(document.selection().size() == 5);
-    ct::selectClicked(document, LevelItem::brush(2), true, true);
+    ct::selectClicked(document, LevelItem::brush(2), true, ct::SelectScope::Entity);
     CHECK(document.selection() ==
           std::vector<LevelItem>{LevelItem::brush(3), LevelItem::entity(2)});
-    ct::selectClicked(document, LevelItem::brush(2), false, false);
+    ct::selectClicked(document, LevelItem::brush(2), false, ct::SelectScope::Item);
     CHECK(document.selection() == std::vector<LevelItem>{LevelItem::brush(2)});
     CHECK(ct::describeSelection(document) == "brush");
 }

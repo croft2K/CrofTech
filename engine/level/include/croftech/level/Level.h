@@ -29,6 +29,7 @@ struct BrushFace {
 };
 
 inline constexpr std::uint32_t kNoEntity = UINT32_MAX;
+inline constexpr std::uint32_t kNoGroup = UINT32_MAX;
 
 // A convex solid, stored by its corners and faces. Planes are derived from the corners
 // (BrushGeometry.h) rather than stored: corners placed on the grid then stay exactly on it through
@@ -39,6 +40,11 @@ struct Brush {
     // The entity this brush is part of, as an index into Level::entities, or kNoEntity for world
     // geometry. Doors, movers and triggers are entities made of brushes.
     std::uint32_t entity = kNoEntity;
+    // Shown in the editor; optional, and not unique.
+    std::string name{};
+    // The group a world brush is in, as an index into Level::groups, or kNoGroup. A brush of an
+    // entity is in its entity's group, and has none of its own.
+    std::uint32_t group = kNoGroup;
 
     friend bool operator==(const Brush&, const Brush&) = default;
 };
@@ -71,13 +77,23 @@ struct LevelEntity {
     std::string className;
     std::vector<EntityProperty> properties;
     std::vector<EntityOutput> outputs{};
+    std::uint32_t group = kNoGroup; // as for brushes
 
     friend bool operator==(const LevelEntity&, const LevelEntity&) = default;
+};
+
+// A named set of world brushes and entities that the editor selects and moves as one, such as a
+// staircase or a room's furniture. Groups only organise the level; play ignores them.
+struct LevelGroup {
+    std::string name; // unique in the level
+
+    friend bool operator==(const LevelGroup&, const LevelGroup&) = default;
 };
 
 struct Level {
     std::vector<Brush> brushes;
     std::vector<LevelEntity> entities;
+    std::vector<LevelGroup> groups{};
 
     friend bool operator==(const Level&, const Level&) = default;
 };
@@ -89,6 +105,11 @@ LevelEntity removeEntity(Level& level, std::size_t index);
 
 // Indices of the brushes that belong to the entity, in level order.
 std::vector<std::size_t> entityBrushes(const Level& level, std::size_t entity);
+
+// Inserting or removing a group renumbers the groups after it in the brushes and entities. A group
+// must have no members when it is removed.
+void insertGroup(Level& level, std::size_t index, LevelGroup group);
+LevelGroup removeGroup(Level& level, std::size_t index);
 
 // Limits on level data. Levels come from files, so these bound the work a malformed or hostile
 // file can cause as well as describing what the engine supports.
@@ -106,6 +127,7 @@ inline constexpr std::size_t kMaxEntityOutputs = 64;
 inline constexpr float kMaxOutputDelay = 3600.0f; // seconds
 inline constexpr std::size_t kMaxNameLength = 64; // class names, property keys, output names
 inline constexpr std::size_t kMaxPropertyValueLength = 1024;
+inline constexpr std::size_t kMaxLevelGroups = 65536;
 
 // Each check returns false with a description of the first problem it finds.
 
@@ -120,14 +142,22 @@ bool checkBrush(const Brush& brush, std::string& problem);
 inline constexpr float kBrushTolerance = 5e-4f;
 
 // Class names, keys and the names in outputs are 1 to kMaxNameLength of [A-Za-z0-9_.-]; "end" is
-// reserved by the level file, and so are the keys "brush" and "output". Values are single-line
-// text with no control characters or surrounding spaces. No duplicate keys. Output delays are 0 to
-// kMaxOutputDelay seconds.
+// reserved by the level file, and so are the keys "brush", "output" and "group". Values are
+// single-line text with no control characters or surrounding spaces. No duplicate keys. Output
+// delays are 0 to kMaxOutputDelay seconds.
 bool checkEntity(const LevelEntity& entity, std::string& problem);
 bool isValidEntityName(std::string_view name);
 
 // Every brush belongs to the world or to an entity of the level.
 bool checkBrushOwners(const Level& level, std::string& problem);
+
+// Names of groups and brushes: 1 to kMaxNameLength characters of single-line text with no control
+// characters or surrounding spaces.
+bool isValidLabel(std::string_view label);
+
+// Group names are valid labels and unique; every world brush and entity is in no group or one of
+// the level's, and brushes of entities are in none of their own.
+bool checkGroups(const Level& level, std::string& problem);
 
 const std::string* findProperty(const LevelEntity& entity, std::string_view key);
 // Replaces the value of an existing key, or adds the key at the end.

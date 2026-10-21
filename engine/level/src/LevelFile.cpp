@@ -11,6 +11,8 @@
 #include <format>
 #include <fstream>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 namespace ct {
 namespace {
@@ -79,6 +81,17 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
         error = std::format("line {}: {}", line, message);
         return std::nullopt;
     };
+    // Groups by name, for the brushes and entities that name them.
+    std::vector<std::pair<std::string, std::uint32_t>> groupNames;
+    const auto findGroup = [&groupNames](std::string_view name) -> std::optional<std::uint32_t> {
+        const auto found = std::lower_bound(
+            groupNames.begin(), groupNames.end(), name,
+            [](const auto& entry, std::string_view key) { return entry.first < key; });
+        if (found == groupNames.end() || found->first != name) {
+            return std::nullopt;
+        }
+        return found->second;
+    };
 
     while (!text.empty()) {
         ++lineNumber;
@@ -100,7 +113,7 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 return fail(lineNumber, std::format("not a level file (expected '{} {}')", kHeader,
                                                     kLevelFileVersion));
             }
-            if (rest == "1" || rest == "2") {
+            if (rest == "1" || rest == "2" || rest == "3") {
                 version = rest.front() - '0';
             } else if (rest != std::to_string(kLevelFileVersion)) {
                 return fail(lineNumber, "unsupported level file version");
@@ -138,8 +151,25 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 block = Block::Entity;
                 blockLine = lineNumber;
                 entity = {std::string(rest), {}};
+            } else if (version >= 4 && word == "group") {
+                if (!isValidLabel(rest)) {
+                    return fail(lineNumber, "invalid group name");
+                }
+                if (level.groups.size() >= kMaxLevelGroups) {
+                    return fail(lineNumber, std::format("more than {} groups", kMaxLevelGroups));
+                }
+                if (findGroup(rest)) {
+                    return fail(lineNumber, "two groups have the same name");
+                }
+                const auto position = std::lower_bound(
+                    groupNames.begin(), groupNames.end(), rest,
+                    [](const auto& entry, std::string_view key) { return entry.first < key; });
+                groupNames.insert(
+                    position, {std::string(rest), static_cast<std::uint32_t>(level.groups.size())});
+                level.groups.push_back({std::string(rest)});
             } else {
-                return fail(lineNumber, "expected 'brush' or 'entity'");
+                return fail(lineNumber, version >= 4 ? "expected 'group', 'brush' or 'entity'"
+                                                     : "expected 'brush' or 'entity'");
             }
             break;
 
@@ -185,6 +215,20 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                                 std::format("more than {} vertices", kMaxBrushVertices));
                 }
                 brush.vertices.push_back({values[0], values[1], values[2]});
+            } else if (version >= 4 && word == "name") {
+                if (!isValidLabel(rest)) {
+                    return fail(lineNumber, "invalid brush name");
+                }
+                brush.name = rest;
+            } else if (version >= 4 && word == "group") {
+                const std::optional<std::uint32_t> group = findGroup(rest);
+                if (!group) {
+                    return fail(lineNumber, "no group of that name is declared above");
+                }
+                if (brush.entity != kNoEntity) {
+                    return fail(lineNumber, "a brush of an entity is in its entity's group");
+                }
+                brush.group = *group;
             } else if (version >= 2 && word == "face") {
                 BrushFace face;
                 if (!parseIndices(rest, face.corners)) {
@@ -196,8 +240,10 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 }
                 brush.faces.push_back(std::move(face));
             } else {
-                return fail(lineNumber, version == 1 ? "expected 'plane' or 'end'"
-                                                     : "expected 'vertex', 'face' or 'end'");
+                return fail(lineNumber, version == 1  ? "expected 'plane' or 'end'"
+                                        : version < 4 ? "expected 'vertex', 'face' or 'end'"
+                                                      : "expected 'name', 'group', 'vertex', "
+                                                        "'face' or 'end'");
             }
             break;
 
@@ -214,6 +260,12 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 if (!startBrush(static_cast<std::uint32_t>(level.entities.size()))) {
                     return fail(lineNumber, std::format("more than {} brushes", kMaxLevelBrushes));
                 }
+            } else if (version >= 4 && word == "group") {
+                const std::optional<std::uint32_t> group = findGroup(rest);
+                if (!group) {
+                    return fail(lineNumber, "no group of that name is declared above");
+                }
+                entity.group = *group;
             } else if (word == "output") {
                 EntityOutput output;
                 output.event = takeWord(rest);
@@ -264,7 +316,7 @@ std::optional<std::string> formatLevel(const Level& level, std::string& error) {
         return std::nullopt;
     }
     std::string problem;
-    if (!checkBrushOwners(level, problem)) {
+    if (!checkBrushOwners(level, problem) || !checkGroups(level, problem)) {
         error = problem;
         return std::nullopt;
     }
@@ -276,8 +328,20 @@ std::optional<std::string> formatLevel(const Level& level, std::string& error) {
     }
 
     std::string text = std::format("{} {}\n", kHeader, kLevelFileVersion);
-    const auto writeBrush = [&text](const Brush& brush, std::string_view indent) {
+    if (!level.groups.empty()) {
+        text += '\n';
+    }
+    for (const LevelGroup& group : level.groups) {
+        text += std::format("group {}\n", group.name);
+    }
+    const auto writeBrush = [&](const Brush& brush, std::string_view indent) {
         text += std::format("{}brush\n", indent);
+        if (!brush.name.empty()) {
+            text += std::format("{}    name {}\n", indent, brush.name);
+        }
+        if (brush.group != kNoGroup) {
+            text += std::format("{}    group {}\n", indent, level.groups[brush.group].name);
+        }
         for (const Vec3& vertex : brush.vertices) {
             text += std::format("{}    vertex {}\n", indent, formatVec3(vertex));
         }
@@ -313,6 +377,9 @@ std::optional<std::string> formatLevel(const Level& level, std::string& error) {
             return std::nullopt;
         }
         text += std::format("\nentity {}\n", entity.className);
+        if (entity.group != kNoGroup) {
+            text += std::format("    group {}\n", level.groups[entity.group].name);
+        }
         for (const EntityProperty& property : entity.properties) {
             text += property.value.empty()
                         ? std::format("    {}\n", property.key)

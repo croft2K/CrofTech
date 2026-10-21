@@ -1,8 +1,10 @@
 add_library(ct_client STATIC
     include/croftech/client/ClientConnection.h
     include/croftech/client/LocalGame.h
+    include/croftech/client/StepSmoothing.h
     src/ClientConnection.cpp
     src/LocalGame.cpp
+    src/StepSmoothing.cpp
 )
 add_library(ct::client ALIAS ct_client)
 

@@ -6,7 +6,8 @@
 // F5 plays the level, Shift+F5 from the 3D camera (Esc stops; F6 and F9 save and load). Shortcuts:
 // Q/W/E/R select, move, rotate and scale tools, V vertex tool, C clip tool, B shape tool,
 // Ctrl+H/J/K hollow, merge and subtract the selected brushes, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo,
-// Ctrl+A select all, Ctrl+D duplicate, Del delete (in the vertex tool, the selected corners), arrow
+// Ctrl+A select all, Ctrl+D duplicate, Ctrl+G group, Ctrl+Shift+G ungroup, F2 rename (in the
+// hierarchy), Del delete (in the vertex tool, the selected corners), arrow
 // keys and Page Up/Down nudge the selection (or selected corners) one grid step, F frame selection,
 // [ and ] grid size, Esc cancel or deselect.
 
@@ -494,6 +495,10 @@ int main(int argc, char** argv) {
                 ct::mergeSelection(document);
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_K)) {
                 ct::subtractSelection(document);
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_G)) {
+                ct::groupSelection(document);
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_G)) {
+                ct::ungroupSelection(document);
             } else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && !viewport.isDragging()) {
                 if (editingCorners) {
                     if (ct::removeCorners(document, viewport.selectedCorners())) {
