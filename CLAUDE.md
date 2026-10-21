@@ -25,7 +25,8 @@ executable and the compiled shaders land in `build/<preset>/bin/`.
 Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--map name] [--frames N]
 [--exec "cmds"]` (`--map` defaults to the game's `start_map`; `--frames` quits after N frames, for
 automated smoke runs; `--exec` runs console commands once the config files have loaded). In the
-client, the key below Esc opens the developer console; `map <name>` there switches level.
+client, the key below Esc opens the developer console; `map <name>` there switches level and
+`client.show_entities 1` opens a live, read-only view of every entity's components.
 
 Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described in
 `level/LevelFile.h`): the editable source, diffable in git. A level name is looked up as
@@ -95,7 +96,11 @@ Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct
 - No `std::sin`/`std::cos`/`std::atan2` etc. in simulation code: their results differ between
   platforms, and the Linux server must match Windows clients. Use `ct::sinCos` (core/Angle.h) and
   `+ - * / sqrt` only. Angles in the simulation are 16-bit turn fractions, as in `UserCmd`.
-- Components must have no padding (they are hashed as raw bytes); each has a `sizeof` check.
+- Every component has a schema next to it (`Schema<T>`, one `CT_FIELD` per member, core/Schema.h)
+  and a `static_assert(describesEveryByte(...))`, which fails if a field is missing from the schema
+  or the struct has padding (states are hashed as raw bytes). The schema drives saves
+  (`sim/StateSave.h`), the inspector and, later, replication; generic code never names fields.
+  Type and field names are stable identifiers in save files: renaming one drops it from old saves.
   Register every new component pool in `forEachPool` (sim/World.h).
 - Units are metres and seconds, Z up. Movement tuning lives in `MovementSettings`.
 - Components are trivially copyable plain structs with no pointers. Refer to other entities by

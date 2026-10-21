@@ -34,7 +34,7 @@ TEST_CASE("parseFloat accepts only a complete finite number") {
 
 TEST_CASE("parseFloats needs exactly the expected count of numbers") {
     std::array<float, 3> values{};
-    CHECK(ct::parseFloats("1 -2.5	3", values));
+    CHECK(ct::parseFloats("1 -2.5\t3", values));
     CHECK(values == std::array{1.0f, -2.5f, 3.0f});
     CHECK(ct::parseFloats("  4 5 6  ", values));
     CHECK_FALSE(ct::parseFloats("1 2", values));

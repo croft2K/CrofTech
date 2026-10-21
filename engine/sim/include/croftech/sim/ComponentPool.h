@@ -18,6 +18,8 @@ class ComponentPool {
     static_assert(std::is_trivially_copyable_v<T>, "components must be plain data");
 
 public:
+    using Component = T;
+
     T& add(EntityId id, const T& value) noexcept {
         CT_ASSERT(id.index < Capacity);
         CT_ASSERT(!has(id));

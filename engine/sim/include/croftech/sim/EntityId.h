@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -43,6 +45,36 @@ public:
         m_alive[id.index] = 0;
         ++m_generations[id.index];
         m_freeList[m_freeCount++] = id.index;
+        return true;
+    }
+
+    // Replaces the allocation state with saved data. Fails and changes nothing unless the data is
+    // consistent: equal-length generation and alive arrays within capacity, alive flags of 0 or 1,
+    // and every index that is not alive in the free list exactly once.
+    bool restore(std::span<const std::uint32_t> generations, std::span<const std::uint8_t> alive,
+                 std::span<const std::uint32_t> freeList) noexcept {
+        if (generations.size() != alive.size() || generations.size() > Capacity ||
+            freeList.size() > generations.size()) {
+            return false;
+        }
+        std::array<std::uint8_t, Capacity> listed{};
+        for (const std::uint32_t index : freeList) {
+            if (index >= alive.size() || alive[index] != 0 || listed[index] != 0) {
+                return false;
+            }
+            listed[index] = 1;
+        }
+        for (std::size_t i = 0; i < alive.size(); ++i) {
+            if (alive[i] > 1 || (alive[i] == 0) != (listed[i] != 0)) {
+                return false;
+            }
+        }
+        *this = {};
+        std::copy(generations.begin(), generations.end(), m_generations.begin());
+        std::copy(alive.begin(), alive.end(), m_alive.begin());
+        std::copy(freeList.begin(), freeList.end(), m_freeList.begin());
+        m_highWater = static_cast<std::uint32_t>(generations.size());
+        m_freeCount = static_cast<std::uint32_t>(freeList.size());
         return true;
     }
 

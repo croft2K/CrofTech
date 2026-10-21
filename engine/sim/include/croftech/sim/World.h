@@ -5,6 +5,8 @@
 #include "croftech/sim/EntityId.h"
 
 #include <cstdint>
+#include <span>
+#include <type_traits>
 
 namespace ct {
 
@@ -32,6 +34,18 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.transforms);
     fn(world.playerMotions);
     fn(world.playerControls);
+}
+
+// Calls fn(schema, bytes) for each component the entity has, in pool order. For tools that work
+// on any component through its schema, such as inspectors.
+template <typename Fn>
+void forEachComponent(const World& world, EntityId id, Fn&& fn) {
+    forEachPool(world, [&](const auto& pool) {
+        if (const auto* component = pool.get(id)) {
+            using T = std::remove_cvref_t<decltype(*component)>;
+            fn(Schema<T>::value, std::as_bytes(std::span{component, 1}));
+        }
+    });
 }
 
 inline void World::destroy(EntityId id) noexcept {

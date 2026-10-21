@@ -1,9 +1,11 @@
 add_library(ct_devui STATIC
     include/croftech/devui/ConsoleWindow.h
     include/croftech/devui/DevUi.h
+    include/croftech/devui/EntityInspector.h
     include/croftech/devui/StatsOverlay.h
     src/ConsoleWindow.cpp
     src/DevUi.cpp
+    src/EntityInspector.cpp
     src/StatsOverlay.cpp
 )
 add_library(ct::devui ALIAS ct_devui)

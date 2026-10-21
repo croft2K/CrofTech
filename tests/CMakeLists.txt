@@ -6,11 +6,13 @@ add_executable(ct_unit_tests
     unit/core/ContentTests.cpp
     unit/core/CVarTests.cpp
     unit/core/HashTests.cpp
+    unit/core/SchemaTests.cpp
     unit/level/BrushGeometryTests.cpp
     unit/level/LevelFileTests.cpp
     unit/level/MapImportTests.cpp
     unit/sim/CollisionWorldTests.cpp
     unit/sim/MovementConfigTests.cpp
+    unit/sim/StateSaveTests.cpp
     unit/sim/WorldTests.cpp
     unit/TestFiles.h
     sim/TestLevels.cpp

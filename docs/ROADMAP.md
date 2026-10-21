@@ -49,7 +49,9 @@ In order; each step builds, tests and commits on its own.
    *Done: `.level` files with fuzzed loader and importer, `--map` and the `map` command; the
    movement test level is now `content/levels/movement_test.level`.*
 4. **Component schema.** Each component declares its fields once; the declaration drives the editor
-   inspector, saves and, later, network replication.
+   inspector, saves and, later, network replication. *Done: `CT_FIELD` schemas checked to cover
+   every byte, a versioned state save that tolerates added and removed fields (fuzzed), and a
+   read-only entity inspector.*
 5. **Editor shell.** Docked viewport, scene hierarchy, inspector, console; selection; undo/redo
    command stack from the first edit; basic brush editing (create, move, resize and delete box
    brushes on a snapping grid), enough to block out the M2 door puzzle without another editor.
@@ -72,14 +74,12 @@ In order; each step builds, tests and commits on its own.
 | Content packaging | `.level` text files are the editable source. Shipped builds cook levels and assets into binary pack files: shared packs plus a small pack per level, checksummed so clients and server can prove they match. Packs load as one more content layer and are untrusted input (bounds-checked, fuzzed). Built with the level compiler in M5, needed by M6 |
 | Scripting | Event wiring between entities first (M2). A script entity that plugs into the same wiring follows in M3. Script state lives in components so saves, rewinds and prediction keep working |
 | Level editor | Our own editor, brush tools and later modelling tools; TrenchBroom is not part of the workflow. The `.map` importer stays for bringing in existing maps |
+| Modelling | Brushes first; later, editable meshes for level geometry (bevels, curves, detail) in our editor. Characters, weapons and animation are made in Blender and imported as glTF |
 | Script language | Luau: built to sandbox untrusted scripts (maps downloaded from servers), small enough to compile into the Linux server, and simple to keep deterministic. Gameplay code (weapons, rules, modes) stays C++; a C# gameplay layer may be revisited once networking works (after M6/M7) |
 
 ## Still open
 
 - **Game mode for multiplayer**: duel or team deathmatch. Needed by M6; sets the bandwidth budget.
-- **Modelling scope**: how far in-editor modelling goes beyond brushes. Proposal: brushes plus,
-  later, editable meshes for level geometry (bevels, curves, detail), with characters, weapons and
-  animation made in Blender and imported as glTF. Needed by M4.
 - **Lag-compensation cap**: starts at 200 ms; tune in M7.
 - **Hosting**: self-hosted, community servers, or both. Needed by M7.
 

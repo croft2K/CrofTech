@@ -91,10 +91,16 @@ TEST_CASE("game manifests load from games/<name>/game.cfg") {
     CHECK_FALSE(ct::loadGameManifest(temp.path(), "", error).has_value());
 }
 
-TEST_CASE("the sandbox game exists and its config parses cleanly") {
+TEST_CASE("the sandbox game exists and its start map is in its content") {
     std::string error;
     const auto game = ct::loadGameManifest(CROFTECH_SOURCE_DIR "/games", "sandbox", error);
     REQUIRE_MESSAGE(game.has_value(), error);
     CHECK(game->title == "CrofTech Sandbox");
-    CHECK(game->startMap == "movement_test");
+
+    ct::ContentPaths content;
+    content.addLayer(CROFTECH_SOURCE_DIR "/content");
+    content.addLayer(game->root / "content");
+    CAPTURE(game->startMap);
+    CHECK((content.find("levels/" + game->startMap + ".level") ||
+           content.find("levels/" + game->startMap + ".map")));
 }

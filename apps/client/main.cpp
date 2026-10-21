@@ -20,6 +20,7 @@
 #include "croftech/core/Profile.h"
 #include "croftech/devui/ConsoleWindow.h"
 #include "croftech/devui/DevUi.h"
+#include "croftech/devui/EntityInspector.h"
 #include "croftech/devui/StatsOverlay.h"
 #include "croftech/level/LevelFile.h"
 #include "croftech/level/MapImport.h"
@@ -80,6 +81,7 @@ struct ClientCVars {
     const ct::CVar& sensitivity;
     const ct::CVar& fov;
     const ct::CVar& showStats;
+    const ct::CVar& showEntities;
 };
 
 ClientCVars registerClientCVars(ct::Console& console) {
@@ -91,6 +93,8 @@ ClientCVars registerClientCVars(ct::Console& console) {
             "horizontal field of view in degrees at 16:9; wider screens see more")),
         console.add(ct::CVar::makeBool("client.show_stats", true,
                                        "frame rate, tick cost and speed overlay")),
+        console.add(ct::CVar::makeBool("client.show_entities", false,
+                                       "window listing every entity and its components")),
     };
 }
 
@@ -115,6 +119,25 @@ void reloadConfig(ct::Console& console, ConfigFile& file, bool announce) {
 }
 
 ct::Vec3 lerp(ct::Vec3 a, ct::Vec3 b, float t) { return a + (b - a) * t; }
+
+std::vector<ct::EntityInspector::Entity> inspectEntities(const ct::World& world) {
+    std::vector<ct::EntityInspector::Entity> entities;
+    const auto generations = world.entities.generations();
+    for (std::uint32_t index = 0; index < generations.size(); ++index) {
+        const ct::EntityId id{index, generations[index]};
+        if (!world.entities.isAlive(id)) {
+            continue;
+        }
+        ct::EntityInspector::Entity& entity = entities.emplace_back();
+        entity.index = id.index;
+        entity.generation = id.generation;
+        ct::forEachComponent(
+            world, id, [&entity](const ct::TypeSchema& schema, std::span<const std::byte> bytes) {
+                entity.components.push_back({&schema, bytes});
+            });
+    }
+    return entities;
+}
 
 // A level read, checked and ready to play.
 struct PreparedLevel {
@@ -249,6 +272,9 @@ int main(int argc, char** argv) {
     }
     ct::ConsoleWindow consoleWindow(console);
     ct::StatsOverlay stats;
+    ct::EntityInspector entityInspector;
+    // The inspector reads a copy, so the simulation thread is never held up by drawing.
+    const auto inspectedState = std::make_unique<ct::State>();
 
     ct::MovementSettings movement = ct::movementSettingsFromCVars(console);
     std::uint64_t seenChanges = console.changeCount();
@@ -398,6 +424,9 @@ int main(int argc, char** argv) {
                 horizontalSpeed = std::sqrt(motion->velocity.x * motion->velocity.x +
                                             motion->velocity.y * motion->velocity.y);
             }
+            if (client.showEntities.asBool()) {
+                *inspectedState = current;
+            }
         });
 
         stats.add({std::chrono::duration<float, std::milli>(now - lastFrame).count(),
@@ -407,6 +436,13 @@ int main(int argc, char** argv) {
         devUi->beginFrame();
         if (client.showStats.asBool()) {
             stats.draw();
+        }
+        if (client.showEntities.asBool()) {
+            bool open = true;
+            entityInspector.draw(inspectEntities(inspectedState->world), &open);
+            if (!open) {
+                console.execute("client.show_entities 0");
+            }
         }
         consoleWindow.draw();
         const ImDrawData* ui = devUi->endFrame();

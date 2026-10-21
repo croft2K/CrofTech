@@ -1,21 +1,41 @@
 #pragma once
 
 #include "croftech/core/Math.h"
+#include "croftech/core/Schema.h"
+#include "croftech/sim/UserCmd.h"
 
+#include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace ct {
 
-// Components are hashed as raw bytes for the determinism check, so they must have no padding:
-// padding bytes are indeterminate and would make identical states hash differently. Each one
-// carries a size check; use fixed-width integers instead of bool.
+// Every component is a plain struct with a schema listing each field once (CT_FIELD). The schema
+// drives saves, the inspector and, later, replication, so a field missing from it would silently
+// not be saved or sent: describesEveryByte() turns that into a compile error. It also proves the
+// struct has no padding, which matters because states are hashed as raw bytes and padding bytes
+// are indeterminate. Use fixed-width integers instead of bool.
 
 struct Transform {
     Vec3 position; // centre of the collision box
     std::uint16_t yaw = 0;
     std::int16_t pitch = 0;
 };
-static_assert(sizeof(Transform) == 16, "Transform must not contain padding");
+
+template <>
+struct Schema<Transform> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Transform, position)
+            .withHint(FieldHint::Distance)
+            .withDescription("Centre of the collision box"),
+        CT_FIELD(Transform, yaw).withHint(FieldHint::Angle).withDescription("Facing; 0 is +X"),
+        CT_FIELD(Transform, pitch)
+            .withHint(FieldHint::Angle)
+            .withDescription("Look up (negative) or down (positive)"),
+    };
+    static constexpr TypeSchema value{"transform", sizeof(Transform), kFields};
+};
+static_assert(describesEveryByte(Schema<Transform>::value));
 
 enum PlayerMotionFlags : std::uint32_t {
     kPlayerOnGround = 1u << 0,
@@ -26,12 +46,32 @@ struct PlayerMotion {
     Vec3 velocity;
     std::uint32_t flags = 0;
 };
-static_assert(sizeof(PlayerMotion) == 16, "PlayerMotion must not contain padding");
+
+template <>
+struct Schema<PlayerMotion> {
+    static constexpr std::array<std::string_view, 2> kFlagNames{"on_ground", "jump_held"};
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(PlayerMotion, velocity).withHint(FieldHint::Speed),
+        CT_FIELD(PlayerMotion, flags).withFlagNames(kFlagNames),
+    };
+    static constexpr TypeSchema value{"player_motion", sizeof(PlayerMotion), kFields};
+};
+static_assert(describesEveryByte(Schema<PlayerMotion>::value));
 
 // Marks an entity as driven by the input command in this slot of the InputSet.
 struct PlayerControl {
     std::uint32_t inputSlot = 0;
 };
-static_assert(sizeof(PlayerControl) == 4, "PlayerControl must not contain padding");
+
+template <>
+struct Schema<PlayerControl> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(PlayerControl, inputSlot)
+            .withDescription("Which player's input drives this")
+            .withRange(0, kMaxPlayers - 1),
+    };
+    static constexpr TypeSchema value{"player_control", sizeof(PlayerControl), kFields};
+};
+static_assert(describesEveryByte(Schema<PlayerControl>::value));
 
 } // namespace ct
