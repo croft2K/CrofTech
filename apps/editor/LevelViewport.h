@@ -2,6 +2,7 @@
 
 #include "croftech/core/Camera.h"
 #include "croftech/editor/BrushEditing.h"
+#include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/editor/Shapes.h"
@@ -48,9 +49,9 @@ struct EditorSettings {
 };
 
 // Select, Move, Rotate and Scale all select and drag items the same way; the last three add a
-// gizmo on the selection. Vertex reshapes the selected brushes by their corners, edges and faces.
-// Draw makes a new shape (EditorSettings::shape).
-enum class EditorTool { Select, Move, Rotate, Scale, Vertex, Draw };
+// gizmo on the selection. Vertex reshapes the selected brushes by their corners, edges and faces;
+// Clip cuts them with a plane. Draw makes a new shape (EditorSettings::shape).
+enum class EditorTool { Select, Move, Rotate, Scale, Vertex, Clip, Draw };
 
 // Camera movement while the right mouse button is held.
 struct FlyInput {
@@ -71,15 +72,19 @@ struct FlyInput {
 // Click selects a brush or entity; Ctrl-click adds or removes it. Dragging a selected item moves
 // the whole selection across the grid (Alt: up and down); dragging from anywhere else selects
 // everything inside the rectangle (Ctrl adds). Shift-drag a face of a lone selected brush to move
-// just that face. The Move, Rotate and Scale gizmos act on the whole selection: arrows and squares
-// move along an axis or plane, rings turn about an axis in snapped steps, and the handles on the
-// selection's box drag its sides. Every drag shows live and finishes as one undoable command;
-// Esc cancels it.
+// just that face, or Ctrl+Shift-drag it to pull a new brush out of it. The Move, Rotate and Scale
+// gizmos act on the whole selection: arrows and squares move along an axis or plane, rings turn
+// about an axis in snapped steps, and the handles on the selection's box drag its sides. Every drag
+// shows live and finishes as one undoable command; Esc cancels it.
 //
 // Vertex: handles on the selected brushes' corners and on the middles of their edges and faces.
 // Click one to select its corners (Ctrl adds or removes), drag a box to select the corners inside
 // it, and drag a selected handle to move the selected corners across the grid (Alt: up and down).
 // Corners at the same place in several selected brushes move together.
+//
+// Clip: click two or three points on surfaces (two make a vertical cut through their line). The
+// selected brushes the plane crosses show the part kept and the part cut away; Tab switches between
+// keeping the back, the front or both, Enter cuts, Backspace takes back the last point.
 //
 // Draw: drag a rectangle on the surface under the mouse, release, move the mouse up to set the
 // height and click (or press Enter) to place the shape. Until something else is edited, changing
@@ -97,6 +102,9 @@ public:
     // The Vertex tool's selected corners, by position.
     const std::vector<Vec3>& selectedCorners() const { return m_corners; }
     void setSelectedCorners(std::vector<Vec3> corners) { m_corners = std::move(corners); }
+    // Clears the current tool's own selection (clip points, then selected corners), if it has
+    // one: the first thing Esc does.
+    bool clearToolState();
     void setTool(EditorTool tool) { m_tool = tool; }
     bool isDragging() const { return m_drag.kind != DragKind::None; }
     // Restores what the current drag changed.
@@ -126,6 +134,7 @@ private:
         MoveVertical,
         Face,
         Corners,
+        Extrude,
         ShapeBase,
         ShapeHeight,
         Gizmo
@@ -177,6 +186,7 @@ private:
         Vec3 cornerOffset;                // Corners: the move shown now
         bool cornerOnGrid = false;        // Corners: a corner was grabbed, so it lands on the grid
         bool vertical = false;            // Corners with Alt
+        float extrudeDistance = 0.0f;     // Extrude: how far out the new brush reaches
         std::optional<LevelItem> clicked; // Marquee: the item under the mouse when it began
         GizmoHandle handle;
         Aabb extent; // the selection's extent when a gizmo drag began
@@ -229,6 +239,10 @@ private:
     std::optional<VertexHandle> pickVertexHandle(const EditorDocument& document,
                                                  const ViewRect& rect) const;
     bool isCornerSelected(Vec3 corner) const;
+
+    // The plane through the clip points; nullopt until there are two that make one.
+    std::optional<DPlane> clipPlane() const;
+    void clipKeys(EditorDocument& document);
     void continueDrag(EditorDocument& document, const EditorSettings& settings, const Ray& ray);
     void continueGizmoDrag(EditorDocument& document, const EditorSettings& settings,
                            const Ray& ray);
@@ -248,6 +262,8 @@ private:
     std::optional<GizmoHandle> m_hoverHandle;
     std::optional<VertexHandle> m_hoverVertex;
     std::vector<Vec3> m_corners;
+    std::vector<Vec3> m_clipPoints;
+    ClipKeep m_clipKeep = ClipKeep::Back;
     float m_shapeHeight = 1.0f; // new shapes start as tall as the last one
     std::optional<PlacedShape> m_placedShape;
 };

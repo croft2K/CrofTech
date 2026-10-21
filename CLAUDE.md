@@ -33,8 +33,10 @@ edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo co
 drags preview live and record one command when released, and edits of several selected items are
 one compound command. Moves, turns, flips and scales of any brush shape go through
 `AffineTransform` (double precision, exact for quarter turns, flips and grid-aligned scales) and
-`SelectionDrag`. New shapes (`Shapes.h`) are polyhedra fitted to the drawn box, with corners on
-the box's sides placed exactly on them. Editing logic lives in `engine/editor` and is unit-tested; `apps/editor` holds
+`SelectionDrag`. New shapes (`Shapes.h`) are corner sets fitted to the drawn box and built as
+their convex hull. The Vertex tool moves corners with `withCornersMoved` (the hull of the moved
+corners, so corners are never recomputed); clip, subtract, hollow, merge and extrude are in
+`BrushOperations.h`. Editing logic lives in `engine/editor` and is unit-tested; `apps/editor` holds
 only the ImGui panels, the 3D view, gizmos and input.
 
 Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described in

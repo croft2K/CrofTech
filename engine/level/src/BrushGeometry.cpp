@@ -12,9 +12,7 @@
 namespace ct {
 namespace {
 
-// Points this close to a plane are on it, and corners this close together are one: far above the
-// error of double arithmetic on float corners, far below the editor's smallest grid (1/32 m).
-constexpr double kOnPlane = 1e-4;
+constexpr double kOnPlane = kOnPlaneDistance;
 constexpr std::size_t kNoPlane = std::numeric_limits<std::size_t>::max();
 // Building from planes starts with a box this far out on each axis. It is well outside the world,
 // so a solid that still reaches it is unbounded or outside the world.

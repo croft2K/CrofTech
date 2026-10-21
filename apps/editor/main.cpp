@@ -3,7 +3,8 @@
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
 // console docked around it, and the tool bar over the view. Hold the right mouse button in the view
 // to fly (WASD, Q/E down/up, Shift faster). Shortcuts: Q/W/E/R select, move, rotate and scale
-// tools, V vertex tool, B shape tool, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all,
+// tools, V vertex tool, C clip tool, B shape tool, Ctrl+H/J/K hollow, merge and subtract the
+// selected brushes, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all,
 // Ctrl+D duplicate, Del delete (in the vertex tool, the selected corners), arrow keys and Page
 // Up/Down nudge the selection (or selected corners) one grid step, F frame selection, [ and ] grid
 // size, Esc cancel or deselect.
@@ -136,7 +137,8 @@ std::optional<ct::EditorTool> toolShortcut() {
     constexpr std::pair<ImGuiKey, ct::EditorTool> kKeys[]{
         {ImGuiKey_Q, ct::EditorTool::Select}, {ImGuiKey_W, ct::EditorTool::Move},
         {ImGuiKey_E, ct::EditorTool::Rotate}, {ImGuiKey_R, ct::EditorTool::Scale},
-        {ImGuiKey_V, ct::EditorTool::Vertex}, {ImGuiKey_B, ct::EditorTool::Draw}};
+        {ImGuiKey_V, ct::EditorTool::Vertex}, {ImGuiKey_C, ct::EditorTool::Clip},
+        {ImGuiKey_B, ct::EditorTool::Draw}};
     for (const auto& [key, tool] : kKeys) {
         if (ImGui::IsKeyPressed(key, false)) {
             return tool;
@@ -359,6 +361,12 @@ int main(int argc, char** argv) {
                 ct::duplicateSelection(document, {grid, grid, 0.0f});
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_A)) {
                 ct::selectAll(document);
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_H)) {
+                ct::hollowSelection(document, grid);
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_J)) {
+                ct::mergeSelection(document);
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_K)) {
+                ct::subtractSelection(document);
             } else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && !viewport.isDragging()) {
                 if (editingCorners) {
                     if (ct::removeCorners(document, viewport.selectedCorners())) {
@@ -390,12 +398,12 @@ int main(int argc, char** argv) {
             } else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                 if (viewport.isDragging()) {
                     viewport.cancelDrag(document);
-                } else if (editingCorners) {
-                    viewport.setSelectedCorners({});
-                } else if (viewport.tool() != ct::EditorTool::Select) {
-                    viewport.setTool(ct::EditorTool::Select);
-                } else {
-                    document.clearSelection();
+                } else if (!viewport.clearToolState()) {
+                    if (viewport.tool() != ct::EditorTool::Select) {
+                        viewport.setTool(ct::EditorTool::Select);
+                    } else {
+                        document.clearSelection();
+                    }
                 }
             }
         }

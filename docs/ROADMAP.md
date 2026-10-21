@@ -68,10 +68,11 @@ In order; each step builds, tests and commits on its own.
       drawn as a rectangle then a height; the settings reshape the shape just placed.*
    3. *Vertex, edge and face editing, and cutting:* drag corners, edges and faces of any brush with
       snapping (edits that would make a brush concave or flat are refused); clip, extrude, hollow,
-      subtract and merge. Checks first whether plane-based brushes drift off the grid after many
-      corner edits, and changes how edited brushes are stored if they do. Also builds brush faces
-      by clipping polygons plane by plane (instead of intersecting every three planes), so the
-      64-face limit per brush can rise to several hundred.
+      subtract and merge. *Done (2026-10-21). A test showed float planes letting corners drift
+      off the grid (up to 1 mm at 512 m and 4 mm at 2 km after 1000 corner edits), so brushes are
+      now stored as corners and faces with planes derived, and built in double precision; corners
+      on the grid stay exact. Faces are built by clipping plane by plane, and the limit rose from
+      64 to 512 faces per brush.*
 7. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
    transport, with the network conditioner for latency and loss.
 8. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which

@@ -1,6 +1,7 @@
 #include "croftech/editor/EditorActions.h"
 
 #include "croftech/editor/BrushEditing.h"
+#include "croftech/editor/BrushOperations.h"
 #include "croftech/editor/LevelCommands.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/level/BrushGeometry.h"
@@ -41,6 +42,71 @@ bool turnAboutCentre(EditorDocument& document, const AffineTransform& aboutOrigi
     const AffineTransform onGrid =
         turn.then(AffineTransform::moveBy(snapToGrid(turnedMin, grid) - turnedMin));
     return transformSelection(document, onGrid, verb);
+}
+
+using BrushReplacement = std::pair<std::size_t, std::vector<Brush>>;
+
+// Replaces brushes, by index, with lists of brushes as one command: the first of each list takes
+// the brush's place, the rest go on the end, and a brush replaced by nothing is removed. Selects
+// the replacements plus keep (items the command doesn't move: entities, and brushes when nothing is
+// removed).
+void replaceBrushes(EditorDocument& document, const std::string& name,
+                    std::vector<BrushReplacement> replacements, std::vector<LevelItem> keep) {
+    const Level& level = document.level();
+    std::size_t end = level.brushes.size();
+    std::vector<std::unique_ptr<Command>> commands;
+    std::vector<std::size_t> removed;
+    std::vector<std::size_t> added; // indices before any removal
+    for (auto& [index, brushes] : replacements) {
+        if (brushes.empty()) {
+            removed.push_back(index);
+            continue;
+        }
+        commands.push_back(makeSetBrush(name, index, level.brushes[index], brushes.front()));
+        added.push_back(index);
+        for (std::size_t i = 1; i < brushes.size(); ++i) {
+            commands.push_back(makeInsertBrush(name, end, std::move(brushes[i])));
+            added.push_back(end++);
+        }
+    }
+    std::sort(removed.begin(), removed.end());
+    for (auto it = removed.rbegin(); it != removed.rend(); ++it) {
+        commands.push_back(makeRemoveBrush(name, *it, level.brushes[*it]));
+    }
+    runCommands(document, name, std::move(commands));
+    for (const std::size_t index : added) {
+        const auto below = std::lower_bound(removed.begin(), removed.end(), index);
+        keep.push_back(LevelItem::brush(index - static_cast<std::size_t>(below - removed.begin())));
+    }
+    document.setSelection(std::move(keep));
+}
+
+std::vector<std::size_t> selectedBrushes(const EditorDocument& document) {
+    std::vector<std::size_t> brushes;
+    for (const LevelItem& item : document.selection()) {
+        if (item.kind == LevelItem::Kind::Brush) {
+            brushes.push_back(item.index);
+        }
+    }
+    return brushes;
+}
+
+std::vector<LevelItem> selectedEntities(const EditorDocument& document) {
+    std::vector<LevelItem> entities;
+    for (const LevelItem& item : document.selection()) {
+        if (item.kind == LevelItem::Kind::Entity) {
+            entities.push_back(item);
+        }
+    }
+    return entities;
+}
+
+std::size_t brushCountAfter(const Level& level, const std::vector<BrushReplacement>& replacements) {
+    std::size_t count = level.brushes.size();
+    for (const auto& [index, brushes] : replacements) {
+        count = count + brushes.size() - 1;
+    }
+    return count;
 }
 
 } // namespace
@@ -221,6 +287,120 @@ bool removeCorners(EditorDocument& document, std::span<const Vec3> corners) {
         return false;
     }
     runCommands(document, name, std::move(commands));
+    return true;
+}
+
+bool clipSelection(EditorDocument& document, const DPlane& plane, ClipKeep keep) {
+    std::vector<BrushReplacement> replacements;
+    std::vector<LevelItem> uncut = selectedEntities(document);
+    for (const std::size_t index : selectedBrushes(document)) {
+        const std::optional<BrushSplit> split = splitBrush(document.level().brushes[index], plane);
+        if (!split) {
+            return false;
+        }
+        if (!split->back || !split->front) {
+            uncut.push_back(LevelItem::brush(index));
+            continue;
+        }
+        std::vector<Brush> kept;
+        if (keep != ClipKeep::Front) {
+            kept.push_back(*split->back);
+        }
+        if (keep != ClipKeep::Back) {
+            kept.push_back(*split->front);
+        }
+        replacements.emplace_back(index, std::move(kept));
+    }
+    if (replacements.empty() ||
+        brushCountAfter(document.level(), replacements) > kMaxLevelBrushes) {
+        return false;
+    }
+    replaceBrushes(document, "Clip " + describeSelection(document), std::move(replacements),
+                   std::move(uncut));
+    return true;
+}
+
+bool subtractSelection(EditorDocument& document) {
+    const Level& level = document.level();
+    const std::vector<std::size_t> cutters = selectedBrushes(document);
+    if (cutters.empty()) {
+        return false;
+    }
+    std::vector<BrushReplacement> replacements;
+    for (std::size_t index = 0; index < level.brushes.size(); ++index) {
+        if (document.isSelected(LevelItem::brush(index))) {
+            continue;
+        }
+        std::vector<Brush> pieces{level.brushes[index]};
+        for (const std::size_t cutter : cutters) {
+            std::vector<Brush> next;
+            for (const Brush& piece : pieces) {
+                const auto left = subtractBrush(piece, level.brushes[cutter]);
+                if (!left) {
+                    return false;
+                }
+                next.insert(next.end(), left->begin(), left->end());
+            }
+            pieces = std::move(next);
+        }
+        if (!(pieces.size() == 1 && pieces.front() == level.brushes[index])) {
+            replacements.emplace_back(index, std::move(pieces));
+        }
+    }
+    if (replacements.empty()) {
+        return false;
+    }
+    const std::string name = "Subtract " + describeSelection(document);
+    for (const std::size_t cutter : cutters) {
+        replacements.emplace_back(cutter, std::vector<Brush>{});
+    }
+    if (brushCountAfter(level, replacements) > kMaxLevelBrushes) {
+        return false;
+    }
+    replaceBrushes(document, name, std::move(replacements), {});
+    document.clearSelection();
+    return true;
+}
+
+bool hollowSelection(EditorDocument& document, float thickness) {
+    std::vector<BrushReplacement> replacements;
+    for (const std::size_t index : selectedBrushes(document)) {
+        std::optional<std::vector<Brush>> walls =
+            hollowBrush(document.level().brushes[index], thickness);
+        if (!walls || walls->empty()) {
+            return false;
+        }
+        replacements.emplace_back(index, std::move(*walls));
+    }
+    if (replacements.empty() ||
+        brushCountAfter(document.level(), replacements) > kMaxLevelBrushes) {
+        return false;
+    }
+    replaceBrushes(document, "Hollow " + describeSelection(document), std::move(replacements),
+                   selectedEntities(document));
+    return true;
+}
+
+bool mergeSelection(EditorDocument& document) {
+    const std::vector<std::size_t> indices = selectedBrushes(document);
+    if (indices.size() < 2) {
+        return false;
+    }
+    std::vector<Brush> brushes;
+    for (const std::size_t index : indices) {
+        brushes.push_back(document.level().brushes[index]);
+    }
+    std::optional<Brush> merged = mergeBrushes(brushes);
+    if (!merged) {
+        return false;
+    }
+    std::vector<BrushReplacement> replacements;
+    replacements.emplace_back(indices.front(), std::vector<Brush>{std::move(*merged)});
+    for (std::size_t i = 1; i < indices.size(); ++i) {
+        replacements.emplace_back(indices[i], std::vector<Brush>{});
+    }
+    replaceBrushes(document, "Merge " + describeSelection(document), std::move(replacements),
+                   selectedEntities(document));
     return true;
 }
 

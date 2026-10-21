@@ -1,5 +1,6 @@
 #include "LevelViewport.h"
 
+#include "croftech/editor/BrushOperations.h"
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/LevelCommands.h"
 #include "croftech/level/BrushGeometry.h"
@@ -455,6 +456,9 @@ void LevelViewport::update(EditorDocument& document, const EditorSettings& setti
                 return std::find(vertices.begin(), vertices.end(), corner) != vertices.end();
             });
     });
+    if (m_tool == EditorTool::Clip) {
+        clipKeys(document);
+    }
     m_hoverHandle = mouseOverView ? pickGizmo(document, rect) : std::nullopt;
     m_hoverVertex = mouseOverView ? pickVertexHandle(document, rect) : std::nullopt;
     m_hover = mouseOverView && !m_hoverHandle && !m_hoverVertex ? pick(document, settings, ray)
@@ -478,6 +482,16 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
         beginCornerDrag(document, *m_hoverVertex);
         return;
     }
+    if (m_tool == EditorTool::Clip) {
+        // A fourth point starts a new cut.
+        if (const std::optional<Vec3> point = surfacePoint(document, ray)) {
+            if (m_clipPoints.size() == 3) {
+                m_clipPoints.clear();
+            }
+            m_clipPoints.push_back(snapToGrid(*point, settings.grid()));
+        }
+        return;
+    }
     if (m_tool == EditorTool::Draw) {
         const std::optional<Vec3> point = surfacePoint(document, ray);
         if (point) {
@@ -497,6 +511,16 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
     // selection box and a click selects what is under the mouse. The Vertex tool moves corners
     // only by their handles; its selection box picks corners.
     const bool vertexTool = m_tool == EditorTool::Vertex;
+    if (m_hover && io.KeyCtrl && io.KeyShift && !vertexTool &&
+        m_hover->target.kind == LevelItem::Kind::Brush &&
+        document.singleSelected() == m_hover->target) {
+        m_drag.kind = DragKind::Extrude;
+        m_drag.target = m_hover->target;
+        m_drag.grabPoint = ray.origin + ray.direction * m_hover->distance;
+        m_drag.brushBefore = document.level().brushes[m_hover->target.index];
+        m_drag.face = m_hover->face;
+        return;
+    }
     if (m_hover && !io.KeyCtrl && !vertexTool && document.isSelected(m_hover->target)) {
         const Pick hit = *m_hover;
         m_drag.target = hit.target;
@@ -585,6 +609,60 @@ void LevelViewport::continueCornerDrag(EditorDocument& document, const EditorSet
     if (!(offset == m_drag.cornerOffset) &&
         m_drag.selection->previewCorners(document, m_drag.corners, offset)) {
         m_drag.cornerOffset = offset;
+    }
+}
+
+bool LevelViewport::clearToolState() {
+    if (!m_clipPoints.empty()) {
+        m_clipPoints.clear();
+        return true;
+    }
+    if (!m_corners.empty()) {
+        m_corners.clear();
+        return true;
+    }
+    return false;
+}
+
+std::optional<DPlane> LevelViewport::clipPlane() const {
+    if (m_clipPoints.size() < 2) {
+        return std::nullopt;
+    }
+    const DVec3 a = toDouble(m_clipPoints[0]);
+    const DVec3 b = toDouble(m_clipPoints[1]);
+    DVec3 c;
+    if (m_clipPoints.size() == 3) {
+        c = toDouble(m_clipPoints[2]);
+    } else {
+        // Two points cut straight down through their line; a vertical line, facing the camera.
+        const bool vertical = a.x == b.x && a.y == b.y;
+        c = a + (vertical ? toDouble(cameraBasis(m_camera).right) : DVec3{0.0, 0.0, 1.0});
+    }
+    const DPlane plane = planeThroughPoints(a, b, c);
+    if (!(length(plane.normal) > 0.0)) {
+        return std::nullopt;
+    }
+    return plane;
+}
+
+void LevelViewport::clipKeys(EditorDocument& document) {
+    if (ImGui::GetIO().WantTextInput) {
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        m_clipKeep = m_clipKeep == ClipKeep::Back
+                         ? ClipKeep::Front
+                         : (m_clipKeep == ClipKeep::Front ? ClipKeep::Both : ClipKeep::Back);
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && !m_clipPoints.empty()) {
+        m_clipPoints.pop_back();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
+        const std::optional<DPlane> plane = clipPlane();
+        if (plane && clipSelection(document, *plane, m_clipKeep)) {
+            m_clipPoints.clear();
+        }
     }
 }
 
@@ -752,6 +830,14 @@ void LevelViewport::continueDrag(EditorDocument& document, const EditorSettings&
     case DragKind::Corners:
         continueCornerDrag(document, settings, ray);
         return;
+    case DragKind::Extrude: {
+        const Plane face = facePlane(m_drag.brushBefore, m_drag.face);
+        if (const auto s =
+                closestAlongAxis(m_drag.grabPoint, face.normal, ray.origin, ray.direction)) {
+            m_drag.extrudeDistance = std::max(0.0f, snapToGrid(*s, grid));
+        }
+        return;
+    }
     case DragKind::Gizmo:
         continueGizmoDrag(document, settings, ray);
         return;
@@ -863,6 +949,13 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
         }
         return;
     }
+    case DragKind::Extrude:
+        if (drag.extrudeDistance > 0.0f) {
+            if (auto block = extrudeFace(drag.brushBefore, drag.face, drag.extrudeDistance)) {
+                addBrushes(document, {std::move(*block)}, "Extrude face");
+            }
+        }
+        return;
     case DragKind::Corners:
         if (drag.selection->commit(document,
                                    drag.corners.size() == 1 ? "Move corner" : "Move corners")) {
@@ -1063,14 +1156,26 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
 
     // The face Shift-drag would move, or is moving.
     const std::optional<LevelItem> single = document.singleSelected();
-    const bool showFace =
-        m_drag.kind == DragKind::Face || (!isDragging() && ImGui::GetIO().KeyShift && m_hover &&
-                                          single && m_hover->target == *single);
+    const bool showFace = m_drag.kind == DragKind::Face || m_drag.kind == DragKind::Extrude ||
+                          (!isDragging() && ImGui::GetIO().KeyShift && m_hover && single &&
+                           m_hover->target == *single);
     if (showFace && single && single->kind == LevelItem::Kind::Brush) {
         const Brush& brush = level.brushes[single->index];
-        const std::size_t face = m_drag.kind == DragKind::Face ? m_drag.movedFace : m_hover->face;
+        std::size_t face = m_hover ? m_hover->face : 0;
+        if (m_drag.kind == DragKind::Face) {
+            face = m_drag.movedFace;
+        } else if (m_drag.kind == DragKind::Extrude) {
+            face = m_drag.face;
+        }
         if (face < brush.faces.size()) {
             painter.polygon(faceVertices(brush, face), kFaceColor, 3.0f);
+        }
+    }
+
+    if (m_drag.kind == DragKind::Extrude && m_drag.extrudeDistance > 0.0f) {
+        if (const auto block =
+                extrudeFace(m_drag.brushBefore, m_drag.face, m_drag.extrudeDistance)) {
+            painter.brush(*block, kSelectedColor, 2.0f);
         }
     }
 
@@ -1109,6 +1214,44 @@ void LevelViewport::drawOverlay(const EditorDocument& document, const EditorSett
                         std::max(m_drag.screenStartY, mouse.y)};
         drawList.AddRectFilled(from, to, kMarqueeFill);
         drawList.AddRect(from, to, kMarqueeColor);
+    }
+
+    if (m_tool == EditorTool::Clip) {
+        // Each selected brush the plane crosses: the part kept, and the part cut away in red.
+        if (const std::optional<DPlane> plane = clipPlane()) {
+            for (const LevelItem& item : document.selection()) {
+                if (item.kind != LevelItem::Kind::Brush) {
+                    continue;
+                }
+                const auto split = splitBrush(level.brushes[item.index], *plane);
+                if (!split || !split->back || !split->front) {
+                    continue;
+                }
+                const bool keepBack = m_clipKeep != ClipKeep::Front;
+                const bool keepFront = m_clipKeep != ClipKeep::Back;
+                painter.brush(*split->back, keepBack ? kSelectedColor : kInvalidColor,
+                              keepBack ? 2.5f : 1.5f);
+                painter.brush(*split->front, keepFront ? kSelectedColor : kInvalidColor,
+                              keepFront ? 2.5f : 1.5f);
+            }
+        }
+        for (std::size_t i = 0; i < m_clipPoints.size(); ++i) {
+            if (i > 0) {
+                painter.line(m_clipPoints[i - 1], m_clipPoints[i], kFaceColor, 2.0f);
+            }
+            if (const auto point = painter.projector().screen(m_clipPoints[i])) {
+                drawList.AddCircleFilled(*point, ImGui::GetFontSize() * 0.3f, kFaceColor);
+            }
+        }
+        static constexpr const char* kKeepNames[]{"back", "front", "both"};
+        const std::string label =
+            m_clipPoints.size() < 2
+                ? std::string("click 2 or 3 points on surfaces")
+                : std::format("keep {} (Tab)\nEnter to cut, Backspace to undo a point",
+                              kKeepNames[static_cast<int>(m_clipKeep)]);
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        drawList.AddText({mouse.x + ImGui::GetFontSize(), mouse.y + ImGui::GetFontSize()},
+                         kFaceColor, label.c_str());
     }
 
     if (m_tool == EditorTool::Vertex) {

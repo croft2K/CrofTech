@@ -11,6 +11,11 @@
 
 namespace ct {
 
+// Points this close to a plane (metres) count as on it, and corners this close together are one:
+// far above the error of double arithmetic on float corners, far below the editor's smallest grid
+// (1/32 m).
+inline constexpr double kOnPlaneDistance = 1e-4;
+
 // A plane in double precision: the points p with dot(normal, p) == distance, the normal pointing
 // out of the solid. The normal needn't be unit length. The plane through three grid points has
 // their cross product as an exact normal, which keeps every test of a grid point against it

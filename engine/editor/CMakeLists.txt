@@ -1,5 +1,6 @@
 add_library(ct_editor STATIC
     include/croftech/editor/BrushEditing.h
+    include/croftech/editor/BrushOperations.h
     include/croftech/editor/CommandStack.h
     include/croftech/editor/EditorActions.h
     include/croftech/editor/EditorDocument.h
@@ -9,6 +10,7 @@ add_library(ct_editor STATIC
     include/croftech/editor/Shapes.h
     include/croftech/editor/AffineTransform.h
     src/BrushEditing.cpp
+    src/BrushOperations.cpp
     src/CommandStack.cpp
     src/EditorActions.cpp
     src/EditorDocument.cpp

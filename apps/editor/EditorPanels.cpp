@@ -38,7 +38,7 @@ struct ToolInfo {
     const char* hint;
 };
 
-constexpr std::array<ToolInfo, 6> kTools{{
+constexpr std::array<ToolInfo, 7> kTools{{
     {EditorTool::Select, "Select", "Q", "Select: click, Ctrl-click to add, drag a box"},
     {EditorTool::Move, "Move", "W", "Move: drag an arrow, or a square to move in its plane"},
     {EditorTool::Rotate, "Rotate", "E", "Rotate: drag a ring"},
@@ -46,6 +46,8 @@ constexpr std::array<ToolInfo, 6> kTools{{
     {EditorTool::Vertex, "Vertex", "V",
      "Vertex: drag the corners, edge middles or face middles of the selected brushes; "
      "Ctrl-click or drag a box to pick several, Del removes corners"},
+    {EditorTool::Clip, "Clip", "C",
+     "Clip: click 2 or 3 points to cut the selected brushes; Tab picks the side, Enter cuts"},
     {EditorTool::Draw, "Shape", "B",
      "Shape: drag a rectangle, release, move up for the height, click to place"},
 }};
@@ -100,6 +102,16 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         }
         if (ImGui::MenuItem("Delete", "Del", false, hasSelection)) {
             deleteSelection(document);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Hollow", "Ctrl+H", false, hasSelection)) {
+            hollowSelection(document, grid);
+        }
+        if (ImGui::MenuItem("Merge", "Ctrl+J", false, document.selection().size() >= 2)) {
+            mergeSelection(document);
+        }
+        if (ImGui::MenuItem("Subtract", "Ctrl+K", false, hasSelection)) {
+            subtractSelection(document);
         }
         if (ImGui::BeginMenu("Transform", hasSelection)) {
             for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -454,6 +466,22 @@ void EditorPanels::drawSelectionActions(EditorDocument& document, const EditorSe
     if (ImGui::Button("Delete")) {
         deleteSelection(document);
     }
+
+    ImGui::SeparatorText("Brushes");
+    if (ImGui::Button("Hollow")) {
+        hollowSelection(document, grid);
+    }
+    ImGui::SetItemTooltip("Walls one grid step thick around an empty inside (Ctrl+H)");
+    ImGui::SameLine();
+    if (ImGui::Button("Merge")) {
+        mergeSelection(document);
+    }
+    ImGui::SetItemTooltip("One brush around all the selected ones (Ctrl+J)");
+    ImGui::SameLine();
+    if (ImGui::Button("Subtract")) {
+        subtractSelection(document);
+    }
+    ImGui::SetItemTooltip("Cut these out of the brushes they overlap, then delete them (Ctrl+K)");
 }
 
 void EditorPanels::commitEntity(EditorDocument& document, std::size_t index,

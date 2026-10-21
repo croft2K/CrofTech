@@ -3,6 +3,7 @@
 #include "croftech/core/Math.h"
 #include "croftech/editor/AffineTransform.h"
 #include "croftech/editor/EditorDocument.h"
+#include "croftech/level/BrushGeometry.h"
 
 #include <cstddef>
 #include <optional>
@@ -59,5 +60,24 @@ bool flipSelection(EditorDocument& document, std::size_t axis, float grid);
 // closed. False, changing nothing, if any brush would refuse.
 bool moveCorners(EditorDocument& document, std::span<const Vec3> corners, Vec3 offset);
 bool removeCorners(EditorDocument& document, std::span<const Vec3> corners);
+
+// Which part of a clipped brush to keep: behind the plane, in front of it, or both as two brushes.
+enum class ClipKeep { Back, Front, Both };
+
+// Cuts every selected brush the plane crosses and keeps the chosen part (the front part of Both
+// becomes a new brush), selecting what is kept. Brushes the plane misses are left alone. False,
+// changing nothing, if the plane crosses no selected brush or a part could not be built.
+bool clipSelection(EditorDocument& document, const DPlane& plane, ClipKeep keep);
+
+// Cuts the selected brushes out of every other brush they overlap (doorways, windows), then
+// deletes them. False, changing nothing, if they overlap no other brush.
+bool subtractSelection(EditorDocument& document);
+
+// Replaces each selected brush with walls thickness thick around an empty inside, and selects
+// them. False, changing nothing, if a brush is too thin.
+bool hollowSelection(EditorDocument& document, float thickness);
+
+// Replaces two or more selected brushes with one around all their corners (their convex hull).
+bool mergeSelection(EditorDocument& document);
 
 } // namespace ct
