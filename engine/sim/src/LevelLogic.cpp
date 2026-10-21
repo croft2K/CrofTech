@@ -133,6 +133,27 @@ void LevelLogic::updateTriggers(const MovementSettings& movement) {
             }
         }
     }
+
+    for (std::size_t i = 0; i < world.checkpoints.size(); ++i) {
+        Checkpoint& checkpoint = world.checkpoints.components()[i];
+        std::uint32_t index = 0;
+        const GameLevel::Entity* entity =
+            levelEntityOf(world.checkpoints.entities()[i], LogicClass::Checkpoint, index);
+        if (entity == nullptr || entity->model == nullptr ||
+            (checkpoint.flags & kLogicEnabled) == 0 ||
+            (checkpoint.flags & kCheckpointReached) != 0) {
+            continue;
+        }
+        for (std::uint32_t slot = 0; slot < kMaxPlayers; ++slot) {
+            if ((present & (1u << slot)) != 0 &&
+                entity->model->overlapsBox(positions[slot], movement.halfExtents)) {
+                checkpoint.flags |= kCheckpointReached;
+                checkpoint.reachedTick = m_state.tick;
+                fire(index, LogicEvent::OnReached, players[slot]);
+                break;
+            }
+        }
+    }
     deliverQueued();
 }
 
@@ -203,6 +224,18 @@ void LevelLogic::apply(const Queued& input) {
                 // Players still inside when it is switched back on go in again.
                 trigger->flags &= ~kLogicEnabled;
                 trigger->playersInside = 0;
+            }
+        }
+        return;
+    case LogicClass::Checkpoint:
+        if (Checkpoint* checkpoint = world.checkpoints.get(id)) {
+            const bool enable =
+                input.input == LogicInput::Enable ||
+                (input.input == LogicInput::Toggle && (checkpoint->flags & kLogicEnabled) == 0);
+            if (enable) {
+                checkpoint->flags |= kLogicEnabled;
+            } else if (input.input == LogicInput::Disable || input.input == LogicInput::Toggle) {
+                checkpoint->flags &= ~kLogicEnabled;
             }
         }
         return;

@@ -24,6 +24,7 @@ add_executable(ct_unit_tests
     unit/net/ProtocolTests.cpp
     unit/sim/CollisionWorldTests.cpp
     unit/sim/MovementConfigTests.cpp
+    unit/sim/SaveGameTests.cpp
     unit/sim/StateSaveTests.cpp
     unit/sim/WorldTests.cpp
     unit/TestFiles.h

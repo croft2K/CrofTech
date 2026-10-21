@@ -80,11 +80,12 @@ TEST_CASE("snapshots carry the state and the player") {
     state->tick = 77;
     const ct::EntityId player = ct::spawnPlayer(state->world, {}, {{1.0f, 2.0f, 3.0f}, 0}, 0);
     ct::ByteWriter writer;
-    ct::writeSnapshot(writer, 41, player, *state);
+    ct::writeSnapshot(writer, 3, 41, player, *state);
 
     const auto snapshot = ct::readSnapshot(writer.bytes());
     REQUIRE(snapshot.has_value());
     CHECK(snapshot->tick == 77);
+    CHECK(snapshot->timeline == 3);
     CHECK(snapshot->lastInputSequence == 41);
     CHECK(snapshot->player == player);
     auto loaded = std::make_unique<ct::State>();
@@ -93,10 +94,10 @@ TEST_CASE("snapshots carry the state and the player") {
     CHECK(ct::hashState(*loaded) == ct::hashState(*state));
 
     CHECK_FALSE(ct::readSnapshot(bytesOf(ct::GoodbyeMessage{})));
-    std::vector<std::byte> header(writer.bytes().begin(), writer.bytes().begin() + 17);
+    std::vector<std::byte> header(writer.bytes().begin(), writer.bytes().begin() + 21);
     CHECK_FALSE(ct::readSnapshot(header)); // no state after the header
     std::vector<std::byte> badPlayer = writer.bytes();
-    badPlayer[9] = std::byte{0xFF}; // player index far past the entity limit
-    badPlayer[10] = std::byte{0x10};
+    badPlayer[13] = std::byte{0xFF}; // player index far past the entity limit
+    badPlayer[14] = std::byte{0x10};
     CHECK_FALSE(ct::readSnapshot(badPlayer));
 }

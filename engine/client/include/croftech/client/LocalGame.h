@@ -6,7 +6,12 @@
 #include "croftech/server/ServerThread.h"
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <span>
+#include <string>
+#include <vector>
 
 namespace ct {
 
@@ -18,9 +23,9 @@ class LocalGame {
 public:
     using Clock = std::chrono::steady_clock;
 
-    // The level must have a player spawn.
+    // The player starts at the start point if given, otherwise at the level's player spawn.
     LocalGame(const Level& level, const MovementSettings& movement,
-              const LinkConditions& conditions = {});
+              const LinkConditions& conditions = {}, std::optional<SpawnPoint> start = {});
     ~LocalGame();
     LocalGame(const LocalGame&) = delete;
     LocalGame& operator=(const LocalGame&) = delete;
@@ -40,8 +45,18 @@ public:
     // The newest state the client has, or null.
     const State* latestState() const { return m_client.current(); }
     EntityId player() const { return m_client.player(); }
+    // Changes once the client sees a loaded state, when its view should take the loaded angles.
+    std::uint32_t timeline() const { return m_client.timeline(); }
     // The server's copy of the level, which never changes while it runs.
     const GameLevel& level() const { return m_server.level(); }
+
+    // The game's state now, as StateSave bytes, for a save game.
+    std::vector<std::byte> save();
+    // Replaces the game's state with a saved one, which must be of this level. Fails, changing
+    // nothing, if the bytes don't load.
+    bool load(std::span<const std::byte> state, std::string& error);
+    // The state as of a checkpoint reached since the last call, if any, for a checkpoint save.
+    std::optional<std::vector<std::byte>> takeCheckpoint();
 
     float serverTickMilliseconds() const { return m_thread.lastTickMilliseconds(); }
     LinkStats linkStats() const { return m_link.stats(); }
@@ -56,6 +71,7 @@ private:
     Server m_server;
     ServerThread m_thread;
     ClientConnection m_client;
+    std::uint32_t m_checkpointsTaken = 0;
 };
 
 } // namespace ct

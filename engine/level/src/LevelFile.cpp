@@ -1,6 +1,7 @@
 #include "croftech/level/LevelFile.h"
 
 #include "croftech/core/ConfigFile.h"
+#include "croftech/core/Hash.h"
 #include "croftech/level/BrushGeometry.h"
 
 #include <algorithm>
@@ -371,6 +372,12 @@ bool saveLevelFile(const Level& level, const std::filesystem::path& path, std::s
         return false;
     }
     return true;
+}
+
+std::uint64_t levelContentHash(const Level& level) {
+    std::string error;
+    const std::optional<std::string> text = formatLevel(level, error);
+    return text ? hashBytes(std::as_bytes(std::span{*text})) : 0;
 }
 
 } // namespace ct

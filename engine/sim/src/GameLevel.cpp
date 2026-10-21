@@ -37,6 +37,9 @@ LogicClass logicClassOf(std::string_view className) {
     if (className == "trigger") {
         return LogicClass::Trigger;
     }
+    if (className == "checkpoint") {
+        return LogicClass::Checkpoint;
+    }
     if (className == "relay") {
         return LogicClass::Relay;
     }
@@ -52,14 +55,16 @@ LogicClass logicClassOf(std::string_view className) {
     return LogicClass::None;
 }
 
-// Whether the brush is fixed world geometry. Triggers are volumes players walk through, and
-// movers collide where they have moved to.
+// Classes whose brushes are a model of their own rather than world geometry: triggers and
+// checkpoints are volumes players walk through, and movers collide where they have moved to.
+bool hasModel(LogicClass logicClass) {
+    return logicClass == LogicClass::Trigger || logicClass == LogicClass::Checkpoint ||
+           logicClass == LogicClass::Mover;
+}
+
 bool isStatic(const Level& level, const Brush& brush) {
-    if (brush.entity >= level.entities.size()) {
-        return true;
-    }
-    const LogicClass logicClass = logicClassOf(level.entities[brush.entity].className);
-    return logicClass != LogicClass::Trigger && logicClass != LogicClass::Mover;
+    return brush.entity >= level.entities.size() ||
+           !hasModel(logicClassOf(level.entities[brush.entity].className));
 }
 
 std::vector<Brush> staticBrushes(const Level& level) {
@@ -130,8 +135,7 @@ GameLevel::GameLevel(const Level& level)
     }
     for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
         readEntity(level, i);
-        if (m_entities[i].logicClass == LogicClass::Trigger ||
-            m_entities[i].logicClass == LogicClass::Mover) {
+        if (hasModel(m_entities[i].logicClass)) {
             if (owned[i].empty()) {
                 m_warnings.push_back(std::format("{} has no brushes", describe(level, i)));
             } else {
@@ -164,6 +168,7 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index) {
         entity.once = flagProperty(levelEntity, *entityClass, "once");
         entity.startEnabled = !flagProperty(levelEntity, *entityClass, "start_disabled");
         break;
+    case LogicClass::Checkpoint:
     case LogicClass::Relay:
         entity.startEnabled = !flagProperty(levelEntity, *entityClass, "start_disabled");
         break;
@@ -293,6 +298,9 @@ void GameLevel::spawnLogic() {
         switch (entity.logicClass) {
         case LogicClass::Trigger:
             world.triggers.add(entity.id, {enabled, 0});
+            break;
+        case LogicClass::Checkpoint:
+            world.checkpoints.add(entity.id, {enabled, 0});
             break;
         case LogicClass::Relay:
             world.relays.add(entity.id, {enabled});

@@ -339,3 +339,12 @@ TEST_CASE("spawn points read origin and yaw in degrees") {
     CHECK_FALSE(ct::readSpawnPoints(level, error).has_value());
     CHECK(error == "entity 3 (player_spawn): origin is outside the world");
 }
+
+TEST_CASE("the content hash tells a level from an edited copy") {
+    const ct::Level level = ct::test::makeMovementTestLevel();
+    ct::Level same = level;
+    CHECK(ct::levelContentHash(same) == ct::levelContentHash(level));
+    CHECK(ct::levelContentHash(level) != 0);
+    ct::setProperty(same.entities.front(), "yaw", "45");
+    CHECK(ct::levelContentHash(same) != ct::levelContentHash(level));
+}

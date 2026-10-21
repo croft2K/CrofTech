@@ -536,6 +536,18 @@ LevelViewport::Ray LevelViewport::PaneView::rayThrough(float screenX, float scre
     return {onPlane - forward * kOrthoBackDistance, forward};
 }
 
+const Camera* LevelViewport::camera3D() const {
+    if (m_panes[m_active].mode == ViewMode::Perspective) {
+        return &m_panes[m_active].camera;
+    }
+    for (std::size_t i = 0; i < paneCount(); ++i) {
+        if (m_panes[i].mode == ViewMode::Perspective) {
+            return &m_panes[i].camera;
+        }
+    }
+    return nullptr;
+}
+
 std::vector<LevelViewport::PaneDraw> LevelViewport::paneDraws(const ViewRect& region) const {
     std::vector<PaneDraw> draws;
     for (std::size_t i = 0; i < paneCount(); ++i) {

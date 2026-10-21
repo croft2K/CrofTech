@@ -40,6 +40,14 @@ constexpr SignalInfo kSwitchInputs[] = {
     {"toggle", "Switch on if off, off if on"},
 };
 
+constexpr PropertyInfo kCheckpointProperties[] = {
+    kName,
+    kStartDisabled,
+};
+constexpr SignalInfo kCheckpointEvents[] = {
+    {"on_reached", "The first player came into it, and the game was saved"},
+};
+
 constexpr PropertyInfo kRelayProperties[] = {
     kOrigin,
     kName,
@@ -118,6 +126,8 @@ constexpr EntityClassInfo kClasses[] = {
     {kPlayerSpawnClass, "Where a player starts", EntityShape::Point, kSpawnProperties, {}, {}},
     {"trigger", "An invisible volume that fires events when players go in and out",
      EntityShape::Brush, kTriggerProperties, kTriggerEvents, kSwitchInputs},
+    {"checkpoint", "An invisible volume that saves the game the first time a player comes into it",
+     EntityShape::Brush, kCheckpointProperties, kCheckpointEvents, kSwitchInputs},
     {"relay", "Passes a trigger input on to its outputs, unless switched off", EntityShape::Point,
      kRelayProperties, kRelayEvents, kRelayInputs},
     {"counter", "Fires an event after a number of add inputs", EntityShape::Point,
@@ -164,6 +174,13 @@ constexpr EntityPreset kPresets[] = {
      {},
      false,
      {2.0f, 2.0f, 2.0f}},
+    {"Checkpoint",
+     "Saves the game the first time a player walks into it",
+     "checkpoint",
+     {},
+     {},
+     false,
+     {4.0f, 4.0f, 2.0f}},
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,

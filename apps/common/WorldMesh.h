@@ -21,7 +21,7 @@ struct WorldMesh {
 enum class MeshPurpose : std::uint8_t { Editing, Playing };
 
 // Triangulates every brush face, with a flat colour per brush so shapes are easy to tell apart, and
-// a colour per class for the brushes of movers and triggers.
+// a colour per class for the brushes of movers, triggers and checkpoints.
 WorldMesh buildWorldMesh(const Level& level, MeshPurpose purpose);
 
 } // namespace ct

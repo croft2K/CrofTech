@@ -29,7 +29,7 @@ public:
     void runMovers(const MovementSettings& movement);
     // Players walking into doors and standing on lifts, after they have moved.
     void activateMovers(const MovementSettings& movement);
-    // Players going into and out of triggers, after they have moved.
+    // Players going into and out of triggers and reaching checkpoints, after they have moved.
     void updateTriggers(const MovementSettings& movement);
 
 private:

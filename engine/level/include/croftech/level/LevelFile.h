@@ -3,6 +3,7 @@
 #include "croftech/level/Level.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -52,6 +53,10 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error);
 std::optional<std::string> formatLevel(const Level& level, std::string& error);
 
 std::optional<Level> loadLevelFile(const std::filesystem::path& path, std::string& error);
+
+// A hash of the level as its file would be written. Saves record it to tell whether the level
+// has changed since; a level that can't be written hashes to 0.
+std::uint64_t levelContentHash(const Level& level);
 
 // Writes a temporary file and renames it over the target, so a failed save never leaves a
 // half-written level behind.

@@ -14,7 +14,7 @@
 namespace ct {
 
 // The logic classes the simulation runs (level/EntityClasses.h describes them for editors).
-enum class LogicClass : std::uint8_t { None, Trigger, Relay, Counter, Timer, Mover };
+enum class LogicClass : std::uint8_t { None, Trigger, Checkpoint, Relay, Counter, Timer, Mover };
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
 // level is built, rather than compared as text each tick.
@@ -78,12 +78,12 @@ public:
         LogicClass logicClass = LogicClass::None;
         EntityId id; // in the starting state; invalid if the entity isn't simulated
         std::span<const Output> outputs;
-        const CollisionWorld* model = nullptr; // its brushes: triggers and movers
+        const CollisionWorld* model = nullptr; // its brushes: triggers, checkpoints, movers
 
         // Settings, read from the level through EntityClasses with every value clamped to its
         // range, so play never sees one the editor wouldn't allow.
         bool once = false;               // trigger
-        bool startEnabled = true;        // trigger, relay
+        bool startEnabled = true;        // trigger, checkpoint, relay
         std::uint32_t count = 1;         // counter
         std::uint32_t intervalTicks = 1; // timer
         bool repeat = true;              // timer

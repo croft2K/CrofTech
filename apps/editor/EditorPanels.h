@@ -20,6 +20,7 @@ struct MenuRequests {
     const EntityClassInfo* addEntity = nullptr; // a point entity, at the placement point
     const EntityPreset* addPreset = nullptr;    // a ready-made brush entity, there too
     bool play = false;
+    bool playFromHere = false; // from the 3D camera
 };
 
 // The editor's panels: menu bar, tool bar (over the 3D view), hierarchy (every brush and entity)

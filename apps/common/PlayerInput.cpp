@@ -22,6 +22,10 @@ void PlayerLook::turn(float countsX, float countsY, float sensitivity) {
     pitch = std::clamp(pitch - countsY * radiansPerCount, -maxPitch, maxPitch);
 }
 
+PlayerLook PlayerLook::facing(const Transform& transform) {
+    return {angleToRadians(transform.yaw), angleToRadians(transform.pitch)};
+}
+
 UserCmd makeUserCmd(const PlayerLook& look, const bool* keys) {
     UserCmd cmd;
     cmd.yaw = static_cast<std::uint16_t>(radiansToAngle(look.yaw));

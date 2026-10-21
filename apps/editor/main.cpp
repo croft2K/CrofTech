@@ -3,11 +3,12 @@
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
 // console docked around it, and the tool bar over the view. Hold the right mouse button in the view
 // to fly (WASD, Q/E down/up, Shift faster); in an orthographic pane it pans and the wheel zooms.
-// F5 plays the level (Esc stops). Shortcuts: Q/W/E/R select, move, rotate and scale tools, V vertex
-// tool, C clip tool, B shape tool, Ctrl+H/J/K hollow, merge and subtract the selected brushes,
-// Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all, Ctrl+D duplicate, Del delete (in the
-// vertex tool, the selected corners), arrow keys and Page Up/Down nudge the selection (or selected
-// corners) one grid step, F frame selection, [ and ] grid size, Esc cancel or deselect.
+// F5 plays the level, Shift+F5 from the 3D camera (Esc stops; F6 and F9 save and load). Shortcuts:
+// Q/W/E/R select, move, rotate and scale tools, V vertex tool, C clip tool, B shape tool,
+// Ctrl+H/J/K hollow, merge and subtract the selected brushes, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo,
+// Ctrl+A select all, Ctrl+D duplicate, Del delete (in the vertex tool, the selected corners), arrow
+// keys and Page Up/Down nudge the selection (or selected corners) one grid step, F frame selection,
+// [ and ] grid size, Esc cancel or deselect.
 
 #include "EditorPanels.h"
 #include "LevelViewport.h"
@@ -189,7 +190,8 @@ void drawPlayBanner(const ct::PlaySession& play, bool captured, const ct::Editor
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
         ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("Playing", nullptr, kFlags)) {
-        ImGui::Text("Playing %s   Esc stops", document.path().filename().string().c_str());
+        ImGui::Text("Playing %s   Esc stops   F6 saves   F9 loads",
+                    document.path().filename().string().c_str());
         ImGui::TextDisabled("%.1f m/s   server tick %.2f ms", static_cast<double>(play.speed()),
                             static_cast<double>(play.game().serverTickMilliseconds()));
         const ct::LinkConditions& c = settings.playConditions;
@@ -201,6 +203,9 @@ void drawPlayBanner(const ct::PlaySession& play, bool captured, const ct::Editor
         }
         if (!captured) {
             ImGui::Text("Click to take control");
+        }
+        if (const std::string* notice = play.notice(ct::PlaySession::Clock::now())) {
+            ImGui::TextUnformatted(notice->c_str());
         }
     }
     ImGui::End();
@@ -307,14 +312,23 @@ int main(int argc, char** argv) {
         SDL_SetWindowRelativeMouseMode(window, capture);
         devUi->setMouseCaptured(capture);
     };
-    const auto startPlay = [&] {
+    const auto startPlay = [&](bool fromHere) {
         viewport.cancelDrag(document);
         if (flying) {
             setFlying(false);
         }
         std::string playError;
-        play =
-            ct::PlaySession::start(document.level(), movement, settings.playConditions, playError);
+        std::optional<ct::Camera> from;
+        if (fromHere) {
+            const ct::Camera* camera = viewport.camera3D();
+            if (camera == nullptr) {
+                ct::logError("Can't play from here: no pane shows the 3D view");
+                return;
+            }
+            from = *camera;
+        }
+        play = ct::PlaySession::start(document.level(), movement, settings.playConditions, from,
+                                      playError);
         if (!play) {
             ct::logError("Can't play: {}", playError);
             return;
@@ -345,8 +359,14 @@ int main(int argc, char** argv) {
                 }
                 break;
             case SDL_EVENT_KEY_DOWN:
-                if (play && event.key.key == SDLK_ESCAPE && !event.key.repeat) {
-                    stopPlay = true;
+                if (play && !event.key.repeat) {
+                    if (event.key.key == SDLK_ESCAPE) {
+                        stopPlay = true;
+                    } else if (event.key.key == SDLK_F6) {
+                        play->quickSave(Clock::now());
+                    } else if (event.key.key == SDLK_F9) {
+                        play->quickLoad(Clock::now());
+                    }
                 }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -442,6 +462,7 @@ int main(int argc, char** argv) {
         // Shortcuts, unless a text field has the keyboard.
         bool frameSelection = menu.frameSelection;
         bool startPlaying = menu.play;
+        bool startPlayingHere = menu.playFromHere;
         // Not on the frame play stops either: its Esc is not for the editor.
         if (!flying && !playing && !stopPlay && !io.WantTextInput) {
             const float grid = settings.grid();
@@ -489,7 +510,7 @@ int main(int argc, char** argv) {
                     viewport.setSelectedCorners(std::move(moved));
                 }
             } else if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
-                startPlaying = true;
+                (io.KeyShift ? startPlayingHere : startPlaying) = true;
             } else if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
                 frameSelection = true;
             } else if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
@@ -511,8 +532,8 @@ int main(int argc, char** argv) {
         if (menu.save) {
             save(document);
         }
-        if (startPlaying && !playing) {
-            startPlay();
+        if ((startPlaying || startPlayingHere) && !playing) {
+            startPlay(startPlayingHere);
         }
         if (menu.addPreset != nullptr) {
             ct::addPresetEntity(document, *menu.addPreset,

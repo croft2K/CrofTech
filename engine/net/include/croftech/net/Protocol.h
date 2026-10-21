@@ -19,7 +19,7 @@ namespace ct {
 //
 // Snapshots carry the whole simulation state (writeState) for now. M6 replaces them with
 // delta-compressed snapshots small enough for UDP, which is when kMaxPacketBytes comes down.
-inline constexpr std::uint16_t kProtocolVersion = 1;
+inline constexpr std::uint16_t kProtocolVersion = 2;
 inline constexpr std::size_t kMaxPacketBytes = std::size_t{1} << 20;
 
 enum class MessageType : std::uint8_t { Hello = 1, Input = 2, Goodbye = 3, Snapshot = 4 };
@@ -40,17 +40,20 @@ struct GoodbyeMessage {};
 
 using ClientMessage = std::variant<HelloMessage, InputMessage, GoodbyeMessage>;
 
-// Server to client: the state after a tick, and which entity is the client's player.
+// Server to client: the state after a tick, and which entity is the client's player. The timeline
+// changes when the server replaces its state (loading a save goes back in time), so clients know
+// to stop comparing ticks with the ones before.
 struct SnapshotMessage {
     TickIndex tick = 0;
+    std::uint32_t timeline = 0;
     std::uint32_t lastInputSequence = 0; // the newest input the server had received
     EntityId player;
     std::span<const std::byte> state; // writeState bytes, inside the packet; loadState checks them
 };
 
 void writeClientMessage(ByteWriter& out, const ClientMessage& message);
-void writeSnapshot(ByteWriter& out, std::uint32_t lastInputSequence, EntityId player,
-                   const State& state);
+void writeSnapshot(ByteWriter& out, std::uint32_t timeline, std::uint32_t lastInputSequence,
+                   EntityId player, const State& state);
 
 // Packets are untrusted: anything malformed (an unknown type, too short or too long, a value out
 // of range) gives nullopt, for the caller to count and drop.

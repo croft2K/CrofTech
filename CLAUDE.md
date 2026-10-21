@@ -29,7 +29,12 @@ client, the key below Esc opens the developer console; `map <name>` there switch
 `client.show_entities 1` opens a live, read-only view of every entity's components. The client
 and its game's server run in one process and talk only through packets over an in-memory link
 (`ct::LocalGame`); `net.fake_latency_ms`, `net.fake_jitter_ms` and `net.fake_loss_percent` make
-that link behave like a poor network.
+that link behave like a poor network. F5 saves and F9 loads the newest save (`save [name]` and
+`load [name]` at the console), and reaching a checkpoint saves as `checkpoint`. A save
+(`sim/SaveGame.h`, fuzzed) is the level's name and content hash plus the state; saves go to SDL's
+pref path (`%APPDATA%/CrofTech/<game>/saves`), never into content. Loading replaces the server's
+state (`Server::restore`), and snapshots carry a timeline number so the client follows it back in
+time.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -39,9 +44,10 @@ one compound command. Moves, turns, flips and scales of any brush shape go throu
 `SelectionDrag`. New shapes (`Shapes.h`) are corner sets fitted to the drawn box and built as
 their convex hull. The Vertex tool moves corners with `withCornersMoved` (the hull of the moved
 corners, so corners are never recomputed); clip, subtract, hollow, merge and extrude are in
-`BrushOperations.h`. Play (F5) runs the level being edited as a game in the
+`BrushOperations.h`. Play (F5, or Shift+F5 to start where the 3D
+camera is) runs the level being edited as a game in the
 view without saving it: the same `LocalGame` as the client, with network conditions from the Play
-menu; Esc stops. The view has one or four panes (3D, or orthographic top, front and side as wireframe plans; View
+menu; Esc stops, and F6 and F9 save and load in memory while it lasts. The view has one or four panes (3D, or orthographic top, front and side as wireframe plans; View
 menu), and the tools work in whichever pane the mouse is in. Editing logic lives in `engine/editor` and is unit-tested; `apps/editor` holds
 only the ImGui panels, the 3D view, gizmos and input.
 
@@ -54,7 +60,7 @@ grid stay exact through any number of edits. Entities are point entities (an "or
 entities (doors, movers, triggers: the brushes whose `Brush::entity` is theirs; the file nests them
 in the entity's block). Outputs wire entities together: when an event happens, an input is sent
 to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
-properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform);
+properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform, Trigger, Checkpoint);
 the editor's inspector and the game both read it. To play a level, the server builds a
 `GameLevel` (`sim/GameLevel.h`) from it once: world collision (triggers aren't solid), each logic
 entity's settings with its outputs resolved to target entities and inputs, and the state play

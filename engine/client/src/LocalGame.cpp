@@ -1,15 +1,17 @@
 #include "croftech/client/LocalGame.h"
 
 #include "croftech/sim/PlayerMovement.h"
+#include "croftech/sim/StateSave.h"
 
 #include <algorithm>
+#include <memory>
 
 namespace ct {
 
 LocalGame::LocalGame(const Level& level, const MovementSettings& movement,
-                     const LinkConditions& conditions)
-    : m_movement(movement), m_link(conditions), m_server(level, movement), m_thread(m_server),
-      m_client(m_link.clientEnd()) {
+                     const LinkConditions& conditions, std::optional<SpawnPoint> start)
+    : m_movement(movement), m_link(conditions), m_server(level, movement, start),
+      m_thread(m_server), m_client(m_link.clientEnd()) {
     m_server.addConnection(m_link.serverEnd());
     m_thread.start();
 }
@@ -63,6 +65,32 @@ Vec3 LocalGame::moverOffset(std::uint32_t levelEntity, Clock::time_point now) co
         from = to;
     }
     return from->offset + (to->offset - from->offset) * blend(now);
+}
+
+std::vector<std::byte> LocalGame::save() {
+    std::vector<std::byte> bytes;
+    m_thread.withServer([&bytes](Server& server) { bytes = saveState(server.state()); });
+    return bytes;
+}
+
+bool LocalGame::load(std::span<const std::byte> state, std::string& error) {
+    auto loaded = std::make_unique<State>();
+    if (!loadState(state, *loaded, error)) {
+        return false;
+    }
+    m_thread.withServer([&loaded](Server& server) { server.restore(*loaded); });
+    return true;
+}
+
+std::optional<std::vector<std::byte>> LocalGame::takeCheckpoint() {
+    std::optional<std::vector<std::byte>> checkpoint;
+    m_thread.withServer([&](Server& server) {
+        if (server.checkpointCount() != m_checkpointsTaken) {
+            m_checkpointsTaken = server.checkpointCount();
+            checkpoint = server.checkpointState();
+        }
+    });
+    return checkpoint;
 }
 
 float LocalGame::blend(Clock::time_point now) const {

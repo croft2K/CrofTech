@@ -25,7 +25,7 @@ Each milestone ends in something playable.
 |---|---|---|---|
 | M0 | Bootstrap | CMake presets, vcpkg, CI, `CLAUDE.md`, doctest, Tracy hookup | **Done.** One command builds and tests Windows debug, asan and profile builds |
 | M1 | Foundations | SDL3 window and raw input, Vulkan static mesh, fixed 128 Hz loop with interpolated uncapped rendering, ECS with `EntityId` handles, state hashing, player movement and collision on a test level, headless sim tests | **Done** (playtested 2026-10-20). Walk the test level; movement tuned from a hot-reloading data file; headless movement and determinism tests pass; tick cost shown in the title bar and Tracy |
-| M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, brush tools (multi-selection, move/rotate/scale gizmos, primitives such as wedges, cylinders, arches and stairs, vertex, edge and face editing, clip, extrude, hollow, subtract, merge), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load |
+| M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, brush tools (multi-selection, move/rotate/scale gizmos, primitives such as wedges, cylinders, arches and stairs, vertex, edge and face editing, clip, extrude, hollow, subtract, merge), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load. *Everything is in (2026-10-21); it closes when a door puzzle has been built and played through* |
 | M3 | Gameplay and AI | Hitscan and projectile weapons, damage, pickups, respawn, navmesh from the level, enemy perception and data-driven behaviours, encounter system (waves, arena locks, music cues), script entity (Luau) | First playable single-player arena; an encounter built with wiring plus one script |
 | M4 | Editor tools | Texture and material assignment with face alignment, editable level-geometry meshes, visual logic graph (wires as nodes, with the outputs table as the text form), movers that follow a path through several stops and movers that turn (rotating doors), asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
 | M5 | Rendering and animation | Render graph, clustered forward lighting, PBR, cascaded and local shadows, GPU-driven culling, skeletal animation, sequencer (camera paths, animation, audio, events, keyframed movers with easing), TAA plus a sharp competitive mode, level compiler and content cooking into pack files | A scripted intro sequence in a lit, shadowed level at a stable frame rate |
@@ -97,7 +97,11 @@ In order; each step builds, tests and commits on its own.
      blocked, and a closing door goes back up rather than crushing), doors that open when walked
      into, lifts that rise when stood on, platforms that loop, and moved brushes drawn from the
      snapshots. Movers slide in straight lines; paths and turning movers are in M4.
-9. **Saves, checkpoints and play from here.**
+9. **Saves, checkpoints and play from here.** *Done (2026-10-21).* Save games record the level
+   (name and content hash, so a save of an edited level is refused) and the state; F5/F9 and the
+   save and load commands in the game, F6/F9 in play-in-editor. Checkpoint volumes save the first
+   time a player walks in. Loading replaces the server's state and starts a new snapshot timeline,
+   which clients follow. Shift+F5 in the editor plays from the 3D camera.
 
 ## Decisions
 

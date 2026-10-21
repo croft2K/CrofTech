@@ -50,10 +50,11 @@ void writeClientMessage(ByteWriter& out, const ClientMessage& message) {
         message);
 }
 
-void writeSnapshot(ByteWriter& out, std::uint32_t lastInputSequence, EntityId player,
-                   const State& state) {
+void writeSnapshot(ByteWriter& out, std::uint32_t timeline, std::uint32_t lastInputSequence,
+                   EntityId player, const State& state) {
     out.writeU8(static_cast<std::uint8_t>(MessageType::Snapshot));
     out.writeU32(state.tick);
+    out.writeU32(timeline);
     out.writeU32(lastInputSequence);
     out.writeU32(player.index);
     out.writeU32(player.generation);
@@ -105,6 +106,7 @@ std::optional<SnapshotMessage> readSnapshot(std::span<const std::byte> packet) {
     }
     SnapshotMessage snapshot;
     snapshot.tick = in.readU32();
+    snapshot.timeline = in.readU32();
     snapshot.lastInputSequence = in.readU32();
     snapshot.player.index = in.readU32();
     snapshot.player.generation = in.readU32();

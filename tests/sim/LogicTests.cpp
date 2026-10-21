@@ -46,6 +46,12 @@ ct::UserCmd forward() {
     return cmd;
 }
 
+ct::UserCmd walkBack() {
+    ct::UserCmd cmd;
+    cmd.forward = -127;
+    return cmd;
+}
+
 // A trigger between x = 2 and 4 on the floor, telling probe 1 when players go in and probe 2
 // when they come out.
 ct::Level triggerLevel(std::vector<ct::EntityProperty> triggerProperties = {}) {
@@ -232,4 +238,29 @@ TEST_CASE("logic state saves and loads mid-delay, and carries on identically") {
         REQUIRE(ct::hashState(sim.state()) == ct::hashState(loaded.state()));
     }
     CHECK(countOf(sim, 1) == 10); // fired every 32 ticks, arriving 51 ticks later
+}
+
+TEST_CASE("a checkpoint is reached once, by the first player in, unless switched off") {
+    const auto checkpointLevel = [](std::vector<ct::EntityProperty> properties) {
+        return ct::Level{
+            {floorBrush(), owned({2.0f, -1.0f, 0.0f}, {4.0f, 1.0f, 2.0f}, 0)},
+            {entity("checkpoint", std::move(properties), {{"on_reached", "reached", "add", 0.0f}}),
+             probe("reached")}};
+    };
+    SimHarness sim(checkpointLevel({}));
+    CHECK(sim.level().warnings().empty());
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    sim.run(forward(), ct::kTickRate);
+    sim.run(walkBack(), ct::kTickRate);
+    sim.run(forward(), ct::kTickRate);
+    CHECK(countOf(sim, 1) == 1);
+    const ct::Checkpoint& checkpoint = *sim.state().world.checkpoints.get(idOf(sim, 0));
+    CHECK((checkpoint.flags & ct::kCheckpointReached) != 0);
+    CHECK(checkpoint.reachedTick > 0);
+    CHECK(checkpoint.reachedTick < ct::kTickRate);
+
+    SimHarness off(checkpointLevel({{"start_disabled", "1"}}));
+    off.spawn({0.0f, 0.0f, 0.0f});
+    off.run(forward(), ct::kTickRate);
+    CHECK(countOf(off, 1) == 0);
 }

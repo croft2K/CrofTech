@@ -26,6 +26,7 @@ struct World {
     ComponentPool<PlayerControl, kMaxEntities> playerControls;
     ComponentPool<LevelEntityRef, kMaxEntities> levelEntities;
     ComponentPool<Trigger, kMaxEntities> triggers;
+    ComponentPool<Checkpoint, kMaxEntities> checkpoints;
     ComponentPool<Relay, kMaxEntities> relays;
     ComponentPool<Counter, kMaxEntities> counters;
     ComponentPool<Timer, kMaxEntities> timers;
@@ -44,6 +45,7 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.playerControls);
     fn(world.levelEntities);
     fn(world.triggers);
+    fn(world.checkpoints);
     fn(world.relays);
     fn(world.counters);
     fn(world.timers);

@@ -2,6 +2,8 @@
 add_library(ct_app_common STATIC
     PlayerInput.cpp
     PlayerInput.h
+    SaveFiles.cpp
+    SaveFiles.h
     WorldMesh.cpp
     WorldMesh.h
 )

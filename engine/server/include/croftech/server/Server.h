@@ -7,6 +7,7 @@
 #include "croftech/sim/Simulation.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -22,8 +23,10 @@ namespace ct {
 // Not thread-safe: one thread calls everything (ServerThread runs it at the tick rate).
 class Server {
 public:
-    // The level must have a player spawn; players take the spawns in turn.
-    Server(const Level& level, const MovementSettings& movement);
+    // Players start at the start point if there is one (play from here, in the editor), and
+    // otherwise take the level's spawns in turn, so then the level must have one.
+    Server(const Level& level, const MovementSettings& movement,
+           std::optional<SpawnPoint> start = {});
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
 
@@ -36,11 +39,20 @@ public:
     // Steps the simulation once with the latest inputs, then sends each player a snapshot.
     void tick(Transport::Clock::time_point now);
 
+    // Replaces the state, as loading a save does. Each joined client takes over the player with
+    // its input slot in the new state, or gets a new one at a spawn point; a client joining later
+    // takes over its slot's player too. The state must be of this level (saves record which).
+    void restore(const State& state);
+
     // Applied from the next tick.
     void setMovementSettings(const MovementSettings& movement) {
         m_simulation.setMovementSettings(movement);
     }
     const State& state() const { return *m_current; }
+    // The state as of the last checkpoint a player reached (StateSave bytes), and how many have
+    // been reached, for the game to keep as a save.
+    std::uint32_t checkpointCount() const { return m_checkpointCount; }
+    const std::vector<std::byte>& checkpointState() const { return m_checkpointState; }
     // Never changes, so other threads may read it while the server runs.
     const GameLevel& level() const { return m_level; }
     std::uint64_t malformedPackets() const { return m_malformed; }
@@ -60,10 +72,16 @@ private:
     void handlePacket(Connection& connection, std::span<const std::byte> packet);
     void join(Connection& connection);
     void leave(Connection& connection);
+    const SpawnPoint& nextSpawn();
+    EntityId playerOfSlot(std::uint32_t slot) const;
 
     GameLevel m_level;
     Simulation m_simulation;
+    std::optional<SpawnPoint> m_start;
     std::size_t m_nextSpawn = 0;
+    std::uint32_t m_timeline = 0; // see SnapshotMessage
+    std::uint32_t m_checkpointCount = 0;
+    std::vector<std::byte> m_checkpointState;
     std::unique_ptr<State> m_current;
     std::unique_ptr<State> m_next;
     std::vector<Connection> m_connections;

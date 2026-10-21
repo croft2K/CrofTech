@@ -26,7 +26,8 @@ public:
 
     void sendInput(const UserCmd& command, Clock::time_point now);
     // Reads every snapshot that has arrived. Late ones (older than the newest) are skipped;
-    // malformed ones are dropped and counted.
+    // malformed ones are dropped and counted. The first snapshot of a new timeline (the server
+    // loaded a save) replaces both states, since there is nothing to draw between.
     void receive(Clock::time_point now);
     // Tells the server the player is leaving.
     void disconnect(Clock::time_point now);
@@ -41,6 +42,8 @@ public:
     // The newest input the server had received when it sent the newest snapshot.
     std::uint32_t acknowledgedInput() const { return m_acknowledged; }
     std::uint64_t malformedPackets() const { return m_malformed; }
+    // Changes when the server's state is replaced, as by loading a save.
+    std::uint32_t timeline() const { return m_timeline; }
 
 private:
     Transport& m_transport;
@@ -50,6 +53,7 @@ private:
     std::unique_ptr<State> m_current;
     std::unique_ptr<State> m_incoming; // decoded into, then swapped in
     EntityId m_player;
+    std::uint32_t m_timeline = 0;
     Clock::time_point m_arrivedAt;
     std::uint32_t m_acknowledged = 0;
     std::uint64_t m_malformed = 0;

@@ -8,6 +8,7 @@ add_library(ct_sim STATIC
     include/croftech/sim/LogicComponents.h
     include/croftech/sim/MovementConfig.h
     include/croftech/sim/PlayerMovement.h
+    include/croftech/sim/SaveGame.h
     include/croftech/sim/Simulation.h
     include/croftech/sim/StateSave.h
     include/croftech/sim/UserCmd.h
@@ -20,6 +21,7 @@ add_library(ct_sim STATIC
     src/MovementConfig.cpp
     src/Movers.cpp
     src/PlayerMovement.cpp
+    src/SaveGame.cpp
     src/Simulation.cpp
     src/StateSave.cpp
 )

@@ -36,7 +36,8 @@ void ClientConnection::receive(Clock::time_point now) {
             ++m_malformed;
             continue;
         }
-        if (m_current && snapshot->tick <= m_current->tick) {
+        if (m_current && (snapshot->timeline < m_timeline || (snapshot->timeline == m_timeline &&
+                                                              snapshot->tick <= m_current->tick))) {
             continue; // overtaken by a newer one
         }
         std::string error;
@@ -47,11 +48,15 @@ void ClientConnection::receive(Clock::time_point now) {
         if (!m_current) {
             m_current = std::make_unique<State>(*m_incoming);
             m_previous = std::make_unique<State>(*m_incoming);
+        } else if (snapshot->timeline != m_timeline) {
+            *m_current = *m_incoming;
+            *m_previous = *m_incoming;
         } else {
             std::swap(m_previous, m_current);
             std::swap(m_current, m_incoming);
         }
         m_player = snapshot->player;
+        m_timeline = snapshot->timeline;
         m_acknowledged = snapshot->lastInputSequence;
         m_arrivedAt = now;
     }

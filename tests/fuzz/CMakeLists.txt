@@ -27,6 +27,10 @@ ct_add_fuzzer(ct_state_save_fuzz
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/state
     SOURCES StateSaveFuzz.cpp
     LIBS ct::sim)
+ct_add_fuzzer(ct_save_game_fuzz
+    CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/save
+    SOURCES SaveGameFuzz.cpp
+    LIBS ct::sim)
 ct_add_fuzzer(ct_protocol_fuzz
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/protocol
     SOURCES ProtocolFuzz.cpp

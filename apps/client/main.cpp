@@ -11,8 +11,12 @@
 //
 // Levels are found by name through the content layers (levels/<name>.level, then a TrenchBroom
 // levels/<name>.map), or by path. The game's start_map loads first; the map command switches.
+//
+// F5 saves and F9 loads the newest save (the save and load commands take names); reaching a
+// checkpoint saves too. Saves go in the user's folder for the game, never in its content.
 
 #include "PlayerInput.h"
+#include "SaveFiles.h"
 #include "WorldMesh.h"
 
 #include "croftech/client/LocalGame.h"
@@ -25,16 +29,20 @@
 #include "croftech/devui/DevUi.h"
 #include "croftech/devui/EntityInspector.h"
 #include "croftech/devui/StatsOverlay.h"
+#include "croftech/level/LevelFile.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/sim/MovementConfig.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <imgui.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -52,6 +60,7 @@ using Clock = std::chrono::steady_clock;
 // Development builds run straight from the source tree, so config edits hot-reload in place.
 const std::filesystem::path kSourceDirectory = CROFTECH_SOURCE_DIR;
 constexpr auto kReloadInterval = std::chrono::milliseconds(250);
+constexpr auto kNoticeTime = std::chrono::seconds(2);
 
 struct CommandLine {
     std::string game = "sandbox";
@@ -129,6 +138,23 @@ void reloadConfig(ct::Console& console, ConfigFile& file, bool announce) {
     if (announce) {
         ct::logInfo("{} reloaded", file.name);
     }
+}
+
+// A line of text in the middle of the screen near the top, such as "Saved".
+void drawNotice(const std::string& text) {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(
+        {viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y * 0.15f},
+        ImGuiCond_Always, {0.5f, 0.5f});
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    constexpr ImGuiWindowFlags kFlags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
+    if (ImGui::Begin("Notice", nullptr, kFlags)) {
+        ImGui::TextUnformatted(text.c_str());
+    }
+    ImGui::End();
 }
 
 std::vector<ct::EntityInspector::Entity> inspectEntities(const ct::World& world) {
@@ -211,8 +237,20 @@ int main(int argc, char** argv) {
         reloadConfig(console, file, false);
     }
 
-    // Levels switch between frames, so the map command only prepares the next one.
+    // Levels switch between frames, so the map command only prepares the next one, and a load
+    // only prepares its level and keeps the state to restore once it has been entered.
     std::optional<PreparedLevel> pendingLevel;
+    std::optional<std::vector<std::byte>> pendingState;
+    const ct::SaveFiles saves(game->name);
+    PreparedLevel* currentLevel = nullptr; // set once a level has been entered
+    std::uint64_t currentLevelHash = 0;
+    std::string notice;
+    Clock::time_point noticeUntil;
+    const auto tell = [&](std::string text) {
+        ct::logInfo("{}", text);
+        notice = std::move(text);
+        noticeUntil = Clock::now() + kNoticeTime;
+    };
     console.addCommand("map", "Load a level by name or path: map <name>",
                        [&](std::span<const std::string> args) {
                            if (args.size() != 1) {
@@ -224,6 +262,53 @@ int main(int argc, char** argv) {
                            if (!pendingLevel) {
                                ct::logError("map {}: {}", args[0], mapError);
                            }
+                       });
+    std::unique_ptr<ct::LocalGame> localGame;
+    const auto writeSave = [&](const std::string& name, std::vector<std::byte> state) {
+        std::string saveError;
+        if (currentLevel == nullptr ||
+            !saves.write(name, {currentLevel->name, currentLevelHash, std::move(state)},
+                         saveError)) {
+            ct::logError("save {}: {}", name, saveError);
+            return false;
+        }
+        return true;
+    };
+    console.addCommand("save", "Save the game: save [name], quick by default",
+                       [&](std::span<const std::string> args) {
+                           const std::string name = args.empty() ? "quick" : args[0];
+                           if (localGame && writeSave(name, localGame->save())) {
+                               tell(name == "quick" ? "Saved" : "Saved " + name);
+                           }
+                       });
+    console.addCommand("load", "Load a save: load [name], the newest by default",
+                       [&](std::span<const std::string> args) {
+                           std::string loadError;
+                           const std::optional<std::string> name =
+                               args.empty() ? saves.newest() : std::optional<std::string>(args[0]);
+                           if (!name) {
+                               tell("Nothing saved yet (F5 saves)");
+                               return;
+                           }
+                           std::optional<ct::SaveGame> save = saves.read(*name, loadError);
+                           if (!save) {
+                               ct::logError("load {}: {}", *name, loadError);
+                               return;
+                           }
+                           std::optional<PreparedLevel> level =
+                               prepareLevel(content, save->level, loadError);
+                           if (!level) {
+                               ct::logError("load {}: {}", *name, loadError);
+                               return;
+                           }
+                           if (ct::levelContentHash(level->level) != save->levelHash) {
+                               ct::logError("load {}: level '{}' has changed since it was saved",
+                                            *name, save->level);
+                               return;
+                           }
+                           pendingLevel = std::move(level);
+                           pendingState = std::move(save->state);
+                           tell("Loaded " + *name);
                        });
     for (const std::string& commands : commandLine.execute) {
         console.execute(commands);
@@ -273,8 +358,9 @@ int main(int argc, char** argv) {
     ct::MovementSettings movement = ct::movementSettingsFromCVars(console);
     std::uint64_t seenChanges = console.changeCount();
 
-    std::unique_ptr<ct::LocalGame> localGame;
     ct::PlayerLook look;
+    std::uint32_t seenTimeline = 0;
+    std::optional<PreparedLevel> enteredLevel;
     std::vector<std::uint32_t> moverParts; // the level entity of each moving part of the mesh
     std::vector<ct::Vec3> moverOffsets;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
@@ -285,6 +371,8 @@ int main(int argc, char** argv) {
         moverOffsets.assign(moverParts.size(), {});
         localGame =
             std::make_unique<ct::LocalGame>(prepared.level, movement, client.linkConditions());
+        seenTimeline = 0;
+        currentLevelHash = ct::levelContentHash(prepared.level);
         for (const std::string& warning : localGame->level().warnings()) {
             ct::logWarning("{}: {}", prepared.name, warning);
         }
@@ -315,8 +403,17 @@ int main(int argc, char** argv) {
         CT_PROFILE_FRAME();
 
         if (pendingLevel) {
-            enterLevel(*pendingLevel);
+            enteredLevel = std::move(pendingLevel);
             pendingLevel.reset();
+            currentLevel = &*enteredLevel;
+            enterLevel(*enteredLevel);
+        }
+        if (pendingState) {
+            std::string loadError;
+            if (!localGame->load(*pendingState, loadError)) {
+                ct::logError("load: {}", loadError);
+            }
+            pendingState.reset();
         }
 
         SDL_Event event;
@@ -344,6 +441,10 @@ int main(int argc, char** argv) {
                     consoleKeyPressed = true;
                     consoleWindow.setOpen(!consoleWindow.isOpen());
                     captureMouse(!consoleWindow.isOpen());
+                } else if (event.key.key == SDLK_F5) {
+                    console.execute("save");
+                } else if (event.key.key == SDLK_F9) {
+                    console.execute("load");
                 } else if (event.key.key == SDLK_ESCAPE) {
                     if (consoleWindow.isOpen()) {
                         consoleWindow.setOpen(false);
@@ -383,6 +484,19 @@ int main(int argc, char** argv) {
             localGame->setConditions(client.linkConditions());
         }
 
+        if (std::optional<std::vector<std::byte>> checkpoint = localGame->takeCheckpoint()) {
+            if (writeSave("checkpoint", std::move(*checkpoint))) {
+                tell("Checkpoint");
+            }
+        }
+        // After a load, look the way the loaded player faces.
+        if (localGame->timeline() != seenTimeline && localGame->latestState() != nullptr) {
+            seenTimeline = localGame->timeline();
+            if (const ct::Transform* transform =
+                    localGame->latestState()->world.transforms.get(localGame->player())) {
+                look = ct::PlayerLook::facing(*transform);
+            }
+        }
         if (const std::optional<ct::Vec3> playerEye = localGame->eyePosition(now)) {
             eye = *playerEye;
         }
@@ -415,6 +529,9 @@ int main(int argc, char** argv) {
             if (!open) {
                 console.execute("client.show_entities 0");
             }
+        }
+        if (now < noticeUntil) {
+            drawNotice(notice);
         }
         consoleWindow.draw();
         const ImDrawData* ui = devUi->endFrame();

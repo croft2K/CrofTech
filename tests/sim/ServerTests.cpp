@@ -5,11 +5,14 @@
 #include "croftech/net/LoopbackLink.h"
 #include "croftech/net/Protocol.h"
 #include "croftech/server/Server.h"
+#include "croftech/sim/StateSave.h"
 
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -33,8 +36,9 @@ struct Session {
     ct::ClientConnection client;
     Clock::time_point now{};
 
-    explicit Session(ct::LinkConditions conditions = {})
-        : link(conditions, 5), server(ct::test::floorLevel(), {}), client(link.clientEnd()) {
+    explicit Session(ct::LinkConditions conditions = {},
+                     const ct::Level& level = ct::test::floorLevel())
+        : link(conditions, 5), server(level, {}), client(link.clientEnd()) {
         server.addConnection(link.serverEnd());
     }
 
@@ -146,4 +150,59 @@ TEST_CASE("a local game runs its server on a thread and shows the player moving"
     REQUIRE(eye.has_value());
     CHECK(eye->x > 0.5f);
     CHECK(game.malformedPackets() == 0);
+}
+
+TEST_CASE("restoring a saved state puts the player back, and the client follows it back in time") {
+    Session session;
+    session.run({}, 2);
+    session.run(forward(), 64);
+    const auto saved = std::make_unique<ct::State>(session.server.state());
+    const ct::Vec3 savedPosition = session.clientPlayer()->position;
+    session.run(forward(), 64);
+    REQUIRE(session.clientPlayer()->position.x > savedPosition.x + 1.0f);
+
+    session.server.restore(*saved);
+    session.run({}, 1);
+    CHECK(session.client.current()->tick == saved->tick + 1);
+    CHECK(session.client.timeline() == 1);
+    // Still moving as it was when saved, and slowing with no input.
+    CHECK(session.clientPlayer()->position.x > savedPosition.x);
+    CHECK(session.clientPlayer()->position.x < savedPosition.x + 0.2f);
+    CHECK(session.server.playerCount() == 1);
+    CHECK(session.server.state().world.playerControls.size() == 1);
+}
+
+TEST_CASE("a client that joins after a state is restored takes over its slot's player") {
+    Session first;
+    first.run({}, 2);
+    first.run(forward(), ct::kTickRate);
+    const auto saved = std::make_unique<ct::State>(first.server.state());
+
+    Session second;
+    second.server.restore(*saved);
+    second.run({}, 2);
+    REQUIRE(second.client.joined());
+    CHECK(second.clientPlayer()->position.x > 3.0f);
+    CHECK(second.server.state().world.playerControls.size() == 1);
+}
+
+TEST_CASE("reaching a checkpoint keeps a save of that moment") {
+    ct::Level level = ct::test::floorLevel();
+    ct::Brush volume = ct::makeBoxBrush({3.0f, -2.0f, 0.0f}, {5.0f, 2.0f, 2.0f});
+    volume.entity = 1;
+    level.brushes.push_back(volume);
+    level.entities.push_back({"checkpoint", {}});
+    Session session({}, level);
+    session.run({}, 2);
+    CHECK(session.server.checkpointCount() == 0);
+    session.run(forward(), 2 * ct::kTickRate);
+    REQUIRE(session.server.checkpointCount() == 1);
+
+    auto state = std::make_unique<ct::State>();
+    std::string error;
+    REQUIRE_MESSAGE(ct::loadState(session.server.checkpointState(), *state, error), error);
+    const ct::Transform* player = state->world.transforms.get(session.client.player());
+    REQUIRE(player != nullptr);
+    CHECK(player->position.x > 2.5f);
+    CHECK(player->position.x < 3.0f);
 }

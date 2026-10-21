@@ -123,6 +123,8 @@ public:
     void setLayout(ViewLayout layout);
     // The pane the mouse was last over, which flying, framing and nudging act on.
     ViewMode activeMode() const { return m_panes[m_active].mode; }
+    // The camera of the active pane if it is 3D, or else of the first 3D pane; null if none is.
+    const Camera* camera3D() const;
     void setActiveMode(ViewMode mode) { m_panes[m_active].mode = mode; }
 
     // Flies the active pane's camera, or pans it if it is orthographic.

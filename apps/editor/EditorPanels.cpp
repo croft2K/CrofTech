@@ -282,6 +282,9 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
     if (ImGui::BeginMenu("Play")) {
         requests.play = ImGui::MenuItem("Play level", "F5");
         ImGui::SetItemTooltip("Run the level as it is now, without saving it; Esc stops");
+        requests.playFromHere = ImGui::MenuItem("Play from here", "Shift+F5");
+        ImGui::SetItemTooltip("Start the player where the 3D camera is, facing the same way");
+        ImGui::TextDisabled("While playing: F6 saves, F9 loads the newest save or checkpoint");
         ImGui::SeparatorText("Network conditions");
         LinkConditions& conditions = settings.playConditions;
         const float width = ImGui::GetFontSize() * 12.0f;
