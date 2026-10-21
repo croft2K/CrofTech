@@ -59,7 +59,7 @@ jobs:
 
       - name: Fuzz
         run: |
-          mkdir -p fuzz-work/level fuzz-work/map fuzz-work/state fuzz-crashes
+          mkdir -p fuzz-work/level fuzz-work/map fuzz-work/state fuzz-work/protocol fuzz-crashes
           bin=build/linux-fuzz/bin
           opts="-max_total_time=60 -timeout=10 -rss_limit_mb=2048 -artifact_prefix=fuzz-crashes/"
           $bin/ct_level_file_fuzz $opts -dict=tests/fuzz/level.dict \
@@ -68,6 +68,8 @@ jobs:
             fuzz-work/map tests/fuzz/corpus/map
           $bin/ct_state_save_fuzz $opts -dict=tests/fuzz/state.dict \
             fuzz-work/state tests/fuzz/corpus/state
+          $bin/ct_protocol_fuzz $opts -dict=tests/fuzz/state.dict \
+            fuzz-work/protocol tests/fuzz/corpus/protocol
 
       - uses: actions/upload-artifact@v4
         if: failure()
