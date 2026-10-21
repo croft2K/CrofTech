@@ -675,8 +675,9 @@ void Renderer::drawFrame(const Camera& camera, const ImDrawData* ui, const Pixel
     int width = 0;
     int height = 0;
     SDL_GetWindowSizeInPixels(r.window, &width, &height);
-    if (width <= 0 || height <= 0) {
-        return; // minimised
+    // A minimised window keeps its size in SDL but has a 0 x 0 surface, which no swapchain fits.
+    if (width <= 0 || height <= 0 || (SDL_GetWindowFlags(r.window) & SDL_WINDOW_MINIMIZED) != 0) {
+        return;
     }
     if (r.swapchainDirty || static_cast<std::uint32_t>(width) != r.swapchain.extent.width ||
         static_cast<std::uint32_t>(height) != r.swapchain.extent.height) {

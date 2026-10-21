@@ -48,11 +48,14 @@ DevUi::~DevUi() {
 }
 
 void DevUi::processEvent(const SDL_Event& event) {
+    // Button releases always go through. The SDL backend tracks which buttons are down and asks
+    // SDL to capture the mouse while any is; a release it never saw (the button that started a
+    // capture, let go during it) left the window capturing the mouse for good, which turns clicks
+    // on the title bar's minimise, maximise and close buttons into ordinary clicks in the window.
     if (m_mouseCaptured) {
         switch (event.type) {
         case SDL_EVENT_MOUSE_MOTION:
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        case SDL_EVENT_MOUSE_BUTTON_UP:
         case SDL_EVENT_MOUSE_WHEEL:
             return;
         default:
@@ -70,8 +73,8 @@ void DevUi::setMouseCaptured(bool captured) {
         io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
     } else {
         io.ConfigFlags &= ~(ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange);
-        // Button releases during the capture never reached ImGui. A button it still thinks is
-        // held, pressed outside its windows, stops every window being hovered: menus and panels
+        // Leave ImGui with no buttons held and the real cursor position. A button it still thinks
+        // is held, pressed outside its windows, stops every window being hovered: menus and panels
         // would ignore the mouse until that button happened to be released over the UI.
         for (int button = 0; button < ImGuiMouseButton_COUNT; ++button) {
             io.AddMouseButtonEvent(button, false);
