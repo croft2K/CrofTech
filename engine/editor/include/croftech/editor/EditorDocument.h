@@ -1,26 +1,18 @@
 #pragma once
 
 #include "croftech/editor/CommandStack.h"
+#include "croftech/editor/LevelItem.h"
 #include "croftech/level/Level.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace ct {
-
-struct Selection {
-    enum class Kind : std::uint8_t { None, Brush, Entity };
-
-    Kind kind = Kind::None;
-    std::size_t index = 0;
-
-    static Selection brush(std::size_t index) { return {Kind::Brush, index}; }
-    static Selection entity(std::size_t index) { return {Kind::Entity, index}; }
-    friend bool operator==(const Selection&, const Selection&) = default;
-};
 
 // A level open in the editor: its data, file, selection and undo history.
 //
@@ -51,8 +43,15 @@ public:
     // the document then refers to that file.
     bool save(std::string& error);
 
-    Selection selection() const { return m_selection; }
-    void select(Selection selection);
+    // The selected items, sorted, with no repeats. Items that undo or redo remove drop out.
+    const std::vector<LevelItem>& selection() const { return m_selection; }
+    bool isSelected(LevelItem item) const;
+    // The item if exactly one is selected.
+    std::optional<LevelItem> singleSelected() const;
+    void select(LevelItem item); // replaces the selection
+    void setSelection(std::vector<LevelItem> items);
+    void toggleSelected(LevelItem item);
+    void clearSelection() { m_selection.clear(); }
 
 private:
     void changed();
@@ -62,7 +61,7 @@ private:
     CommandStack m_history;
     std::uint64_t m_savedStateId = 0;
     std::uint64_t m_changeCount = 0;
-    Selection m_selection;
+    std::vector<LevelItem> m_selection;
 };
 
 } // namespace ct

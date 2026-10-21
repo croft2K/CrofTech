@@ -69,6 +69,28 @@ private:
     bool m_remove;
 };
 
+class Compound final : public Command {
+public:
+    Compound(std::string name, std::vector<std::unique_ptr<Command>> commands)
+        : m_name(std::move(name)), m_commands(std::move(commands)) {}
+
+    std::string_view name() const override { return m_name; }
+    void apply(Level& level) const override {
+        for (const std::unique_ptr<Command>& command : m_commands) {
+            command->apply(level);
+        }
+    }
+    void revert(Level& level) const override {
+        for (auto it = m_commands.rbegin(); it != m_commands.rend(); ++it) {
+            (*it)->revert(level);
+        }
+    }
+
+private:
+    std::string m_name;
+    std::vector<std::unique_ptr<Command>> m_commands;
+};
+
 } // namespace
 
 std::unique_ptr<Command> makeSetBrush(std::string name, std::size_t index, Brush before,
@@ -101,6 +123,11 @@ std::unique_ptr<Command> makeInsertEntity(std::string name, std::size_t index, L
 std::unique_ptr<Command> makeRemoveEntity(std::string name, std::size_t index, LevelEntity entity) {
     return std::make_unique<InsertElement<LevelEntity>>(std::move(name), &Level::entities, index,
                                                         std::move(entity), true);
+}
+
+std::unique_ptr<Command> makeCompound(std::string name,
+                                      std::vector<std::unique_ptr<Command>> commands) {
+    return std::make_unique<Compound>(std::move(name), std::move(commands));
 }
 
 } // namespace ct

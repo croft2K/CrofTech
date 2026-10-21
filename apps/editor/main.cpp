@@ -1,9 +1,11 @@
 // CrofTech editor: opens a level, edits it with undo and redo, and saves it as a .level file.
 //
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
-// console docked around it. Hold the right mouse button in the view to fly (WASD, Q/E down/up,
-// Shift faster). Shortcuts: Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, Del delete,
-// B box tool, F frame selection, [ and ] grid size, Esc cancel or deselect.
+// console docked around it, and the tool bar over the view. Hold the right mouse button in the view
+// to fly (WASD, Q/E down/up, Shift faster). Shortcuts: Q/W/E/R select, move, rotate and scale
+// tools, B box tool, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+A select all, Ctrl+D duplicate,
+// Del delete, arrow keys and Page Up/Down nudge the selection one grid step, F frame selection,
+// [ and ] grid size, Esc cancel or deselect.
 
 #include "EditorPanels.h"
 #include "LevelViewport.h"
@@ -15,7 +17,6 @@
 #include "croftech/devui/ConsoleWindow.h"
 #include "croftech/devui/DevUi.h"
 #include "croftech/editor/EditorActions.h"
-#include "croftech/level/BrushGeometry.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/sim/MovementConfig.h"
@@ -34,6 +35,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -117,21 +119,58 @@ void buildDefaultLayout(ImGuiID dockspace) {
 
 std::optional<ct::Vec3> selectionCentre(const ct::EditorDocument& document,
                                         const ct::EditorSettings& settings) {
-    const ct::Selection selected = document.selection();
-    const ct::Level& level = document.level();
-    std::optional<ct::Aabb> bounds;
-    if (selected.kind == ct::Selection::Kind::Brush) {
-        ct::Aabb box;
-        if (ct::computeBrushBounds(level.brushes[selected.index], box)) {
-            bounds = box;
-        }
-    } else if (selected.kind == ct::Selection::Kind::Entity) {
-        bounds = ct::entityMarker(level.entities[selected.index], settings);
-    }
+    const std::optional<ct::Aabb> bounds =
+        ct::itemBounds(document.level(), document.selection(), settings.playerHalfExtents);
     if (!bounds) {
         return std::nullopt;
     }
     return (bounds->min + bounds->max) * 0.5f;
+}
+
+// Tool keys work without modifiers only, so Ctrl+E and the like stay free.
+std::optional<ct::EditorTool> toolShortcut() {
+    if (ImGui::GetIO().KeyMods != ImGuiMod_None) {
+        return std::nullopt;
+    }
+    constexpr std::pair<ImGuiKey, ct::EditorTool> kKeys[]{{ImGuiKey_Q, ct::EditorTool::Select},
+                                                          {ImGuiKey_W, ct::EditorTool::Move},
+                                                          {ImGuiKey_E, ct::EditorTool::Rotate},
+                                                          {ImGuiKey_R, ct::EditorTool::Scale},
+                                                          {ImGuiKey_B, ct::EditorTool::Box}};
+    for (const auto& [key, tool] : kKeys) {
+        if (ImGui::IsKeyPressed(key, false)) {
+            return tool;
+        }
+    }
+    return std::nullopt;
+}
+
+// Arrow keys nudge along the grid axes nearest the view: up moves away from the camera. Page Up
+// and Page Down nudge vertically. Held keys repeat.
+std::optional<ct::Vec3> nudgeShortcut(ct::Vec3 forward) {
+    if (ImGui::GetIO().KeyMods != ImGuiMod_None) {
+        return std::nullopt;
+    }
+    const ct::Vec3 right{forward.y, -forward.x, 0.0f};
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+        return forward;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+        return -forward;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+        return right;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+        return -right;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
+        return ct::Vec3{0.0f, 0.0f, 1.0f};
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
+        return ct::Vec3{0.0f, 0.0f, -1.0f};
+    }
+    return std::nullopt;
 }
 
 void save(ct::EditorDocument& document) {
@@ -282,6 +321,7 @@ int main(int argc, char** argv) {
         if (const ImGuiDockNode* centre = ImGui::DockBuilderGetCentralNode(dockspace)) {
             view = {centre->Pos.x, centre->Pos.y, centre->Size.x, centre->Size.y};
         }
+        panels.drawToolbar(viewport, view);
         const ImGuiIO& io = ImGui::GetIO();
         const bool mouseOverView =
             !flying && !io.WantCaptureMouse && view.contains(io.MousePos.x, io.MousePos.y);
@@ -315,10 +355,16 @@ int main(int argc, char** argv) {
                 document.redo();
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) {
                 ct::duplicateSelection(document, {grid, grid, 0.0f});
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_A)) {
+                ct::selectAll(document);
             } else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && !viewport.isDragging()) {
                 ct::deleteSelection(document);
-            } else if (ImGui::IsKeyPressed(ImGuiKey_B, false)) {
-                viewport.setTool(ct::EditorTool::Box);
+            } else if (const auto tool = toolShortcut()) {
+                viewport.setTool(*tool);
+            } else if (const auto nudge = nudgeShortcut(viewport.forwardOnGrid());
+                       nudge && !viewport.isDragging()) {
+                ct::transformSelection(document, ct::AffineTransform::moveBy(*nudge * grid),
+                                       "Move");
             } else if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
                 frameSelection = true;
             } else if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
@@ -331,7 +377,7 @@ int main(int argc, char** argv) {
                 } else if (viewport.tool() != ct::EditorTool::Select) {
                     viewport.setTool(ct::EditorTool::Select);
                 } else {
-                    document.select({});
+                    document.clearSelection();
                 }
             }
         }

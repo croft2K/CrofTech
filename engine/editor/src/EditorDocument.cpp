@@ -3,6 +3,7 @@
 #include "croftech/core/Assert.h"
 #include "croftech/level/LevelFile.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace ct {
@@ -56,16 +57,36 @@ bool EditorDocument::save(std::string& error) {
     return true;
 }
 
-void EditorDocument::select(Selection selection) {
-    const bool valid =
-        (selection.kind == Selection::Kind::Brush && selection.index < m_level.brushes.size()) ||
-        (selection.kind == Selection::Kind::Entity && selection.index < m_level.entities.size());
-    m_selection = valid ? selection : Selection{};
+bool EditorDocument::isSelected(LevelItem item) const {
+    return std::binary_search(m_selection.begin(), m_selection.end(), item);
+}
+
+std::optional<LevelItem> EditorDocument::singleSelected() const {
+    return m_selection.size() == 1 ? std::optional<LevelItem>(m_selection.front()) : std::nullopt;
+}
+
+void EditorDocument::select(LevelItem item) { setSelection({item}); }
+
+void EditorDocument::setSelection(std::vector<LevelItem> items) {
+    std::erase_if(items, [&](LevelItem item) { return !exists(m_level, item); });
+    std::sort(items.begin(), items.end());
+    items.erase(std::unique(items.begin(), items.end()), items.end());
+    m_selection = std::move(items);
+}
+
+void EditorDocument::toggleSelected(LevelItem item) {
+    const auto position = std::lower_bound(m_selection.begin(), m_selection.end(), item);
+    if (position != m_selection.end() && *position == item) {
+        m_selection.erase(position);
+    } else if (exists(m_level, item)) {
+        m_selection.insert(position, item);
+    }
 }
 
 void EditorDocument::changed() {
     ++m_changeCount;
-    select(m_selection); // drops a selection that undo or redo removed
+    // Drops items that undo or redo removed.
+    std::erase_if(m_selection, [&](LevelItem item) { return !exists(m_level, item); });
 }
 
 } // namespace ct

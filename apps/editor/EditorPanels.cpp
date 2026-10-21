@@ -6,9 +6,11 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
+#include <array>
 #include <format>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace ct {
 namespace {
@@ -26,6 +28,32 @@ std::string commandLabel(const char* verb, std::string_view name, const char* sh
     return name.empty() ? std::format("{}##{}", verb, shortcut) : std::format("{} {}", verb, name);
 }
 
+constexpr std::array<const char*, 3> kAxisNames{"X", "Y", "Z"};
+
+struct ToolInfo {
+    EditorTool tool;
+    const char* name;
+    const char* shortcut;
+    const char* hint;
+};
+
+constexpr std::array<ToolInfo, 5> kTools{{
+    {EditorTool::Select, "Select", "Q", "Select: click, Ctrl-click to add, drag a box"},
+    {EditorTool::Move, "Move", "W", "Move: drag an arrow, or a square to move in its plane"},
+    {EditorTool::Rotate, "Rotate", "E", "Rotate: drag a ring"},
+    {EditorTool::Scale, "Scale", "R", "Scale: drag a handle on the selection's box"},
+    {EditorTool::Box, "Box", "B", "Box: drag on a surface to draw a box brush"},
+}};
+
+const ToolInfo& toolInfo(EditorTool tool) {
+    for (const ToolInfo& info : kTools) {
+        if (info.tool == tool) {
+            return info;
+        }
+    }
+    return kTools.front();
+}
+
 } // namespace
 
 MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings& settings,
@@ -34,7 +62,8 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
     if (!ImGui::BeginMainMenuBar()) {
         return requests;
     }
-    const bool hasSelection = document.selection().kind != Selection::Kind::None;
+    const bool hasSelection = !document.selection().empty();
+    const float grid = settings.grid();
     if (ImGui::BeginMenu("File")) {
         requests.save = ImGui::MenuItem("Save", "Ctrl+S");
         ImGui::Separator();
@@ -45,21 +74,54 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         const CommandStack& history = document.history();
         if (ImGui::MenuItem(commandLabel("Undo", history.undoName(), "u").c_str(), "Ctrl+Z", false,
                             history.canUndo())) {
+            viewport.cancelDrag(document);
             document.undo();
         }
         if (ImGui::MenuItem(commandLabel("Redo", history.redoName(), "r").c_str(), "Ctrl+Y", false,
                             history.canRedo())) {
+            viewport.cancelDrag(document);
             document.redo();
         }
         ImGui::Separator();
+        if (ImGui::MenuItem("Select all", "Ctrl+A")) {
+            selectAll(document);
+        }
+        if (ImGui::MenuItem("Deselect", "Esc", false, hasSelection)) {
+            document.clearSelection();
+        }
+        ImGui::Separator();
         if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, hasSelection)) {
-            duplicateSelection(document, {settings.grid(), settings.grid(), 0.0f});
+            duplicateSelection(document, {grid, grid, 0.0f});
         }
         if (ImGui::MenuItem("Delete", "Del", false, hasSelection)) {
             deleteSelection(document);
         }
-        if (ImGui::MenuItem("Deselect", "Esc", false, hasSelection)) {
-            document.select({});
+        if (ImGui::BeginMenu("Transform", hasSelection)) {
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                if (ImGui::MenuItem(
+                        std::format("Turn +90\xC2\xB0 about {}", kAxisNames[axis]).c_str())) {
+                    rotateSelection(document, axis, 1, grid);
+                }
+                if (ImGui::MenuItem(
+                        std::format("Turn -90\xC2\xB0 about {}", kAxisNames[axis]).c_str())) {
+                    rotateSelection(document, axis, -1, grid);
+                }
+            }
+            ImGui::Separator();
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                if (ImGui::MenuItem(std::format("Flip along {}", kAxisNames[axis]).c_str())) {
+                    flipSelection(document, axis, grid);
+                }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Tools")) {
+        for (const ToolInfo& info : kTools) {
+            if (ImGui::MenuItem(info.name, info.shortcut, viewport.tool() == info.tool)) {
+                viewport.setTool(info.tool);
+            }
         }
         ImGui::EndMenu();
     }
@@ -81,18 +143,63 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
             }
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Rotation snap")) {
+            for (std::size_t i = 0; i < kRotationSteps.size(); ++i) {
+                if (ImGui::MenuItem(std::format("{:g}\xC2\xB0", kRotationSteps[i]).c_str(), nullptr,
+                                    settings.rotationIndex == i)) {
+                    settings.rotationIndex = i;
+                }
+            }
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
 
-    // Status on the right: tool, grid and what to do next.
-    const char* tool = viewport.tool() == EditorTool::Box ? "Box: drag on a surface" : "Select";
+    // Status on the right: what the tool does, the snapping, and how to fly.
     const std::string status =
-        std::format("{}   grid {:g} m  ([ ])   right-drag to fly", tool, settings.grid());
+        std::format("{}   grid {:g} m  ([ ])   turn {:g}\xC2\xB0   right-drag to fly",
+                    toolInfo(viewport.tool()).hint, settings.grid(), settings.rotationStep());
     ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(status.c_str()).x -
                     ImGui::GetStyle().ItemSpacing.x * 2.0f);
     ImGui::TextDisabled("%s", status.c_str());
     ImGui::EndMainMenuBar();
     return requests;
+}
+
+void EditorPanels::drawToolbar(LevelViewport& viewport, const ViewRect& view) {
+    if (view.width <= 0.0f || view.height <= 0.0f) {
+        return;
+    }
+    const float padding = ImGui::GetStyle().WindowPadding.x;
+    ImGui::SetNextWindowPos({view.x + padding, view.y + padding});
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    constexpr ImGuiWindowFlags kFlags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking;
+    if (ImGui::Begin("Tools", nullptr, kFlags)) {
+        for (const ToolInfo& info : kTools) {
+            // Box makes something new, so it stands a little apart from the selection tools.
+            if (info.tool == EditorTool::Box) {
+                ImGui::SameLine(0.0f, ImGui::GetFontSize());
+            } else if (info.tool != EditorTool::Select) {
+                ImGui::SameLine();
+            }
+            const bool active = viewport.tool() == info.tool;
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            }
+            if (ImGui::Button(std::format("{} ({})", info.name, info.shortcut).c_str())) {
+                viewport.setTool(info.tool);
+            }
+            if (active) {
+                ImGui::PopStyleColor();
+            }
+            ImGui::SetItemTooltip("%s", info.hint);
+        }
+    }
+    ImGui::End();
 }
 
 void EditorPanels::drawHierarchy(EditorDocument& document) {
@@ -101,7 +208,14 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
         return;
     }
     const Level& level = document.level();
-    const Selection selected = document.selection();
+    // Click selects one item; Ctrl-click adds or removes it.
+    const auto clicked = [&](LevelItem item) {
+        if (ImGui::GetIO().KeyCtrl) {
+            document.toggleSelected(item);
+        } else {
+            document.select(item);
+        }
+    };
     if (ImGui::CollapsingHeader(std::format("Brushes ({})###brushes", level.brushes.size()).c_str(),
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGuiListClipper clipper;
@@ -110,8 +224,8 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
                 const auto i = static_cast<std::size_t>(row);
                 if (ImGui::Selectable(brushLabel(level.brushes[i], i).c_str(),
-                                      selected == Selection::brush(i))) {
-                    document.select(Selection::brush(i));
+                                      document.isSelected(LevelItem::brush(i)))) {
+                    clicked(LevelItem::brush(i));
                 }
             }
         }
@@ -122,8 +236,8 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
         for (std::size_t i = 0; i < level.entities.size(); ++i) {
             const std::string label =
                 std::format("Entity {}  {}##entity{}", i, level.entities[i].className, i);
-            if (ImGui::Selectable(label.c_str(), selected == Selection::entity(i))) {
-                document.select(Selection::entity(i));
+            if (ImGui::Selectable(label.c_str(), document.isSelected(LevelItem::entity(i)))) {
+                clicked(LevelItem::entity(i));
             }
         }
     }
@@ -131,24 +245,27 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
 }
 
 void EditorPanels::drawInspector(EditorDocument& document, const EditorSettings& settings) {
-    if (!(document.selection() == m_editing)) {
+    if (document.selection() != m_editing) {
         m_editing = document.selection();
         m_brushBefore.reset();
         m_activeField = -1;
         m_problem.clear();
     }
     if (ImGui::Begin("Inspector")) {
-        switch (document.selection().kind) {
-        case Selection::Kind::Brush:
-            drawBrushInspector(document, settings);
-            break;
-        case Selection::Kind::Entity:
-            drawEntityInspector(document);
-            break;
-        case Selection::Kind::None:
+        const std::optional<LevelItem> single = document.singleSelected();
+        if (document.selection().empty()) {
             ImGui::TextDisabled("Nothing selected.");
-            ImGui::TextDisabled("Click a brush or entity in the view or the hierarchy.");
-            break;
+            ImGui::TextDisabled("Click a brush or entity in the view or the hierarchy;");
+            ImGui::TextDisabled("Ctrl-click or drag a box to select several.");
+        } else if (!single) {
+            drawMultipleInspector(document);
+        } else if (single->kind == LevelItem::Kind::Brush) {
+            drawBrushInspector(document, settings, single->index);
+        } else {
+            drawEntityInspector(document, single->index);
+        }
+        if (!document.selection().empty()) {
+            drawSelectionActions(document, settings);
         }
         if (!m_problem.empty()) {
             ImGui::Spacing();
@@ -158,8 +275,8 @@ void EditorPanels::drawInspector(EditorDocument& document, const EditorSettings&
     ImGui::End();
 }
 
-void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSettings& settings) {
-    const std::size_t index = document.selection().index;
+void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSettings& settings,
+                                      std::size_t index) {
     const Brush& brush = document.level().brushes[index];
     ImGui::Text("Brush %zu", index);
     ImGui::Separator();
@@ -206,9 +323,52 @@ void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSett
     ImGui::Spacing();
     ImGui::TextDisabled("Drag to move, Alt-drag to raise or lower,");
     ImGui::TextDisabled("Shift-drag a face to resize.");
+}
+
+void EditorPanels::drawMultipleInspector(EditorDocument& document) {
+    std::size_t brushes = 0;
+    for (const LevelItem& item : document.selection()) {
+        brushes += item.kind == LevelItem::Kind::Brush ? 1 : 0;
+    }
+    const std::size_t entities = document.selection().size() - brushes;
+    ImGui::Text("%zu brushes, %zu entities", brushes, entities);
+    ImGui::Separator();
+    if (const auto extent = selectionExtent(document)) {
+        const Vec3 size = extent->max - extent->min;
+        ImGui::TextDisabled("Extent %.3f x %.3f x %.3f m", static_cast<double>(size.x),
+                            static_cast<double>(size.y), static_cast<double>(size.z));
+    }
+    ImGui::Spacing();
+    ImGui::TextDisabled("Drag any of them to move them all.");
+}
+
+void EditorPanels::drawSelectionActions(EditorDocument& document, const EditorSettings& settings) {
+    ImGui::SeparatorText("Transform");
+    const float grid = settings.grid();
+    // One row of X, Y and Z buttons per action, each about the centre of the selection.
+    const auto axisRow = [&](const char* label, const char* tooltip, auto action) {
+        ImGui::PushID(label);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            ImGui::SameLine(axis == 0 ? ImGui::GetFontSize() * 6.0f : 0.0f);
+            if (ImGui::Button(kAxisNames[axis])) {
+                action(axis);
+            }
+            ImGui::SetItemTooltip("%s%s", tooltip, kAxisNames[axis]);
+        }
+        ImGui::PopID();
+    };
+    axisRow("Turn +90\xC2\xB0", "Anticlockwise, seen from +",
+            [&](std::size_t axis) { rotateSelection(document, axis, 1, grid); });
+    axisRow("Turn -90\xC2\xB0", "Clockwise, seen from +",
+            [&](std::size_t axis) { rotateSelection(document, axis, -1, grid); });
+    axisRow("Flip", "Mirror along ",
+            [&](std::size_t axis) { flipSelection(document, axis, grid); });
+
     ImGui::Spacing();
     if (ImGui::Button("Duplicate")) {
-        duplicateSelection(document, {settings.grid(), settings.grid(), 0.0f});
+        duplicateSelection(document, {grid, grid, 0.0f});
     }
     ImGui::SameLine();
     if (ImGui::Button("Delete")) {
@@ -248,8 +408,7 @@ bool EditorPanels::textField(const char* label, int field, const std::string& cu
     return true;
 }
 
-void EditorPanels::drawEntityInspector(EditorDocument& document) {
-    const std::size_t index = document.selection().index;
+void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t index) {
     const LevelEntity& entity = document.level().entities[index];
     ImGui::Text("Entity %zu", index);
     ImGui::Separator();
@@ -322,13 +481,6 @@ void EditorPanels::drawEntityInspector(EditorDocument& document) {
 
     ImGui::Spacing();
     ImGui::TextDisabled("Drag in the view to move, Alt-drag to raise or lower.");
-    if (ImGui::Button("Duplicate")) {
-        duplicateSelection(document, {1.0f, 0.0f, 0.0f});
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Delete")) {
-        deleteSelection(document);
-    }
 }
 
 } // namespace ct

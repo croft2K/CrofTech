@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -113,37 +114,37 @@ TEST_CASE("a level imported from a .map saves as a .level next to it") {
 TEST_CASE("selection is cleared when undo removes what was selected") {
     ct::EditorDocument document(twoBoxes(), "test.level");
     document.execute(ct::makeInsertBrush("Create brush", 2, unitBox(9.0f)));
-    document.select(ct::Selection::brush(2));
-    CHECK(document.selection() == ct::Selection::brush(2));
+    document.setSelection({ct::LevelItem::brush(0), ct::LevelItem::brush(2)});
+    CHECK(document.isSelected(ct::LevelItem::brush(2)));
     document.undo();
-    CHECK(document.selection().kind == ct::Selection::Kind::None);
+    CHECK(document.selection() == std::vector<ct::LevelItem>{ct::LevelItem::brush(0)});
 
-    document.select(ct::Selection::entity(5));
-    CHECK(document.selection().kind == ct::Selection::Kind::None);
+    document.select(ct::LevelItem::entity(5));
+    CHECK(document.selection().empty());
 }
 
 TEST_CASE("delete and duplicate act on the selection as single commands") {
     ct::EditorDocument document(twoBoxes(), "test.level");
     CHECK_FALSE(ct::deleteSelection(document));
 
-    document.select(ct::Selection::brush(0));
+    document.select(ct::LevelItem::brush(0));
     CHECK(ct::duplicateSelection(document, {0.0f, 0.0f, 4.0f}));
     REQUIRE(document.level().brushes.size() == 3);
-    CHECK(document.selection() == ct::Selection::brush(2));
+    CHECK(document.singleSelected() == ct::LevelItem::brush(2));
     CHECK(ct::boxBounds(document.level().brushes[2])->min == ct::Vec3{0.0f, 0.0f, 4.0f});
 
     CHECK(ct::deleteSelection(document));
     CHECK(document.level().brushes.size() == 2);
-    CHECK(document.selection().kind == ct::Selection::Kind::None);
+    CHECK(document.selection().empty());
 
-    document.select(ct::Selection::entity(0));
+    document.select(ct::LevelItem::entity(0));
     CHECK(ct::duplicateSelection(document, {1.0f, 0.0f, 0.0f}));
     CHECK(ct::entityOrigin(document.level().entities[1]) == ct::Vec3{1.0f, 0.0f, 1.0f});
 
     ct::addBox(document, {0.0f, 0.0f, 0.0f}, {2.0f, 2.0f, 2.0f});
-    CHECK(document.selection() == ct::Selection::brush(2));
+    CHECK(document.singleSelected() == ct::LevelItem::brush(2));
     ct::addEntity(document, {"light", {}});
-    CHECK(document.selection() == ct::Selection::entity(2));
+    CHECK(document.singleSelected() == ct::LevelItem::entity(2));
     CHECK(document.history().undoName() == "Add light");
 
     for (int i = 0; i < 5; ++i) {

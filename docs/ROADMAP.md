@@ -25,9 +25,9 @@ Each milestone ends in something playable.
 |---|---|---|---|
 | M0 | Bootstrap | CMake presets, vcpkg, CI, `CLAUDE.md`, doctest, Tracy hookup | **Done.** One command builds and tests Windows debug, asan and profile builds |
 | M1 | Foundations | SDL3 window and raw input, Vulkan static mesh, fixed 128 Hz loop with interpolated uncapped rendering, ECS with `EntityId` handles, state hashing, player movement and collision on a test level, headless sim tests | **Done** (playtested 2026-10-20). Walk the test level; movement tuned from a hot-reloading data file; headless movement and determinism tests pass; tick cost shown in the title bar and Tracy |
-| M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, basic brush editing (create, move, resize, delete box brushes on a snapping grid), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load |
+| M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, brush tools (multi-selection, move/rotate/scale gizmos, primitives such as wedges, cylinders, arches and stairs, vertex, edge and face editing, clip, extrude, hollow, subtract, merge), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | Build a level with a working door puzzle in the editor, play it, save, load |
 | M3 | Gameplay and AI | Hitscan and projectile weapons, damage, pickups, respawn, navmesh from the level, enemy perception and data-driven behaviours, encounter system (waves, arena locks, music cues), script entity (Luau) | First playable single-player arena; an encounter built with wiring plus one script |
-| M4 | Editor tools | Full brush tools (clip, extrude, vertex and face editing, primitives such as cylinders, arches and stairs), transform gizmos, visual logic graph, asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
+| M4 | Editor tools | Texture and material assignment with face alignment, editable level-geometry meshes, visual logic graph, asset browser, hot reload of textures, materials, shaders and levels | Block out and wire a new arena without leaving the editor |
 | M5 | Rendering and animation | Render graph, clustered forward lighting, PBR, cascaded and local shadows, GPU-driven culling, skeletal animation, sequencer (camera paths, animation, audio, events), TAA plus a sharp competitive mode, level compiler and content cooking into pack files | A scripted intro sequence in a lit, shadowed level at a stable frame rate |
 | M6 | Real networking | Pack checksums so clients and server run identical content, UDP transport, connect tokens, encryption, redundant inputs, delta-compressed snapshots, clock sync, prediction and reconciliation, interpolation, netgraph, packet fuzzers | Two machines play smoothly at 150 ms RTT, 20 ms jitter, 5% loss |
 | M7 | Combat netcode and scale | Lag compensation with rewind cap, sub-tick inputs, server-side projectiles, demo recording, shot debugger, relevancy and visibility culling, bandwidth budgets, Linux dedicated server, bot clients | 24-hour bot soak with no leaks; server tick p99 under 4 ms |
@@ -58,11 +58,22 @@ In order; each step builds, tests and commits on its own.
    *Done: `croftech_editor.exe` with docked hierarchy, inspector and console around the 3D view;
    fly camera, picking, move, raise, face-drag resize, box tool, duplicate, delete, entity
    property editing, grid sizes, save with an unsaved-changes prompt.*
-6. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
+6. **Brush tools.** Brought forward from M4 (2026-10-21) because every later step is tested in
+   levels built in the editor, and boxes alone make that slow. Three parts, each committed and
+   tried on its own:
+   1. *Selection and transforms:* tool toolbar, multi-selection (Ctrl-click, drag a box), move,
+      rotate and scale gizmos, 90° rotations and flips, all working on any brush shape.
+   2. *Shapes:* wedge, cylinder, cone, pyramid and rough sphere tools; arches and stairs built from
+      several brushes; a settings panel (sides, steps, thickness) with a live preview.
+   3. *Vertex, edge and face editing, and cutting:* drag corners, edges and faces of any brush with
+      snapping (edits that would make a brush concave or flat are refused); clip, extrude, hollow,
+      subtract and merge. Checks first whether plane-based brushes drift off the grid after many
+      corner edits, and changes how edited brushes are stored if they do.
+7. **Play-in-editor.** A local server and client exchanging serialized bytes over an in-memory
    transport, with the network conditioner for latency and loss.
-7. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
+8. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
    need player collision against moving brushes), wired in the inspector.
-8. **Saves, checkpoints and play from here.**
+9. **Saves, checkpoints and play from here.**
 
 ## Decisions
 

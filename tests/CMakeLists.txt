@@ -9,6 +9,8 @@ add_executable(ct_unit_tests
     unit/core/SchemaTests.cpp
     unit/editor/BrushEditingTests.cpp
     unit/editor/EditorDocumentTests.cpp
+    unit/editor/SelectionTests.cpp
+    unit/editor/AffineTransformTests.cpp
     unit/level/BrushGeometryTests.cpp
     unit/level/LevelFileTests.cpp
     unit/level/MapImportTests.cpp

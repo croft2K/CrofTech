@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace ct {
 
@@ -21,5 +22,11 @@ std::unique_ptr<Command> makeSetEntity(std::string name, std::size_t index, Leve
                                        LevelEntity after);
 std::unique_ptr<Command> makeInsertEntity(std::string name, std::size_t index, LevelEntity entity);
 std::unique_ptr<Command> makeRemoveEntity(std::string name, std::size_t index, LevelEntity entity);
+
+// Several commands as one: applied in order and reverted in reverse, so an edit of many items
+// undoes in one step. Each command's indices refer to the lists as the commands before it left
+// them.
+std::unique_ptr<Command> makeCompound(std::string name,
+                                      std::vector<std::unique_ptr<Command>> commands);
 
 } // namespace ct

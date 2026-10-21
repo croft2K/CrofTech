@@ -4,8 +4,10 @@
 
 #include "croftech/editor/EditorDocument.h"
 
+#include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace ct {
 
@@ -17,18 +19,24 @@ struct MenuRequests {
     bool addPlayerSpawn = false;
 };
 
-// The editor's panels: menu bar, hierarchy (every brush and entity) and inspector (the selected
-// one's details, editable). Inspector edits preview live and finish as one undoable command.
+// The editor's panels: menu bar, tool bar (over the 3D view), hierarchy (every brush and entity)
+// and inspector (the selection's details, editable). Inspector edits preview live and finish as
+// one undoable command.
 class EditorPanels {
 public:
     MenuRequests drawMenuBar(EditorDocument& document, EditorSettings& settings,
                              LevelViewport& viewport);
+    void drawToolbar(LevelViewport& viewport, const ViewRect& view);
     void drawHierarchy(EditorDocument& document);
     void drawInspector(EditorDocument& document, const EditorSettings& settings);
 
 private:
-    void drawBrushInspector(EditorDocument& document, const EditorSettings& settings);
-    void drawEntityInspector(EditorDocument& document);
+    void drawBrushInspector(EditorDocument& document, const EditorSettings& settings,
+                            std::size_t index);
+    void drawEntityInspector(EditorDocument& document, std::size_t index);
+    void drawMultipleInspector(EditorDocument& document);
+    // Quarter turns, flips, duplicate and delete for whatever is selected.
+    void drawSelectionActions(EditorDocument& document, const EditorSettings& settings);
     // Applies an edited entity as one command, or explains why it can't be.
     void commitEntity(EditorDocument& document, std::size_t index, const LevelEntity& edited,
                       const char* name);
@@ -38,7 +46,7 @@ private:
 
     // The brush as it was when an inspector drag began, so the drag undoes in one step.
     std::optional<Brush> m_brushBefore;
-    Selection m_editing;
+    std::vector<LevelItem> m_editing;
     int m_activeField = -1;
     std::string m_fieldText;
     std::string m_newKey;
