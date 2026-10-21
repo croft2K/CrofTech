@@ -70,6 +70,16 @@ void DevUi::setMouseCaptured(bool captured) {
         io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
     } else {
         io.ConfigFlags &= ~(ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange);
+        // Button releases during the capture never reached ImGui. A button it still thinks is
+        // held, pressed outside its windows, stops every window being hovered: menus and panels
+        // would ignore the mouse until that button happened to be released over the UI.
+        for (int button = 0; button < ImGuiMouseButton_COUNT; ++button) {
+            io.AddMouseButtonEvent(button, false);
+        }
+        float x = 0.0f;
+        float y = 0.0f;
+        SDL_GetMouseState(&x, &y);
+        io.AddMousePosEvent(x, y);
     }
 }
 

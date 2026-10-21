@@ -285,6 +285,12 @@ int main(int argc, char** argv) {
         const ImGuiIO& io = ImGui::GetIO();
         const bool mouseOverView =
             !flying && !io.WantCaptureMouse && view.contains(io.MousePos.x, io.MousePos.y);
+        // Clicking the view takes keyboard focus from the panels, so shortcuts reach the view and
+        // releasing Alt after an Alt-drag doesn't move ImGui's focus to the menu bar.
+        if (mouseOverView && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                              ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
+            ImGui::SetWindowFocus(nullptr);
+        }
         if (mouseOverView && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             setFlying(true);
         }
