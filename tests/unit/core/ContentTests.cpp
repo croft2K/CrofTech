@@ -1,42 +1,18 @@
+#include "TestFiles.h"
+
 #include "croftech/core/Content.h"
 
 #include <doctest/doctest.h>
 
 #include <chrono>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <string>
 
 namespace {
 
 namespace fs = std::filesystem;
-
-// A fresh directory under the system temp folder, removed afterwards.
-class TempDirectory {
-public:
-    TempDirectory() {
-        std::random_device random;
-        m_path = fs::temp_directory_path() / ("croftech-test-" + std::to_string(random()));
-        fs::create_directories(m_path);
-    }
-    ~TempDirectory() {
-        std::error_code error;
-        fs::remove_all(m_path, error);
-    }
-    TempDirectory(const TempDirectory&) = delete;
-    TempDirectory& operator=(const TempDirectory&) = delete;
-
-    const fs::path& path() const { return m_path; }
-
-private:
-    fs::path m_path;
-};
-
-void writeFile(const fs::path& path, const std::string& text) {
-    fs::create_directories(path.parent_path());
-    std::ofstream(path, std::ios::binary) << text;
-}
+using ct::test::TempDirectory;
+using ct::test::writeFile;
 
 // Pushes the timestamp forward so change detection doesn't depend on filesystem time resolution.
 void touch(const fs::path& path) {
@@ -101,12 +77,13 @@ TEST_CASE("layered config returns every layer lowest first, then only after chan
 
 TEST_CASE("game manifests load from games/<name>/game.cfg") {
     TempDirectory temp;
-    writeFile(temp.path() / "sandbox/game.cfg", "title  My Sandbox\n");
+    writeFile(temp.path() / "sandbox/game.cfg", "title  My Sandbox\nstart_map  arena\n");
 
     std::string error;
     const auto game = ct::loadGameManifest(temp.path(), "sandbox", error);
     REQUIRE(game.has_value());
     CHECK(game->title == "My Sandbox");
+    CHECK(game->startMap == "arena");
     CHECK(game->root == temp.path() / "sandbox");
 
     CHECK_FALSE(ct::loadGameManifest(temp.path(), "missing", error).has_value());
@@ -119,4 +96,5 @@ TEST_CASE("the sandbox game exists and its config parses cleanly") {
     const auto game = ct::loadGameManifest(CROFTECH_SOURCE_DIR "/games", "sandbox", error);
     REQUIRE_MESSAGE(game.has_value(), error);
     CHECK(game->title == "CrofTech Sandbox");
+    CHECK(game->startMap == "movement_test");
 }

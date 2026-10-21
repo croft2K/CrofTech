@@ -2,8 +2,7 @@
 // it. Regression tests for players sticking to walls and being steered sideways on ramps.
 
 #include "SimHarness.h"
-
-#include "croftech/level/TestLevels.h"
+#include "TestLevels.h"
 
 #include <doctest/doctest.h>
 
@@ -41,7 +40,7 @@ ct::UserCmd walk(float yawDegrees) {
 } // namespace
 
 TEST_CASE("walking along a wall at a shallow angle slides along it") {
-    const ct::Level level = ct::makeMovementTestLevel();
+    const ct::Level level = ct::test::makeMovementTestLevel();
     const ct::CollisionWorld world(level.brushes);
 
     // Each outer wall, walked with the wall on the player's right, starting 1 m away from it.
@@ -78,7 +77,7 @@ TEST_CASE("walking along a wall at a shallow angle slides along it") {
 }
 
 TEST_CASE("walking up a ramp keeps the player's heading") {
-    const ct::Level level = ct::makeMovementTestLevel();
+    const ct::Level level = ct::test::makeMovementTestLevel();
     // The 20 degree ramp rises towards +X from x = 6 to 12, between y = 5 and 9. Steeper headings
     // would leave its side before x = 8.
     for (const float yaw : {0.0f, 2.0f, 10.0f, 20.0f, -15.0f}) {
@@ -99,7 +98,7 @@ TEST_CASE("walking up a ramp keeps the player's heading") {
 }
 
 TEST_CASE("walking straight up the ramp reaches the platform at full speed") {
-    const ct::Level level = ct::makeMovementTestLevel();
+    const ct::Level level = ct::test::makeMovementTestLevel();
     SimHarness sim(level.brushes);
     sim.spawn({3.0f, 7.0f, 0.0f});
     int ticks = 0;
@@ -114,7 +113,7 @@ TEST_CASE("walking straight up the ramp reaches the platform at full speed") {
 }
 
 TEST_CASE("walking down the ramp keeps the player's heading and footing") {
-    const ct::Level level = ct::makeMovementTestLevel();
+    const ct::Level level = ct::test::makeMovementTestLevel();
     for (const float yaw : {180.0f, 190.0f, 165.0f}) {
         CAPTURE(yaw);
         SimHarness sim(level.brushes);
@@ -135,12 +134,12 @@ TEST_CASE("walking down the ramp keeps the player's heading and footing") {
 }
 
 TEST_CASE("a player wandering the test level never ends up inside solid") {
-    const ct::Level level = ct::makeMovementTestLevel();
+    const ct::Level level = ct::test::makeMovementTestLevel();
     const ct::CollisionWorld world(level.brushes);
     for (const std::uint32_t seed : {1u, 2u, 3u}) {
         CAPTURE(seed);
         SimHarness sim(level.brushes);
-        sim.spawn(level.spawnPoints.front().feetPosition);
+        sim.spawn(ct::test::kMovementTestSpawn);
         std::uint32_t random = seed;
         const auto next = [&random] {
             random = random * 1664525u + 1013904223u;

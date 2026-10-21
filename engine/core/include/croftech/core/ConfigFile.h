@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,6 +22,12 @@ std::vector<ConfigEntry> parseConfig(std::string_view text);
 // Strict parsers: the whole text must be a valid, finite value.
 bool parseFloat(std::string_view text, float& value);
 bool parseBool(std::string_view text, bool& value); // 1/0, true/false, on/off
+
+// Exactly values.size() floats separated by spaces or tabs.
+bool parseFloats(std::string_view text, std::span<float> values);
+
+// The shortest text that parses back to exactly the same float. Negative zero is written as "0".
+std::string formatFloat(float value);
 
 // Reads a whole text file. Fails for files over maxBytes.
 std::optional<std::string> readTextFile(const std::filesystem::path& path,

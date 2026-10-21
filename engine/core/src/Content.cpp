@@ -87,6 +87,8 @@ std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesD
     for (const ConfigEntry& entry : parseConfig(*text)) {
         if (entry.key == "title" && !entry.value.empty()) {
             manifest.title = entry.value;
+        } else if (entry.key == "start_map") {
+            manifest.startMap = entry.value;
         }
     }
     return manifest;

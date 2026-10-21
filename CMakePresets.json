@@ -79,6 +79,16 @@
       "displayName": "Linux ASan + UBSan",
       "inherits": "linux-base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CROFTECH_SANITIZE": "ON" }
+    },
+    {
+      "name": "linux-fuzz",
+      "displayName": "Linux libFuzzer + ASan + UBSan (fuzz targets only)",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CROFTECH_SANITIZE": "ON",
+        "CROFTECH_FUZZ": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -88,7 +98,8 @@
     { "name": "windows-profile", "configurePreset": "windows-profile" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
     { "name": "linux-release", "configurePreset": "linux-release" },
-    { "name": "linux-asan", "configurePreset": "linux-asan" }
+    { "name": "linux-asan", "configurePreset": "linux-asan" },
+    { "name": "linux-fuzz", "configurePreset": "linux-fuzz" }
   ],
   "testPresets": [
     {
@@ -160,6 +171,13 @@
         { "type": "configure", "name": "linux-asan" },
         { "type": "build", "name": "linux-asan" },
         { "type": "test", "name": "linux-asan" }
+      ]
+    },
+    {
+      "name": "linux-fuzz",
+      "steps": [
+        { "type": "configure", "name": "linux-fuzz" },
+        { "type": "build", "name": "linux-fuzz" }
       ]
     }
   ]

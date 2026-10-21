@@ -16,16 +16,25 @@ Windows (any shell; the script loads the Visual Studio environment and keeps you
     .\scripts\build.ps1 -Preset windows-profile  # Release + Tracy zones
 
 Linux: `cmake --workflow --preset linux-debug` (also `linux-release`, `linux-asan` with UBSan).
+`linux-fuzz` builds only the fuzz targets as libFuzzer executables (CI runs each for a minute);
+in every other build they replay their seed corpus in `tests/fuzz/corpus/` as ordinary tests.
 
 Run tests only: `ctest --preset windows-debug`. Build output goes to `build/<preset>/`; every
 executable and the compiled shaders land in `build/<preset>/bin/`.
 
-Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--frames N] [--exec "cmds"]`
-(`--frames` quits after N frames, for automated smoke runs; `--exec` runs console commands once
-the config files have loaded). In the client, the key below Esc opens the developer console.
+Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--map name] [--frames N]
+[--exec "cmds"]` (`--map` defaults to the game's `start_map`; `--frames` quits after N frames, for
+automated smoke runs; `--exec` runs console commands once the config files have loaded). In the
+client, the key below Esc opens the developer console; `map <name>` there switches level.
+
+Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described in
+`level/LevelFile.h`): the editable source, diffable in git. A level name is looked up as
+`levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
+content layers; a name with an extension is a path. Shipped games will later cook levels and
+assets into packed binary files; the text file stays the source.
 
 CrofTech is an engine; games are built on it. Each game lives in `games/<name>/` with a `game.cfg`
-(title) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
+(title, start_map) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
 Config files merge setting by setting (a game lists only what it changes); other files are taken
 whole from the highest layer that has them (`ct::ContentPaths`, `ct::LayeredConfig`). Development
 builds read content from the source tree and reload config whenever it is saved. Debug builds
@@ -49,7 +58,8 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
 
     engine/core      math, angles, hashing, asserts, logging, config files, console variables,
                      profiling
-    engine/level     level data: brushes, spawn points, brush geometry, test levels (core)
+    engine/level     level data: brushes, entities, brush geometry, level files, .map import
+                     (core)
     engine/sim       ECS world, components, collision, movement        (core, level)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    simulation thread; later prediction, interpolation (sim, platform)
@@ -59,7 +69,7 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/server    sessions, input buffers, lag compensation          (M6-M7)
     game/            weapons, damage, rules (simulation systems)
     apps/            client (croftech.exe); later dedicated_server, editor, levelc
-    content/         engine default content (config; later levels and assets)
+    content/         engine default content (config, levels; later assets)
     games/<name>/    a game: game.cfg, content/ overrides, later its gameplay code
     tests/           unit/, sim/ (headless), fuzz/
 

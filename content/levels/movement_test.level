@@ -1,0 +1,220 @@
+croftech_level 1
+
+brush
+    plane 1 0 0 40
+    plane -1 0 0 40
+    plane 0 1 0 40
+    plane 0 -1 0 40
+    plane 0 0 1 0
+    plane 0 0 -1 1
+end
+
+brush
+    plane 1 0 0 41
+    plane -1 0 0 41
+    plane 0 1 0 -40
+    plane 0 -1 0 41
+    plane 0 0 1 8
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 41
+    plane -1 0 0 41
+    plane 0 1 0 41
+    plane 0 -1 0 -40
+    plane 0 0 1 8
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -40
+    plane -1 0 0 41
+    plane 0 1 0 40
+    plane 0 -1 0 40
+    plane 0 0 1 8
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 41
+    plane -1 0 0 -40
+    plane 0 1 0 40
+    plane 0 -1 0 40
+    plane 0 0 1 8
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 6.4
+    plane -1 0 0 -6
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 0.3
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 6.8
+    plane -1 0 0 -6.4
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 0.6
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 7.2000003
+    plane -1 0 0 -6.8
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 0.90000004
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 7.6
+    plane -1 0 0 -7.2
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 1.2
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 8
+    plane -1 0 0 -7.6
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 1.5
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 8.4
+    plane -1 0 0 -8
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 1.8000001
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 14
+    plane -1 0 0 -8.4
+    plane 0 1 0 1.5
+    plane 0 -1 0 1.5
+    plane 0 0 1 1.8
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 12
+    plane 0 1 0 9
+    plane 0 -1 0 -5
+    plane 0 0 -1 0
+    plane -0.34425464 0 0.9388763 -2.065528
+end
+
+brush
+    plane 1 0 0 16
+    plane -1 0 0 -12
+    plane 0 1 0 9
+    plane 0 -1 0 -5
+    plane 0 0 1 2.2
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 8
+    plane 0 1 0 -5
+    plane 0 -1 0 9
+    plane 0 0 -1 0
+    plane -0.86824316 0 0.49613893 -5.209459
+end
+
+brush
+    plane 1 0 0 -12
+    plane -1 0 0 14
+    plane 0 1 0 -12
+    plane 0 -1 0 14
+    plane 0 0 1 0.4
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -9
+    plane -1 0 0 11
+    plane 0 1 0 -12
+    plane 0 -1 0 14
+    plane 0 0 1 0.6
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -6
+    plane -1 0 0 8
+    plane 0 1 0 -12
+    plane 0 -1 0 14
+    plane 0 0 1 1
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -3
+    plane -1 0 0 5
+    plane 0 1 0 -12
+    plane 0 -1 0 14
+    plane 0 0 1 1.5
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -18
+    plane -1 0 0 20
+    plane 0 1 0 17
+    plane 0 -1 0 -15
+    plane 0 0 1 1
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -14
+    plane -1 0 0 16
+    plane 0 1 0 17
+    plane 0 -1 0 -15
+    plane 0 0 1 1
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -9
+    plane -1 0 0 11
+    plane 0 1 0 17
+    plane 0 -1 0 -15
+    plane 0 0 1 1
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 -3
+    plane -1 0 0 5
+    plane 0 1 0 17
+    plane 0 -1 0 -15
+    plane 0 0 1 1
+    plane 0 0 -1 0
+end
+
+brush
+    plane 1 0 0 4
+    plane -1 0 0 -2
+    plane 0 1 0 17
+    plane 0 -1 0 -15
+    plane 0 0 1 1
+    plane 0 0 -1 0
+end
+
+entity player_spawn
+    origin 0 -4 0
+    yaw 0
+end

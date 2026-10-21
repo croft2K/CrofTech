@@ -21,6 +21,7 @@ option(CROFTECH_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(CROFTECH_SANITIZE "Build with AddressSanitizer (plus UBSan where supported)" OFF)
 option(CROFTECH_PROFILE "Enable Tracy profiling zones" OFF)
 option(CROFTECH_BUILD_TESTS "Build the test suites" ON)
+option(CROFTECH_FUZZ "Build only the fuzz targets, as libFuzzer executables (Linux clang)" OFF)
 option(CROFTECH_BUILD_CLIENT "Build the client and renderer (needs SDL3 and the Vulkan SDK)"
        ${ct_client_default})
 
@@ -50,7 +51,9 @@ if(CROFTECH_BUILD_CLIENT)
     add_subdirectory(apps)
 endif()
 
-if(CROFTECH_BUILD_TESTS)
+if(CROFTECH_FUZZ)
+    add_subdirectory(tests/fuzz)
+elseif(CROFTECH_BUILD_TESTS)
     enable_testing()
     find_package(doctest CONFIG REQUIRED)
     add_subdirectory(tests)

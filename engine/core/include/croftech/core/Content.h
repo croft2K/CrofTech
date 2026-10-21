@@ -52,8 +52,9 @@ private:
 };
 
 struct GameManifest {
-    std::string name;  // folder name under games/
-    std::string title; // shown to players
+    std::string name;     // folder name under games/
+    std::string title;    // shown to players
+    std::string startMap; // level loaded when none is named on the command line
     std::filesystem::path root;
 };
 

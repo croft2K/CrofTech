@@ -1,6 +1,6 @@
-#include "croftech/level/TestLevels.h"
+#include "TestLevels.h"
 
-namespace ct {
+namespace ct::test {
 
 Level makeMovementTestLevel() {
     Level level;
@@ -42,8 +42,8 @@ Level makeMovementTestLevel() {
         x += 2.0f + static_cast<float>(i + 2);
     }
 
-    level.spawnPoints.push_back({{0.0f, -4.0f, 0.0f}, 0});
+    level.entities.push_back(makePlayerSpawn(kMovementTestSpawn, 0.0f));
     return level;
 }
 
-} // namespace ct
+} // namespace ct::test

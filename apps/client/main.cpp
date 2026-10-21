@@ -6,6 +6,9 @@
 //
 // Settings are console variables: config files set them (and reload when saved), and so does the
 // developer console, opened with the key below Esc.
+//
+// Levels are found by name through the content layers (levels/<name>.level, then a TrenchBroom
+// levels/<name>.map), or by path. The game's start_map loads first; the map command switches.
 
 #include "WorldMesh.h"
 
@@ -18,7 +21,8 @@
 #include "croftech/devui/ConsoleWindow.h"
 #include "croftech/devui/DevUi.h"
 #include "croftech/devui/StatsOverlay.h"
-#include "croftech/level/TestLevels.h"
+#include "croftech/level/LevelFile.h"
+#include "croftech/level/MapImport.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/sim/CollisionWorld.h"
 #include "croftech/sim/MovementConfig.h"
@@ -31,6 +35,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <optional>
 #include <span>
@@ -49,6 +54,7 @@ constexpr auto kReloadInterval = std::chrono::milliseconds(250);
 
 struct CommandLine {
     std::string game = "sandbox";
+    std::string map;                  // level name or path; empty means the game's start_map
     int frameLimit = -1;              // quit after this many frames, for automated smoke runs
     std::vector<std::string> execute; // console commands run after the config files load
 };
@@ -59,6 +65,8 @@ CommandLine parseCommandLine(int argc, char** argv) {
         const std::string_view option(argv[i]);
         if (option == "--game") {
             commandLine.game = argv[++i];
+        } else if (option == "--map") {
+            commandLine.map = argv[++i];
         } else if (option == "--frames") {
             commandLine.frameLimit = std::atoi(argv[++i]);
         } else if (option == "--exec") {
@@ -108,6 +116,55 @@ void reloadConfig(ct::Console& console, ConfigFile& file, bool announce) {
 
 ct::Vec3 lerp(ct::Vec3 a, ct::Vec3 b, float t) { return a + (b - a) * t; }
 
+// A level read, checked and ready to play.
+struct PreparedLevel {
+    std::string name;
+    ct::Level level;
+    std::vector<ct::SpawnPoint> spawns;
+};
+
+std::optional<PreparedLevel> prepareLevel(const ct::ContentPaths& content, const std::string& name,
+                                          std::string& error) {
+    std::filesystem::path path(name);
+    if (!path.has_extension()) {
+        const std::filesystem::path base = std::filesystem::path("levels") / name;
+        std::optional<std::filesystem::path> found =
+            content.find(std::filesystem::path(base).concat(ct::kLevelFileExtension));
+        if (!found) {
+            found = content.find(std::filesystem::path(base).concat(ct::kMapFileExtension));
+        }
+        if (!found) {
+            error = std::format("no level '{}' (looked for levels/{}{} and levels/{}{})", name,
+                                name, ct::kLevelFileExtension, name, ct::kMapFileExtension);
+            return std::nullopt;
+        }
+        path = *found;
+    }
+
+    std::optional<ct::Level> level;
+    if (path.extension() == ct::kMapFileExtension) {
+        std::vector<std::string> warnings;
+        level = ct::importMapFile(path, {}, warnings, error);
+        for (const std::string& warning : warnings) {
+            ct::logWarning("{}: {}", path.filename().string(), warning);
+        }
+    } else {
+        level = ct::loadLevelFile(path, error);
+    }
+    if (!level) {
+        return std::nullopt;
+    }
+    std::optional<std::vector<ct::SpawnPoint>> spawns = ct::readSpawnPoints(*level, error);
+    if (!spawns) {
+        return std::nullopt;
+    }
+    if (spawns->empty()) {
+        error = std::format("level '{}' has no {}", name, ct::kPlayerSpawnClass);
+        return std::nullopt;
+    }
+    return PreparedLevel{name, std::move(*level), std::move(*spawns)};
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -136,8 +193,35 @@ int main(int argc, char** argv) {
     for (ConfigFile& file : configFiles) {
         reloadConfig(console, file, false);
     }
+
+    // Levels switch between frames, so the map command only prepares the next one.
+    std::optional<PreparedLevel> pendingLevel;
+    console.addCommand("map", "Load a level by name or path: map <name>",
+                       [&](std::span<const std::string> args) {
+                           if (args.size() != 1) {
+                               ct::logWarning("usage: map <name>");
+                               return;
+                           }
+                           std::string mapError;
+                           pendingLevel = prepareLevel(content, args[0], mapError);
+                           if (!pendingLevel) {
+                               ct::logError("map {}: {}", args[0], mapError);
+                           }
+                       });
     for (const std::string& commands : commandLine.execute) {
         console.execute(commands);
+    }
+    if (!pendingLevel) {
+        const std::string& name = commandLine.map.empty() ? game->startMap : commandLine.map;
+        if (name.empty()) {
+            ct::logError("no level to load: pass --map <name> or set start_map in game.cfg");
+            return EXIT_FAILURE;
+        }
+        pendingLevel = prepareLevel(content, name, error);
+        if (!pendingLevel) {
+            ct::logError("map {}: {}", name, error);
+            return EXIT_FAILURE;
+        }
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -166,26 +250,36 @@ int main(int argc, char** argv) {
     ct::ConsoleWindow consoleWindow(console);
     ct::StatsOverlay stats;
 
-    const ct::Level level = ct::makeMovementTestLevel();
-    const ct::CollisionWorld collision(level.brushes);
-    const ct::WorldMesh mesh = ct::buildWorldMesh(level);
-    renderer->setWorldMesh(mesh.vertices, mesh.indices);
-
     ct::MovementSettings movement = ct::movementSettingsFromCVars(console);
     std::uint64_t seenChanges = console.changeCount();
-    const ct::SpawnPoint& spawn = level.spawnPoints.front();
-    auto initial = std::make_unique<ct::State>();
-    const ct::EntityId player = ct::spawnPlayer(initial->world, movement, spawn, 0);
-    ct::SimThread sim(collision, movement, *initial);
-    initial.reset();
-    sim.start();
+
+    // The simulation thread reads the collision world, so it stops before the world is replaced.
+    std::unique_ptr<ct::CollisionWorld> collision;
+    std::unique_ptr<ct::SimThread> sim;
+    ct::EntityId player;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    const auto enterLevel = [&](const PreparedLevel& prepared) {
+        sim.reset();
+        collision = std::make_unique<ct::CollisionWorld>(prepared.level.brushes);
+        const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level);
+        renderer->setWorldMesh(mesh.vertices, mesh.indices);
+
+        const ct::SpawnPoint& spawn = prepared.spawns.front();
+        auto initial = std::make_unique<ct::State>();
+        player = ct::spawnPlayer(initial->world, movement, spawn, 0);
+        sim = std::make_unique<ct::SimThread>(*collision, movement, *initial);
+        sim->start();
+        yaw = ct::angleToRadians(spawn.yaw);
+        pitch = 0.0f;
+        ct::logInfo("Level: {} ({} brushes, {} entities)", prepared.name,
+                    prepared.level.brushes.size(), prepared.level.entities.size());
+    };
 
     bool running = true;
     console.addCommand("quit", "Exit the game",
                        [&running](std::span<const std::string>) { running = false; });
 
-    float yaw = ct::angleToRadians(spawn.yaw);
-    float pitch = 0.0f;
     const float maxPitch = ct::angleToRadians(ct::kMaxPitch);
     bool mouseCaptured = false;
     const auto captureMouse = [&](bool capture) {
@@ -202,6 +296,11 @@ int main(int argc, char** argv) {
 
     while (running) {
         CT_PROFILE_FRAME();
+
+        if (pendingLevel) {
+            enterLevel(*pendingLevel);
+            pendingLevel.reset();
+        }
 
         SDL_Event event;
         bool consoleKeyPressed = false;
@@ -268,7 +367,7 @@ int main(int argc, char** argv) {
             cmd.side = axis(SDL_SCANCODE_D, SDL_SCANCODE_A);
             cmd.buttons = keys[SDL_SCANCODE_SPACE] ? ct::kButtonJump : 0;
         }
-        sim.submitInput(0, cmd);
+        sim->submitInput(0, cmd);
 
         const Clock::time_point now = Clock::now();
         if (now >= nextReload) {
@@ -280,12 +379,12 @@ int main(int argc, char** argv) {
         if (console.changeCount() != seenChanges) {
             seenChanges = console.changeCount();
             movement = ct::movementSettingsFromCVars(console);
-            sim.setMovementSettings(movement);
+            sim->setMovementSettings(movement);
         }
 
         ct::Vec3 eye;
-        sim.readStates([&](const ct::State& previous, const ct::State& current,
-                           Clock::time_point publishedAt) {
+        sim->readStates([&](const ct::State& previous, const ct::State& current,
+                            Clock::time_point publishedAt) {
             const ct::Transform* from = previous.world.transforms.get(player);
             const ct::Transform* to = current.world.transforms.get(player);
             if (from == nullptr || to == nullptr) {
@@ -302,7 +401,7 @@ int main(int argc, char** argv) {
         });
 
         stats.add({std::chrono::duration<float, std::milli>(now - lastFrame).count(),
-                   sim.lastStepMilliseconds(), horizontalSpeed});
+                   sim->lastStepMilliseconds(), horizontalSpeed});
         lastFrame = now;
 
         devUi->beginFrame();
@@ -326,7 +425,8 @@ int main(int argc, char** argv) {
     }
 
     console.removeCommand("quit");
-    sim.stop();
+    console.removeCommand("map");
+    sim.reset();
     renderer.reset(); // before the ImGui context it serves
     devUi.reset();
     SDL_DestroyWindow(window);

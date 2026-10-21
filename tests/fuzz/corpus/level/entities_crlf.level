@@ -1,0 +1,10 @@
+# comment
+croftech_level 1
+entity player_spawn
+  origin 1.5 -2 0.25
+  yaw 90
+end
+entity light
+	colour 1 0.5 0
+	flag
+end

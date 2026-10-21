@@ -1,7 +1,7 @@
 # Shared compiler settings for every CrofTech target.
 #
 #   ct_apply_defaults(<target>)  warnings, float determinism flags, sanitizers, asserts
-#   ct_add_test(<target>)        registers a test executable with CTest
+#   ct_add_test(<target> [args]) registers a test executable with CTest
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set(CT_CLANG_CL TRUE)
@@ -15,6 +15,10 @@ if(CROFTECH_SANITIZE AND CT_CLANG_CL)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         COMMAND_ERROR_IS_FATAL ANY)
     set(CT_ASAN_RUNTIME_DIR "${CT_CLANG_RESOURCE_DIR}/lib/windows")
+endif()
+
+if(CROFTECH_FUZZ AND (MSVC OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+    message(FATAL_ERROR "CROFTECH_FUZZ needs clang on Linux (the linux-fuzz preset)")
 endif()
 
 function(ct_apply_defaults target)
@@ -57,6 +61,10 @@ function(ct_apply_defaults target)
             target_compile_options(${target} PRIVATE ${sanitize_flags})
             target_link_options(${target} PRIVATE ${sanitize_flags})
         endif()
+        if(CROFTECH_FUZZ)
+            # Coverage feedback for libFuzzer in all code; only fuzz targets link its main().
+            target_compile_options(${target} PRIVATE -fsanitize=fuzzer-no-link)
+        endif()
     endif()
 
     # Asserts stay on in sanitizer builds even though they use an optimised config.
@@ -65,7 +73,7 @@ function(ct_apply_defaults target)
 endfunction()
 
 function(ct_add_test target)
-    add_test(NAME ${target} COMMAND ${target})
+    add_test(NAME ${target} COMMAND ${target} ${ARGN})
     if(CT_ASAN_RUNTIME_DIR)
         set_tests_properties(${target} PROPERTIES
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${CT_ASAN_RUNTIME_DIR}")

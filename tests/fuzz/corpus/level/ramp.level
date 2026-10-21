@@ -1,0 +1,8 @@
+croftech_level 1
+brush
+    plane 0.89442719 0 0.44721359 1.3416408
+    plane -1 0 0 0
+    plane 0 1 0 2
+    plane 0 -1 0 0
+    plane 0 0 -1 0
+end

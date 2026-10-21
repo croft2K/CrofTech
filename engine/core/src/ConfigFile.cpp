@@ -70,6 +70,30 @@ bool parseBool(std::string_view text, bool& value) {
     return false;
 }
 
+bool parseFloats(std::string_view text, std::span<float> values) {
+    for (float& value : values) {
+        text = trim(text);
+        std::size_t end = 0;
+        while (end < text.size() && !isSpace(text[end])) {
+            ++end;
+        }
+        if (!parseFloat(text.substr(0, end), value)) {
+            return false;
+        }
+        text.remove_prefix(end);
+    }
+    return trim(text).empty();
+}
+
+std::string formatFloat(float value) {
+    if (value == 0.0f) {
+        return "0";
+    }
+    char buffer[32];
+    const auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+    return error == std::errc{} ? std::string(buffer, end) : std::string("0");
+}
+
 std::optional<std::string> readTextFile(const std::filesystem::path& path, std::size_t maxBytes) {
     std::error_code error;
     const std::uintmax_t size = std::filesystem::file_size(path, error);
