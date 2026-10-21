@@ -124,7 +124,7 @@ TEST_CASE("a box brush loads with its corners and faces in file order") {
     CHECK(level->brushes[0] == ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}));
 }
 
-TEST_CASE("version 1 brushes, made of planes, load as corners and save as version 2") {
+TEST_CASE("version 1 brushes, made of planes, load as corners and save as version 3") {
     std::string error;
     const auto level = ct::parseLevel(planeBoxText(), error);
     REQUIRE_MESSAGE(level.has_value(), error);
@@ -141,14 +141,14 @@ TEST_CASE("version 1 brushes, made of planes, load as corners and save as versio
 
     const auto text = ct::formatLevel(*level, error);
     REQUIRE(text.has_value());
-    CHECK(text->starts_with("croftech_level 2\n"));
+    CHECK(text->starts_with("croftech_level 3\n"));
     CHECK(ct::parseLevel(*text, error) == level);
 }
 
 TEST_CASE("malformed level files are rejected with the line of the problem") {
     CHECK(parseError("") == "line 1: not a level file (it is empty)");
     CHECK(parseError("brush\nend\n").starts_with("line 1: not a level file"));
-    CHECK(parseError("croftech_level 3\n") == "line 1: unsupported level file version");
+    CHECK(parseError("croftech_level 4\n") == "line 1: unsupported level file version");
     CHECK(parseError("croftech_level 2\nwall\n") == "line 2: expected 'brush' or 'entity'");
     CHECK(parseError("croftech_level 2\nbrush extra\n") == "line 2: expected 'brush' or 'entity'");
     CHECK(parseError("croftech_level 2\n\nbrush\n    vertex 1 0 0\n") ==
@@ -204,6 +204,74 @@ TEST_CASE("brushes must be closed convex solids within the world") {
     CHECK(parseError(kOpenBowl) == "line 2: planes do not enclose a valid brush");
 }
 
+TEST_CASE("entity brushes and outputs save inside their entity and load back") {
+    ct::Level level;
+    level.brushes.push_back(ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {4.0f, 4.0f, 1.0f}));
+    level.entities.push_back(ct::makePlayerSpawn({1.0f, 1.0f, 1.0f}, 0.0f));
+    level.entities.push_back({"door", {{"name", "gate"}, {"move", "0 0 2.5"}}});
+    level.entities.push_back({"trigger", {}, {{"on_enter", "gate", "open", 0.5f}}});
+    // Out of file order on purpose: saving groups each entity's brushes inside its block.
+    ct::Brush gate = ct::makeBoxBrush({1.0f, 0.0f, 1.0f}, {2.0f, 0.25f, 3.0f});
+    gate.entity = 1;
+    ct::Brush volume = ct::makeBoxBrush({0.0f, 1.0f, 1.0f}, {4.0f, 3.0f, 3.0f});
+    volume.entity = 2;
+    level.brushes.push_back(volume);
+    level.brushes.push_back(gate);
+    level.brushes.push_back(ct::makeBoxBrush({0.0f, 0.0f, 3.0f}, {4.0f, 4.0f, 4.0f}));
+
+    std::string error;
+    const std::optional<std::string> text = ct::formatLevel(level, error);
+    REQUIRE_MESSAGE(text.has_value(), error);
+    CHECK(text->find("entity trigger\n    output on_enter gate open 0.5\n    brush\n") !=
+          std::string::npos);
+    const std::optional<ct::Level> loaded = ct::parseLevel(*text, error);
+    REQUIRE_MESSAGE(loaded.has_value(), error);
+    REQUIRE(loaded->brushes.size() == 4);
+    CHECK(loaded->brushes[0] == level.brushes[0]);
+    CHECK(loaded->brushes[1] == level.brushes[3]);
+    CHECK(loaded->brushes[2] == gate);
+    CHECK(loaded->brushes[3] == volume);
+    CHECK(loaded->entities == level.entities);
+    CHECK(ct::formatLevel(*loaded, error) == text);
+}
+
+TEST_CASE("world brushes load first wherever they are in the file") {
+    const std::string brush = boxText().substr(boxText().find('\n') + 1);
+    std::string error;
+    const auto level =
+        ct::parseLevel("croftech_level 3\nentity door\n" + brush + "end\n" + brush, error);
+    REQUIRE_MESSAGE(level.has_value(), error);
+    REQUIRE(level->brushes.size() == 2);
+    CHECK(level->brushes[0].entity == ct::kNoEntity);
+    CHECK(level->brushes[1].entity == 0);
+}
+
+TEST_CASE("malformed outputs and brush owners are rejected") {
+    const std::string head = "croftech_level 3\nentity relay\n";
+    CHECK(parseError(head + "    output on_trigger door\nend\n") ==
+          "line 3: an output is: output <event> <target> <input> <delay>");
+    CHECK(parseError(head + "    output on_trigger door open soon\nend\n") ==
+          "line 3: an output is: output <event> <target> <input> <delay>");
+    CHECK(parseError(head + "    output on_trigger door open 1 more\nend\n") ==
+          "line 3: an output is: output <event> <target> <input> <delay>");
+    CHECK(parseError(head + "    output on_trigger door open -1\nend\n") ==
+          "line 2: output delays are 0 to 3600 seconds");
+    CHECK(parseError(head + "    output on_trigger do/or open 1\nend\n") ==
+          "line 2: an output has an invalid event, target or input name");
+    CHECK(parseError(head + "    brush\n        vertex 0 0 0\n") == "line 3: brush has no 'end'");
+    CHECK(parseError(head + "    output 1\n") ==
+          "line 3: an output is: output <event> <target> <input> <delay>");
+    CHECK(parseError(head + "    brush\nend\n") ==
+          "line 3: a brush needs 4 to 1020 corners, not 0");
+
+    ct::Level level;
+    level.brushes.push_back(ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}));
+    level.brushes[0].entity = 0;
+    std::string error;
+    CHECK_FALSE(ct::formatLevel(level, error).has_value());
+    CHECK(error == "brush 0 belongs to entity 0, which does not exist");
+}
+
 TEST_CASE("formatLevel refuses levels that would not load again") {
     ct::Level level;
     level.brushes.push_back(ct::makeBoxBrush({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}));
@@ -218,6 +286,10 @@ TEST_CASE("formatLevel refuses levels that would not load again") {
     CHECK(error == "entity 0 (note): property 'text' has an invalid value");
 
     level.entities[0] = {"note", {{"end", "x"}}};
+    CHECK_FALSE(ct::formatLevel(level, error).has_value());
+    CHECK(error == "entity 0 (note): invalid property key");
+
+    level.entities[0] = {"note", {{"output", "x"}}};
     CHECK_FALSE(ct::formatLevel(level, error).has_value());
     CHECK(error == "entity 0 (note): invalid property key");
 }

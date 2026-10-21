@@ -32,6 +32,7 @@ public:
     bool redo();
     const CommandStack& history() const { return m_history; }
 
+    // Changes the brush's shape; it stays in its entity, as with makeSetBrush.
     void previewBrush(std::size_t index, const Brush& brush);
     void previewEntity(std::size_t index, const LevelEntity& entity);
 

@@ -222,6 +222,7 @@ private:
         float screenStartX = 0.0f;        // Marquee, Ring
         float screenStartY = 0.0f;
         bool additive = false;            // Marquee with Ctrl
+        bool single = false;              // Marquee with Alt: items, not their whole entities
         bool selectCorners = false;       // Marquee in the Vertex tool
         std::vector<Vec3> corners;        // Corners: the corners moving, where they started
         Vec3 cornerOffset;                // Corners: the move shown now

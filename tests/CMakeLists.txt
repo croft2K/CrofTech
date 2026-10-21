@@ -8,6 +8,7 @@ add_executable(ct_unit_tests
     unit/core/HashTests.cpp
     unit/core/SchemaTests.cpp
     unit/editor/BrushEditingTests.cpp
+    unit/editor/BrushEntityTests.cpp
     unit/editor/BrushOperationsTests.cpp
     unit/editor/CornerEditingTests.cpp
     unit/editor/EditorDocumentTests.cpp
@@ -15,6 +16,7 @@ add_executable(ct_unit_tests
     unit/editor/ShapesTests.cpp
     unit/editor/AffineTransformTests.cpp
     unit/level/BrushGeometryTests.cpp
+    unit/level/EntityClassesTests.cpp
     unit/level/LevelFileTests.cpp
     unit/level/MapImportTests.cpp
     unit/net/LoopbackLinkTests.cpp

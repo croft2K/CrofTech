@@ -435,7 +435,6 @@ int main(int argc, char** argv) {
 
         // Shortcuts, unless a text field has the keyboard.
         bool frameSelection = menu.frameSelection;
-        bool addSpawn = menu.addPlayerSpawn;
         bool startPlaying = menu.play;
         // Not on the frame play stops either: its Esc is not for the editor.
         if (!flying && !playing && !stopPlay && !io.WantTextInput) {
@@ -509,9 +508,11 @@ int main(int argc, char** argv) {
         if (startPlaying && !playing) {
             startPlay();
         }
-        if (addSpawn) {
-            ct::addEntity(document,
-                          ct::makePlayerSpawn(viewport.placementPoint(document, settings), 0.0f));
+        if (menu.addEntity != nullptr) {
+            ct::LevelEntity entity = ct::makeEntity(*menu.addEntity);
+            ct::setProperty(entity, "origin",
+                            ct::formatVec3(viewport.placementPoint(document, settings)));
+            ct::addEntity(document, std::move(entity));
         }
         if (frameSelection) {
             if (const auto centre = selectionCentre(document, settings)) {

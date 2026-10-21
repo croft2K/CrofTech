@@ -5,9 +5,11 @@
 #include "croftech/editor/LevelCommands.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/level/BrushGeometry.h"
+#include "croftech/level/EntityClasses.h"
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <format>
 #include <memory>
 #include <utility>
@@ -44,10 +46,44 @@ bool turnAboutCentre(EditorDocument& document, const AffineTransform& aboutOrigi
     return transformSelection(document, onGrid, verb);
 }
 
+// Entities that have brushes now but would have none if each brush i belonged to owners[i]
+// (kNoEntity for a brush being deleted), last first. A door with no brushes is nothing, so these
+// are deleted along with the change.
+std::vector<std::size_t> emptiedEntities(const Level& level,
+                                         std::span<const std::uint32_t> owners) {
+    std::vector<std::size_t> before(level.entities.size(), 0);
+    std::vector<std::size_t> after(level.entities.size(), 0);
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        if (level.brushes[i].entity < before.size()) {
+            ++before[level.brushes[i].entity];
+        }
+        if (owners[i] < after.size()) {
+            ++after[owners[i]];
+        }
+    }
+    std::vector<std::size_t> emptied;
+    for (std::size_t i = level.entities.size(); i-- > 0;) {
+        if (before[i] > 0 && after[i] == 0) {
+            emptied.push_back(i);
+        }
+    }
+    return emptied;
+}
+
+std::vector<std::uint32_t> brushOwners(const Level& level) {
+    std::vector<std::uint32_t> owners;
+    owners.reserve(level.brushes.size());
+    for (const Brush& brush : level.brushes) {
+        owners.push_back(brush.entity);
+    }
+    return owners;
+}
+
 using BrushReplacement = std::pair<std::size_t, std::vector<Brush>>;
 
 // Replaces brushes, by index, with lists of brushes as one command: the first of each list takes
-// the brush's place, the rest go on the end, and a brush replaced by nothing is removed. Selects
+// the brush's place, the rest go on the end, and a brush replaced by nothing is removed (with its
+// entity, if that was the entity's last brush). Selects
 // the replacements plus keep (items the command doesn't move: entities, and brushes when nothing is
 // removed).
 void replaceBrushes(EditorDocument& document, const std::string& name,
@@ -65,20 +101,41 @@ void replaceBrushes(EditorDocument& document, const std::string& name,
         commands.push_back(makeSetBrush(name, index, level.brushes[index], brushes.front()));
         added.push_back(index);
         for (std::size_t i = 1; i < brushes.size(); ++i) {
+            // Pieces stay in the entity of the brush they came from.
+            brushes[i].entity = level.brushes[index].entity;
             commands.push_back(makeInsertBrush(name, end, std::move(brushes[i])));
             added.push_back(end++);
         }
     }
     std::sort(removed.begin(), removed.end());
+    std::vector<std::uint32_t> owners = brushOwners(level);
     for (auto it = removed.rbegin(); it != removed.rend(); ++it) {
         commands.push_back(makeRemoveBrush(name, *it, level.brushes[*it]));
+        owners[*it] = kNoEntity;
+    }
+    std::vector<std::size_t> emptied = emptiedEntities(level, owners);
+    for (const std::size_t index : emptied) {
+        commands.push_back(makeRemoveEntity(name, index, level.entities[index]));
     }
     runCommands(document, name, std::move(commands));
-    for (const std::size_t index : added) {
-        const auto below = std::lower_bound(removed.begin(), removed.end(), index);
-        keep.push_back(LevelItem::brush(index - static_cast<std::size_t>(below - removed.begin())));
+
+    const auto shift = [](const std::vector<std::size_t>& sorted, std::size_t index) {
+        return static_cast<std::size_t>(std::lower_bound(sorted.begin(), sorted.end(), index) -
+                                        sorted.begin());
+    };
+    std::sort(emptied.begin(), emptied.end());
+    std::vector<LevelItem> selection;
+    for (const LevelItem& item : keep) {
+        if (item.kind == LevelItem::Kind::Brush) {
+            selection.push_back(item);
+        } else if (!std::binary_search(emptied.begin(), emptied.end(), item.index)) {
+            selection.push_back(LevelItem::entity(item.index - shift(emptied, item.index)));
+        }
     }
-    document.setSelection(std::move(keep));
+    for (const std::size_t index : added) {
+        selection.push_back(LevelItem::brush(index - shift(removed, index)));
+    }
+    document.setSelection(std::move(selection));
 }
 
 std::vector<std::size_t> selectedBrushes(const EditorDocument& document) {
@@ -116,6 +173,19 @@ std::string describeSelection(const EditorDocument& document) {
     if (selection.size() == 1) {
         return selection.front().kind == LevelItem::Kind::Brush ? "brush" : "entity";
     }
+    // Entities sort after brushes, so a lone entity with its brushes is last.
+    const LevelItem last = selection.back();
+    if (last.kind == LevelItem::Kind::Entity && selection.size() >= 2 &&
+        selection[selection.size() - 2].kind == LevelItem::Kind::Brush) {
+        const Level& level = document.level();
+        const bool allItsBrushes =
+            std::all_of(selection.begin(), selection.end() - 1, [&](const LevelItem& item) {
+                return level.brushes[item.index].entity == last.index;
+            });
+        if (allItsBrushes) {
+            return level.entities[last.index].className;
+        }
+    }
     return std::format("{} items", selection.size());
 }
 
@@ -130,21 +200,55 @@ void selectAll(EditorDocument& document) {
     document.setSelection(std::move(items));
 }
 
+void selectClicked(EditorDocument& document, LevelItem item, bool toggle, bool wholeEntity) {
+    const std::vector<LevelItem> clicked{item};
+    const std::vector<LevelItem> items =
+        wholeEntity ? withWholeEntities(document.level(), clicked) : clicked;
+    if (!toggle) {
+        document.setSelection(items);
+        return;
+    }
+    std::vector<LevelItem> selection = document.selection();
+    if (document.isSelected(item)) {
+        std::erase_if(selection, [&](const LevelItem& selected) {
+            return std::find(items.begin(), items.end(), selected) != items.end();
+        });
+    } else {
+        selection.insert(selection.end(), items.begin(), items.end());
+    }
+    document.setSelection(std::move(selection));
+}
+
 bool deleteSelection(EditorDocument& document) {
     const auto& selection = document.selection();
     if (selection.empty()) {
         return false;
     }
-    // Last first, so removing one doesn't shift the indices of the rest.
     const Level& level = document.level();
+    std::vector<bool> deleteEntity(level.entities.size(), false);
+    for (const LevelItem& item : selection) {
+        if (item.kind == LevelItem::Kind::Entity) {
+            deleteEntity[item.index] = true;
+        }
+    }
+    std::vector<std::uint32_t> owners = brushOwners(level);
     std::vector<std::unique_ptr<Command>> commands;
-    for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
-        if (it->kind == LevelItem::Kind::Brush) {
-            commands.push_back(
-                makeRemoveBrush("Delete brush", it->index, level.brushes[it->index]));
-        } else {
-            commands.push_back(
-                makeRemoveEntity("Delete entity", it->index, level.entities[it->index]));
+    // Brushes first, then entities once they have none; each list last first, so removing one
+    // doesn't shift the indices of the rest.
+    for (std::size_t i = level.brushes.size(); i-- > 0;) {
+        const std::uint32_t owner = level.brushes[i].entity;
+        if (document.isSelected(LevelItem::brush(i)) ||
+            (owner < deleteEntity.size() && deleteEntity[owner])) {
+            commands.push_back(makeRemoveBrush("Delete brush", i, level.brushes[i]));
+            owners[i] = kNoEntity;
+        }
+    }
+    for (const std::size_t emptied : emptiedEntities(level, owners)) {
+        deleteEntity[emptied] = true;
+    }
+    for (std::size_t i = level.entities.size(); i-- > 0;) {
+        if (deleteEntity[i]) {
+            commands.push_back(makeRemoveEntity("Delete entity", i, level.entities[i]));
         }
     }
     runCommands(document, "Delete " + describeSelection(document), std::move(commands));
@@ -163,21 +267,31 @@ bool duplicateSelection(EditorDocument& document, Vec3 offset) {
     std::vector<LevelItem> copies;
     std::size_t nextBrush = level.brushes.size();
     std::size_t nextEntity = level.entities.size();
+    // Entities first, so the brush copies can belong to them.
+    std::vector<std::uint32_t> copyOf(level.entities.size(), kNoEntity);
+    for (const LevelItem& item : selection) {
+        if (item.kind == LevelItem::Kind::Entity) {
+            commands.push_back(
+                makeInsertEntity("Duplicate entity", nextEntity,
+                                 transformedEntity(level.entities[item.index], move)));
+            copies.push_back(LevelItem::entity(nextEntity));
+            copyOf[item.index] = static_cast<std::uint32_t>(nextEntity++);
+        }
+    }
     for (const LevelItem& item : selection) {
         if (item.kind == LevelItem::Kind::Brush) {
             std::optional<Brush> copy = transformedBrush(level.brushes[item.index], move);
             if (!copy) {
                 return false;
             }
+            if (copy->entity < copyOf.size() && copyOf[copy->entity] != kNoEntity) {
+                copy->entity = copyOf[copy->entity];
+            }
             commands.push_back(makeInsertBrush("Duplicate brush", nextBrush, std::move(*copy)));
             copies.push_back(LevelItem::brush(nextBrush++));
-        } else {
-            commands.push_back(
-                makeInsertEntity("Duplicate entity", nextEntity,
-                                 transformedEntity(level.entities[item.index], move)));
-            copies.push_back(LevelItem::entity(nextEntity++));
         }
     }
+    std::sort(copies.begin(), copies.end());
     runCommands(document, "Duplicate " + describeSelection(document), std::move(commands));
     document.setSelection(std::move(copies));
     return true;
@@ -210,6 +324,74 @@ bool addBrushes(EditorDocument& document, std::vector<Brush> brushes, const std:
     }
     runCommands(document, name, std::move(commands));
     document.setSelection(std::move(added));
+    return true;
+}
+
+bool createBrushEntity(EditorDocument& document, std::string_view className) {
+    const Level& level = document.level();
+    const std::vector<std::size_t> brushes = selectedBrushes(document);
+    if (brushes.empty() || level.entities.size() >= kMaxLevelEntities) {
+        return false;
+    }
+    LevelEntity entity{std::string(className), {}};
+    const EntityClassInfo* entityClass = findEntityClass(className);
+    if (entityClass != nullptr && findPropertyInfo(*entityClass, "move") != nullptr) {
+        std::optional<Aabb> bounds;
+        for (const std::size_t index : brushes) {
+            Aabb more;
+            if (computeBrushBounds(level.brushes[index], more)) {
+                bounds =
+                    bounds ? Aabb{min(bounds->min, more.min), max(bounds->max, more.max)} : more;
+            }
+        }
+        if (bounds) {
+            setProperty(entity, "move", formatVec3({0.0f, 0.0f, bounds->max.z - bounds->min.z}));
+        }
+    }
+
+    const std::string name = std::format("Make {}", className);
+    const auto added = static_cast<std::uint32_t>(level.entities.size());
+    std::vector<std::unique_ptr<Command>> commands;
+    commands.push_back(makeInsertEntity(name, added, std::move(entity)));
+    std::vector<std::uint32_t> owners = brushOwners(level);
+    std::vector<LevelItem> selection;
+    for (const std::size_t index : brushes) {
+        commands.push_back(makeSetBrushEntity(name, index, owners[index], added));
+        owners[index] = added;
+        selection.push_back(LevelItem::brush(index));
+    }
+    // Every emptied entity comes before the new one, so each removal moves it down one.
+    const std::vector<std::size_t> emptied = emptiedEntities(level, owners);
+    for (const std::size_t index : emptied) {
+        commands.push_back(makeRemoveEntity(name, index, level.entities[index]));
+    }
+    runCommands(document, name, std::move(commands));
+    selection.push_back(LevelItem::entity(added - emptied.size()));
+    document.setSelection(std::move(selection));
+    return true;
+}
+
+bool moveSelectionToWorld(EditorDocument& document) {
+    const Level& level = document.level();
+    const std::string name = "Move to world";
+    std::vector<std::uint32_t> owners = brushOwners(level);
+    std::vector<std::unique_ptr<Command>> commands;
+    std::vector<LevelItem> selection;
+    for (const std::size_t index : selectedBrushes(document)) {
+        selection.push_back(LevelItem::brush(index));
+        if (owners[index] != kNoEntity) {
+            commands.push_back(makeSetBrushEntity(name, index, owners[index], kNoEntity));
+            owners[index] = kNoEntity;
+        }
+    }
+    if (commands.empty()) {
+        return false;
+    }
+    for (const std::size_t index : emptiedEntities(level, owners)) {
+        commands.push_back(makeRemoveEntity(name, index, level.entities[index]));
+    }
+    runCommands(document, name, std::move(commands));
+    document.setSelection(std::move(selection));
     return true;
 }
 

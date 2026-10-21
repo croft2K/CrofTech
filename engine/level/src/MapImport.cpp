@@ -5,6 +5,7 @@
 #include "croftech/level/BrushGeometry.h"
 #include "croftech/level/LevelFile.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -184,7 +185,8 @@ private:
     bool readBrush(RawEntity& entity, std::string& error);
     bool readPoint(DVec3& point);
     bool addEntity(const RawEntity& raw, std::string& error);
-    void addPointEntity(const RawEntity& raw, const std::string& className);
+    std::optional<LevelEntity> convertEntity(const RawEntity& raw, const std::string& className);
+    void convertDoor(const RawEntity& raw, LevelEntity& entity);
 
     MapReader m_reader;
     const MapImportOptions& m_options;
@@ -329,41 +331,112 @@ bool Importer::addEntity(const RawEntity& raw, std::string& error) {
         return true;
     }
 
-    if (*className == "worldspawn" || *className == "func_group") {
+    const bool world =
+        *className == "worldspawn" || *className == "func_group" || *className == "func_detail";
+    if (m_level.brushes.size() + raw.brushes.size() > kMaxLevelBrushes) {
+        return fail(raw.line, std::format("more than {} brushes", kMaxLevelBrushes), error);
+    }
+    if (world) {
         for (const auto& [line, brush] : raw.brushes) {
-            if (m_level.brushes.size() >= kMaxLevelBrushes) {
-                return fail(line, std::format("more than {} brushes", kMaxLevelBrushes), error);
-            }
             m_level.brushes.push_back(brush);
         }
         return true;
     }
-    if (raw.hasBrushBlocks) {
+    if (raw.hasBrushBlocks && raw.brushes.empty()) {
         warn(raw.line,
-             std::format("brush entity '{}' is not supported yet; skipped", printable(*className)));
+             std::format("brush entity '{}' has no valid brushes; skipped", printable(*className)));
         return true;
     }
     if (m_level.entities.size() >= kMaxLevelEntities) {
         return fail(raw.line, std::format("more than {} entities", kMaxLevelEntities), error);
     }
-    addPointEntity(raw, *className);
+    std::optional<LevelEntity> entity = convertEntity(raw, *className);
+    if (!entity) {
+        return true;
+    }
+    const auto owner = static_cast<std::uint32_t>(m_level.entities.size());
+    for (const auto& [line, brush] : raw.brushes) {
+        m_level.brushes.push_back(brush);
+        m_level.brushes.back().entity = owner;
+    }
+    m_level.entities.push_back(std::move(*entity));
     return true;
 }
 
-void Importer::addPointEntity(const RawEntity& raw, const std::string& className) {
+// Quake doors slide in the direction of their "angle" (-1 up, -2 down, otherwise degrees round
+// Z) by their own size less a "lip", at "speed" units a second.
+void Importer::convertDoor(const RawEntity& raw, LevelEntity& entity) {
+    double angle = 0.0;
+    double lip = 8.0;
+    double speed = 100.0;
+    for (const auto& [key, value] : raw.properties) {
+        double* number = key == "angle"   ? &angle
+                         : key == "lip"   ? &lip
+                         : key == "speed" ? &speed
+                                          : nullptr;
+        float parsed = 0.0f;
+        if (number != nullptr && parseFloat(value, parsed)) {
+            *number = parsed;
+        }
+    }
+    Aabb bounds;
+    if (!computeBrushBounds(raw.brushes.front().second, bounds)) {
+        return;
+    }
+    for (const auto& [line, brush] : raw.brushes) {
+        Aabb more;
+        if (computeBrushBounds(brush, more)) {
+            bounds = {min(bounds.min, more.min), max(bounds.max, more.max)};
+        }
+    }
+    DVec3 direction{0.0, 0.0, angle == -2.0 ? -1.0 : 1.0};
+    if (angle != -1.0 && angle != -2.0) {
+        const double radians = angle * (3.14159265358979323846 / 180.0);
+        // Exact zeros for the axis directions, which have a rounding error in cos or sin.
+        const auto clean = [](double value) { return std::fabs(value) < 1e-9 ? 0.0 : value; };
+        direction = {clean(std::cos(radians)), clean(std::sin(radians)), 0.0};
+    }
+    const DVec3 size = toDouble(bounds.max - bounds.min);
+    const double extent = std::fabs(direction.x) * size.x + std::fabs(direction.y) * size.y +
+                          std::fabs(direction.z) * size.z;
+    const double distance = std::max(extent - lip * m_options.metresPerUnit, 0.0);
+    setProperty(entity, "move", formatVec3(toFloat(direction * distance)));
+    const double metresPerSecond = std::clamp(speed * m_options.metresPerUnit, 0.01, 100.0);
+    setProperty(entity, "speed", formatFloat(static_cast<float>(metresPerSecond)));
+}
+
+std::optional<LevelEntity> Importer::convertEntity(const RawEntity& raw,
+                                                   const std::string& className) {
     const bool quakeSpawn =
         className == "info_player_start" || className == "info_player_deathmatch";
+    const bool door = className == "func_door";
     const std::string shownClass = printable(className);
     LevelEntity entity;
-    entity.className = quakeSpawn ? std::string(kPlayerSpawnClass) : className;
+    entity.className = className;
+    if (quakeSpawn) {
+        entity.className = kPlayerSpawnClass;
+    } else if (door) {
+        entity.className = "door";
+    } else if (className == "trigger_multiple" || className == "trigger_once") {
+        entity.className = "trigger";
+        if (className == "trigger_once") {
+            entity.properties.push_back({"once", "1"});
+        }
+    }
     if (!isValidEntityName(entity.className)) {
         warn(raw.line, "entity has an invalid class name; skipped");
-        return;
+        return std::nullopt;
+    }
+    if (door) {
+        convertDoor(raw, entity);
     }
 
     for (const auto& [rawKey, rawValue] : raw.properties) {
         if (rawKey == "classname" || rawKey.starts_with("_tb_")) {
             continue; // TrenchBroom's own bookkeeping
+        }
+        if (door && (rawKey == "angle" || rawKey == "lip" || rawKey == "speed")) {
+            continue; // converted to move and speed
         }
         std::string_view value = rawValue;
         while (!value.empty() && value.front() == ' ') {
@@ -372,7 +445,13 @@ void Importer::addPointEntity(const RawEntity& raw, const std::string& className
         while (!value.empty() && value.back() == ' ') {
             value.remove_suffix(1);
         }
-        EntityProperty property{rawKey == "angle" ? "yaw" : rawKey, std::string(value)};
+        std::string key = rawKey;
+        if (key == "angle") {
+            key = "yaw";
+        } else if (key == "targetname") {
+            key = "name";
+        }
+        EntityProperty property{std::move(key), std::string(value)};
         if (property.key == "origin") {
             std::array<float, 3> units{};
             if (!parseFloats(property.value, units)) {
@@ -401,7 +480,7 @@ void Importer::addPointEntity(const RawEntity& raw, const std::string& className
         }
         entity.properties.push_back(std::move(property));
     }
-    m_level.entities.push_back(std::move(entity));
+    return entity;
 }
 
 } // namespace

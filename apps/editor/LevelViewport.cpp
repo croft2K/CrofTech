@@ -864,6 +864,7 @@ void LevelViewport::beginDrag(EditorDocument& document, const EditorSettings& se
     m_drag.screenStartX = io.MousePos.x;
     m_drag.screenStartY = io.MousePos.y;
     m_drag.additive = io.KeyCtrl;
+    m_drag.single = io.KeyAlt;
     m_drag.selectCorners =
         vertexTool &&
         std::any_of(document.selection().begin(), document.selection().end(),
@@ -1269,9 +1270,10 @@ void LevelViewport::endDrag(EditorDocument& document, const EditorSettings& sett
         return;
     case DragKind::Move:
     case DragKind::MoveVertical:
-        // A click on one item of several, without moving, selects just that one.
+        // A click on one item of several, without moving, selects just that one (with the rest
+        // of its entity).
         if (!drag.selection->commit(document, "Move " + describeSelection(document))) {
-            document.select(drag.target);
+            selectClicked(document, drag.target, false, true);
         }
         return;
     case DragKind::Gizmo: {
@@ -1399,14 +1401,11 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
     const ImVec2 from{std::min(drag.screenStartX, mouse.x), std::min(drag.screenStartY, mouse.y)};
     const ImVec2 to{std::max(drag.screenStartX, mouse.x), std::max(drag.screenStartY, mouse.y)};
     if (to.x - from.x < kMarqueeMinPixels && to.y - from.y < kMarqueeMinPixels) {
-        // A click: select what was under the mouse, or add it to or take it from the selection
-        // with Ctrl. A click on nothing clears the selection.
+        // A click: select what was under the mouse with the rest of its entity (just it with
+        // Alt), or add them to or take them from the selection with Ctrl. A click on nothing
+        // clears the selection.
         if (drag.clicked) {
-            if (drag.additive) {
-                document.toggleSelected(*drag.clicked);
-            } else {
-                document.select(*drag.clicked);
-            }
+            selectClicked(document, *drag.clicked, drag.additive, !drag.single);
         } else if (!drag.additive) {
             document.clearSelection();
         }
@@ -1459,7 +1458,7 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
         consider(LevelItem::entity(i));
     }
-    document.setSelection(std::move(items));
+    document.setSelection(drag.single ? std::move(items) : withWholeEntities(level, items));
 }
 
 void LevelViewport::cancelDrag(EditorDocument& document) {

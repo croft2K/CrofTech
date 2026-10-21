@@ -79,7 +79,14 @@ In order; each step builds, tests and commits on its own.
    `LocalGame`; the client plays through it too (`net.fake_*` settings); F5 in the editor. Full
    snapshots and no client prediction until M6, so play under latency feels delayed.*
 8. **Logic entities and event wiring.** Triggers, relays, counters, timers, doors and movers (which
-   need player collision against moving brushes), wired in the inspector.
+   need player collision against moving brushes), wired in the inspector. In three parts:
+   - 8a. *Done.* Brush entities and outputs in the level (file version 3, `.map` doors and triggers
+     import), the entity class table, and the editor: brushes made into doors, triggers and movers,
+     a click picks the whole entity, and the inspector edits class properties and outputs.
+   - 8b. Logic in the simulation: the server builds the game from the whole level; triggers,
+     relays, counters, timers and delayed inputs as components.
+   - 8c. Doors and movers: player collision against moving brushes (pushed, carried, blocked), and
+     moved brushes drawn from the snapshots.
 9. **Saves, checkpoints and play from here.**
 
 ## Decisions

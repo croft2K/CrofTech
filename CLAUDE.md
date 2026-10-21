@@ -50,7 +50,12 @@ Levels are `.level` text files (`ct::parseLevel`/`formatLevel`, format described
 faces, with planes derived from them (`level/BrushGeometry.h`), because float planes let corners
 drift off the grid by millimetres far from the origin. Brush geometry is built in double precision
 (`brushFromPlanes`, `brushFromPoints`, `clipBrush`) and rounded to float once, so corners on the
-grid stay exact through any number of edits. A level name is looked up as
+grid stay exact through any number of edits. Entities are point entities (an "origin") or brush
+entities (doors, movers, triggers: the brushes whose `Brush::entity` is theirs; the file nests them
+in the entity's block). Outputs wire entities together: when an event happens, an input is sent
+to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
+properties (types, defaults), events and inputs; the editor's inspector and the game both read it.
+In the editor a click picks a whole entity, Alt-click one brush. A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
 content layers; a name with an extension is a path. Shipped games will later cook levels and
 assets into packed binary files; the text file stays the source.

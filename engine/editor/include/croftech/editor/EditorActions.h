@@ -17,18 +17,36 @@ namespace ct {
 // Edits on the selection, shared by the menus, shortcuts, toolbar and inspector. Each is one
 // command, however many items are selected.
 
-// "brush", "entity" or "3 items", for command names: "Delete 3 items".
+// "brush", "entity", an entity's class when it is selected with its brushes ("door"), or
+// "3 items", for command names: "Delete 3 items".
 std::string describeSelection(const EditorDocument& document);
 
 // Selects every brush and entity.
 void selectAll(EditorDocument& document);
 
-// Deletes the selected items and clears the selection.
+// What a click on an item does: selects it, along with the rest of its entity when wholeEntity
+// (withWholeEntities). With toggle, adds those to the selection instead, or takes them out of it
+// if the item was selected.
+void selectClicked(EditorDocument& document, LevelItem item, bool toggle, bool wholeEntity);
+
+// Deletes the selected items and clears the selection. Deleting an entity deletes its brushes, and
+// an entity whose brushes are all deleted goes with them.
 bool deleteSelection(EditorDocument& document);
 
-// Copies the selected items, moved by offset, and selects the copies. False, changing nothing, if
-// a copy would not be a valid brush.
+// Copies the selected items, moved by offset, and selects the copies. Copies of an entity's brushes
+// belong to the copy of the entity if it is selected too, and to the entity itself if not. False,
+// changing nothing, if a copy would not be a valid brush.
 bool duplicateSelection(EditorDocument& document, Vec3 offset);
+
+// Makes the selected brushes into a new entity of the class (a door, a trigger), taking them out of
+// the world or the entity they were part of; an entity left with no brushes is deleted. A class
+// with a "move" property gets one that lifts the brushes by their height. Selects the new entity
+// with its brushes. False if no brushes are selected or the level is full of entities.
+bool createBrushEntity(EditorDocument& document, std::string_view className);
+
+// Makes the selected brushes world geometry again; an entity left with no brushes is deleted.
+// False if none of them belonged to an entity.
+bool moveSelectionToWorld(EditorDocument& document);
 
 // Adds an entity at the end of the list and selects it.
 void addEntity(EditorDocument& document, LevelEntity entity);

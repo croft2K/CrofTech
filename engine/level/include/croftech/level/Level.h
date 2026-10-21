@@ -28,12 +28,17 @@ struct BrushFace {
     friend bool operator==(const BrushFace&, const BrushFace&) = default;
 };
 
+inline constexpr std::uint32_t kNoEntity = UINT32_MAX;
+
 // A convex solid, stored by its corners and faces. Planes are derived from the corners
 // (BrushGeometry.h) rather than stored: corners placed on the grid then stay exactly on it through
 // any number of edits, where float planes would move them by millimetres far from the origin.
 struct Brush {
     std::vector<Vec3> vertices;
     std::vector<BrushFace> faces;
+    // The entity this brush is part of, as an index into Level::entities, or kNoEntity for world
+    // geometry. Doors, movers and triggers are entities made of brushes.
+    std::uint32_t entity = kNoEntity;
 
     friend bool operator==(const Brush&, const Brush&) = default;
 };
@@ -47,11 +52,25 @@ struct EntityProperty {
     friend bool operator==(const EntityProperty&, const EntityProperty&) = default;
 };
 
-// Anything placed in a level that isn't world geometry: spawn points now; later lights, triggers
-// and doors. Properties keep their order so saved files diff cleanly.
+// A wire from one entity to others: when the event happens (a player entering a trigger, a door
+// finishing opening), the input (open, enable, add) is sent to every entity whose "name" property
+// is the target, after the delay. Wiring is how levels get logic without scripts.
+struct EntityOutput {
+    std::string event;
+    std::string target;
+    std::string input;
+    float delay = 0.0f; // seconds
+
+    friend bool operator==(const EntityOutput&, const EntityOutput&) = default;
+};
+
+// Anything placed in a level that isn't world geometry: spawn points, triggers, doors, relays.
+// Point entities have an "origin" property; brush entities are made of the brushes whose entity
+// is theirs. Properties and outputs keep their order so saved files diff cleanly.
 struct LevelEntity {
     std::string className;
     std::vector<EntityProperty> properties;
+    std::vector<EntityOutput> outputs{};
 
     friend bool operator==(const LevelEntity&, const LevelEntity&) = default;
 };
@@ -62,6 +81,14 @@ struct Level {
 
     friend bool operator==(const Level&, const Level&) = default;
 };
+
+// Inserting or removing an entity renumbers the entities after it, so these also renumber the
+// brushes that belong to them. An entity must have no brushes when it is removed.
+void insertEntity(Level& level, std::size_t index, LevelEntity entity);
+LevelEntity removeEntity(Level& level, std::size_t index);
+
+// Indices of the brushes that belong to the entity, in level order.
+std::vector<std::size_t> entityBrushes(const Level& level, std::size_t entity);
 
 // Limits on level data. Levels come from files, so these bound the work a malformed or hostile
 // file can cause as well as describing what the engine supports.
@@ -75,7 +102,9 @@ inline constexpr std::size_t kMaxBrushFaces = 512;
 inline constexpr std::size_t kMaxBrushVertices = 2 * kMaxBrushFaces - 4;
 inline constexpr std::size_t kMaxLevelEntities = 65536;
 inline constexpr std::size_t kMaxEntityProperties = 256;
-inline constexpr std::size_t kMaxNameLength = 64; // class names and property keys
+inline constexpr std::size_t kMaxEntityOutputs = 64;
+inline constexpr float kMaxOutputDelay = 3600.0f; // seconds
+inline constexpr std::size_t kMaxNameLength = 64; // class names, property keys, output names
 inline constexpr std::size_t kMaxPropertyValueLength = 1024;
 
 // Each check returns false with a description of the first problem it finds.
@@ -90,11 +119,15 @@ bool checkBrush(const Brush& brush, std::string& problem);
 // surfaces, so this stays below it.
 inline constexpr float kBrushTolerance = 5e-4f;
 
-// Class names and keys are 1 to kMaxNameLength of [A-Za-z0-9_.-]; "end" is reserved by the level
-// file. Values are single-line text with no control characters or surrounding spaces. No
-// duplicate keys.
+// Class names, keys and the names in outputs are 1 to kMaxNameLength of [A-Za-z0-9_.-]; "end" is
+// reserved by the level file, and so are the keys "brush" and "output". Values are single-line
+// text with no control characters or surrounding spaces. No duplicate keys. Output delays are 0 to
+// kMaxOutputDelay seconds.
 bool checkEntity(const LevelEntity& entity, std::string& problem);
 bool isValidEntityName(std::string_view name);
+
+// Every brush belongs to the world or to an entity of the level.
+bool checkBrushOwners(const Level& level, std::string& problem);
 
 const std::string* findProperty(const LevelEntity& entity, std::string_view key);
 // Replaces the value of an existing key, or adds the key at the end.

@@ -125,11 +125,16 @@ std::optional<Brush> transformedBrush(const Brush& brush, const AffineTransform&
 }
 
 LevelEntity transformedEntity(const LevelEntity& entity, const AffineTransform& transform) {
+    LevelEntity result = entity;
+    const std::string* moveText = findProperty(entity, "move");
+    if (const std::optional<Vec3> move = moveText ? parseVec3(*moveText) : std::nullopt) {
+        setProperty(result, "move",
+                    formatVec3(toFloat(linear(transform, toDouble(*move))) + Vec3{}));
+    }
     const std::optional<Vec3> origin = entityOrigin(entity);
     if (!origin) {
-        return entity;
+        return result;
     }
-    LevelEntity result = entity;
     setProperty(result, "origin", formatVec3(transform.apply(*origin)));
 
     float yaw = 0.0f;

@@ -4,6 +4,8 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <string>
 
 namespace ct {
 namespace {
@@ -15,12 +17,30 @@ constexpr std::array kPalette{
     Vec3{0.33f, 0.50f, 0.48f},
 };
 
+// Brushes of entities are coloured by what they are, so doors and triggers stand out.
+Vec3 brushColor(const Level& level, std::size_t index) {
+    const std::uint32_t entity = level.brushes[index].entity;
+    if (entity < level.entities.size()) {
+        const std::string& className = level.entities[entity].className;
+        if (className == "trigger") {
+            return {0.80f, 0.42f, 0.08f};
+        }
+        if (className == "door") {
+            return {0.16f, 0.36f, 0.80f};
+        }
+        if (className == "mover") {
+            return {0.14f, 0.62f, 0.56f};
+        }
+    }
+    return kPalette[index % kPalette.size()];
+}
+
 } // namespace
 
 WorldMesh buildWorldMesh(const Level& level) {
     WorldMesh mesh;
     for (std::size_t brushIndex = 0; brushIndex < level.brushes.size(); ++brushIndex) {
-        const Vec3 color = kPalette[brushIndex % kPalette.size()];
+        const Vec3 color = brushColor(level, brushIndex);
         for (const BrushPolygon& face : brushPolygons(level.brushes[brushIndex])) {
             const auto first = static_cast<std::uint32_t>(mesh.vertices.size());
             for (const Vec3& position : face.vertices) {

@@ -2,6 +2,8 @@
 
 #include "croftech/level/BrushGeometry.h"
 
+#include <algorithm>
+
 namespace ct {
 namespace {
 
@@ -12,6 +14,35 @@ constexpr float kEntityMarkerHalfSize = 0.25f;
 bool exists(const Level& level, LevelItem item) {
     return item.kind == LevelItem::Kind::Brush ? item.index < level.brushes.size()
                                                : item.index < level.entities.size();
+}
+
+std::vector<LevelItem> withWholeEntities(const Level& level, std::span<const LevelItem> items) {
+    std::vector<bool> whole(level.entities.size(), false);
+    std::vector<LevelItem> result;
+    for (const LevelItem& item : items) {
+        if (!exists(level, item)) {
+            continue;
+        }
+        result.push_back(item);
+        const std::size_t entity =
+            item.kind == LevelItem::Kind::Entity ? item.index : level.brushes[item.index].entity;
+        if (entity < whole.size()) {
+            whole[entity] = true;
+        }
+    }
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        if (level.brushes[i].entity < whole.size() && whole[level.brushes[i].entity]) {
+            result.push_back(LevelItem::brush(i));
+        }
+    }
+    for (std::size_t i = 0; i < whole.size(); ++i) {
+        if (whole[i]) {
+            result.push_back(LevelItem::entity(i));
+        }
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
 }
 
 std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExtents) {

@@ -1,6 +1,7 @@
 #include "croftech/level/Level.h"
 
 #include "croftech/core/Angle.h"
+#include "croftech/core/Assert.h"
 #include "croftech/core/ConfigFile.h"
 #include "croftech/core/DVec3.h"
 #include "croftech/level/BrushGeometry.h"
@@ -181,9 +182,25 @@ bool checkEntity(const LevelEntity& entity, std::string& problem) {
         problem = std::format("more than {} properties", kMaxEntityProperties);
         return false;
     }
+    if (entity.outputs.size() > kMaxEntityOutputs) {
+        problem = std::format("more than {} outputs", kMaxEntityOutputs);
+        return false;
+    }
+    for (const EntityOutput& output : entity.outputs) {
+        if (!isValidEntityName(output.event) || !isValidEntityName(output.target) ||
+            !isValidEntityName(output.input)) {
+            problem = "an output has an invalid event, target or input name";
+            return false;
+        }
+        if (!(output.delay >= 0.0f && output.delay <= kMaxOutputDelay)) {
+            problem = std::format("output delays are 0 to {} seconds", kMaxOutputDelay);
+            return false;
+        }
+    }
     for (std::size_t i = 0; i < entity.properties.size(); ++i) {
         const EntityProperty& property = entity.properties[i];
-        if (!isValidEntityName(property.key)) {
+        if (!isValidEntityName(property.key) || property.key == "brush" ||
+            property.key == "output") {
             problem = "invalid property key";
             return false;
         }
@@ -204,6 +221,52 @@ bool checkEntity(const LevelEntity& entity, std::string& problem) {
         }
     }
     return true;
+}
+
+bool checkBrushOwners(const Level& level, std::string& problem) {
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        const std::uint32_t owner = level.brushes[i].entity;
+        if (owner != kNoEntity && owner >= level.entities.size()) {
+            problem = std::format("brush {} belongs to entity {}, which does not exist", i, owner);
+            return false;
+        }
+    }
+    return true;
+}
+
+void insertEntity(Level& level, std::size_t index, LevelEntity entity) {
+    CT_ASSERT(index <= level.entities.size());
+    for (Brush& brush : level.brushes) {
+        if (brush.entity != kNoEntity && brush.entity >= index) {
+            ++brush.entity;
+        }
+    }
+    level.entities.insert(level.entities.begin() + static_cast<std::ptrdiff_t>(index),
+                          std::move(entity));
+}
+
+LevelEntity removeEntity(Level& level, std::size_t index) {
+    CT_ASSERT(index < level.entities.size());
+    for (Brush& brush : level.brushes) {
+        CT_ASSERT(brush.entity != index);
+        if (brush.entity != kNoEntity && brush.entity > index) {
+            --brush.entity;
+        }
+    }
+    const auto position = level.entities.begin() + static_cast<std::ptrdiff_t>(index);
+    LevelEntity removed = std::move(*position);
+    level.entities.erase(position);
+    return removed;
+}
+
+std::vector<std::size_t> entityBrushes(const Level& level, std::size_t entity) {
+    std::vector<std::size_t> brushes;
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        if (level.brushes[i].entity == entity) {
+            brushes.push_back(i);
+        }
+    }
+    return brushes;
 }
 
 const std::string* findProperty(const LevelEntity& entity, std::string_view key) {

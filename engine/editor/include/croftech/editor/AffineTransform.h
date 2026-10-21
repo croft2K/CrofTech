@@ -41,8 +41,9 @@ struct AffineTransform {
 // or the result is not a valid brush (checkBrush), for example outside the world.
 std::optional<Brush> transformedBrush(const Brush& brush, const AffineTransform& transform);
 
-// Moves the entity's origin and turns its "yaw" (degrees, as player spawns store it) with the
-// transform. Other properties are unchanged, as is an entity without an origin.
+// Moves the entity's origin, turns its "yaw" (degrees, as player spawns store it) and turns and
+// scales its "move" (the offset doors and movers travel) with the transform. Other properties are
+// unchanged.
 LevelEntity transformedEntity(const LevelEntity& entity, const AffineTransform& transform);
 
 // The multiple of step nearest to degrees.

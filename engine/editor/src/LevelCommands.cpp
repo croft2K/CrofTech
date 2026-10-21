@@ -69,6 +69,52 @@ private:
     bool m_remove;
 };
 
+class InsertEntity final : public Command {
+public:
+    InsertEntity(std::string name, std::size_t index, LevelEntity entity, bool remove)
+        : m_name(std::move(name)), m_index(index), m_entity(std::move(entity)), m_remove(remove) {}
+
+    std::string_view name() const override { return m_name; }
+    void apply(Level& level) const override { change(level, !m_remove); }
+    void revert(Level& level) const override { change(level, m_remove); }
+
+private:
+    void change(Level& level, bool insert) const {
+        if (insert) {
+            insertEntity(level, m_index, m_entity);
+        } else {
+            removeEntity(level, m_index);
+        }
+    }
+
+    std::string m_name;
+    std::size_t m_index;
+    LevelEntity m_entity;
+    bool m_remove;
+};
+
+class SetBrushEntity final : public Command {
+public:
+    SetBrushEntity(std::string name, std::size_t index, std::uint32_t before, std::uint32_t after)
+        : m_name(std::move(name)), m_index(index), m_before(before), m_after(after) {}
+
+    std::string_view name() const override { return m_name; }
+    void apply(Level& level) const override { set(level, m_after); }
+    void revert(Level& level) const override { set(level, m_before); }
+
+private:
+    void set(Level& level, std::uint32_t entity) const {
+        CT_ASSERT(m_index < level.brushes.size());
+        CT_ASSERT(entity == kNoEntity || entity < level.entities.size());
+        level.brushes[m_index].entity = entity;
+    }
+
+    std::string m_name;
+    std::size_t m_index;
+    std::uint32_t m_before;
+    std::uint32_t m_after;
+};
+
 class Compound final : public Command {
 public:
     Compound(std::string name, std::vector<std::unique_ptr<Command>> commands)
@@ -95,6 +141,7 @@ private:
 
 std::unique_ptr<Command> makeSetBrush(std::string name, std::size_t index, Brush before,
                                       Brush after) {
+    after.entity = before.entity;
     return std::make_unique<SetElement<Brush>>(std::move(name), &Level::brushes, index,
                                                std::move(before), std::move(after));
 }
@@ -115,14 +162,17 @@ std::unique_ptr<Command> makeSetEntity(std::string name, std::size_t index, Leve
                                                      std::move(before), std::move(after));
 }
 
+std::unique_ptr<Command> makeSetBrushEntity(std::string name, std::size_t index,
+                                            std::uint32_t before, std::uint32_t after) {
+    return std::make_unique<SetBrushEntity>(std::move(name), index, before, after);
+}
+
 std::unique_ptr<Command> makeInsertEntity(std::string name, std::size_t index, LevelEntity entity) {
-    return std::make_unique<InsertElement<LevelEntity>>(std::move(name), &Level::entities, index,
-                                                        std::move(entity), false);
+    return std::make_unique<InsertEntity>(std::move(name), index, std::move(entity), false);
 }
 
 std::unique_ptr<Command> makeRemoveEntity(std::string name, std::size_t index, LevelEntity entity) {
-    return std::make_unique<InsertElement<LevelEntity>>(std::move(name), &Level::entities, index,
-                                                        std::move(entity), true);
+    return std::make_unique<InsertEntity>(std::move(name), index, std::move(entity), true);
 }
 
 std::unique_ptr<Command> makeCompound(std::string name,

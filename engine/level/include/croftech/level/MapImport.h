@@ -15,11 +15,13 @@ namespace ct {
 // can be blocked out in TrenchBroom until the CrofTech editor has brush tools. Reads the standard
 // and Valve 220 face formats; texture names and alignment are ignored until there are materials.
 //
-// Brushes of worldspawn and func_group become world brushes. Point entities keep their class and
-// properties, with "origin" converted to metres and "angle" renamed to "yaw". Quake's
-// info_player_start and info_player_deathmatch become player_spawn. Brush entities (doors and
-// other movers), patches and brush primitives are skipped with a warning until the engine
-// supports them, as are brushes that are not closed solids.
+// Brushes of worldspawn, func_group and func_detail become world brushes. Other entities keep
+// their class, properties and brushes, with "origin" converted to metres, "angle" renamed to "yaw"
+// and "targetname" to "name". Quake's info_player_start and info_player_deathmatch become
+// player_spawn, trigger_once and trigger_multiple become trigger, and func_door becomes door with
+// its angle, lip and speed converted to a move and a speed in metres. Wiring ("target") is not
+// converted. Patches, brush primitives and brushes that are not closed solids are skipped with a
+// warning.
 inline constexpr std::string_view kMapFileExtension = ".map";
 inline constexpr std::size_t kMaxImportWarnings = 50;
 

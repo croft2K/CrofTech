@@ -34,7 +34,9 @@ bool EditorDocument::redo() {
 
 void EditorDocument::previewBrush(std::size_t index, const Brush& brush) {
     CT_ASSERT(index < m_level.brushes.size());
+    const std::uint32_t entity = m_level.brushes[index].entity;
     m_level.brushes[index] = brush;
+    m_level.brushes[index].entity = entity;
     ++m_changeCount;
 }
 

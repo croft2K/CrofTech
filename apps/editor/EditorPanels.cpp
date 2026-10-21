@@ -1,5 +1,6 @@
 #include "EditorPanels.h"
 
+#include "croftech/core/ConfigFile.h"
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/LevelCommands.h"
 
@@ -9,6 +10,8 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,13 +19,123 @@
 namespace ct {
 namespace {
 
-std::string brushLabel(const Brush& brush, std::size_t index) {
+std::string brushLabel(const Level& level, std::size_t index) {
+    const Brush& brush = level.brushes[index];
+    std::string label = std::format("Brush {}  {} faces", index, brush.faces.size());
     if (const auto box = boxBounds(brush)) {
         const Vec3 size = box->max - box->min;
-        return std::format("Brush {}  box {:g} x {:g} x {:g} m##{}", index, size.x, size.y, size.z,
-                           index);
+        label = std::format("Brush {}  box {:g} x {:g} x {:g} m", index, size.x, size.y, size.z);
     }
-    return std::format("Brush {}  {} faces##{}", index, brush.faces.size(), index);
+    if (brush.entity < level.entities.size()) {
+        label += std::format("  ({} {})", level.entities[brush.entity].className, brush.entity);
+    }
+    return std::format("{}##{}", label, index);
+}
+
+std::string entityLabel(const LevelEntity& entity, std::size_t index) {
+    const std::string* name = findProperty(entity, "name");
+    if (name != nullptr && !name->empty()) {
+        return std::format("Entity {}  {}  {}##entity{}", index, entity.className, *name, index);
+    }
+    return std::format("Entity {}  {}##entity{}", index, entity.className, index);
+}
+
+void tooltip(std::string_view text) {
+    if (!text.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+        ImGui::SetTooltip("%s", std::string(text).c_str());
+    }
+}
+
+// The names outputs can target, sorted, without repeats.
+std::vector<std::string> entityNames(const Level& level) {
+    std::vector<std::string> names;
+    for (const LevelEntity& entity : level.entities) {
+        const std::string* name = findProperty(entity, "name");
+        if (name != nullptr && !name->empty()) {
+            names.push_back(*name);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
+// The inputs of the entities with the name, each once.
+std::vector<SignalInfo> inputsOf(const Level& level, std::string_view name) {
+    std::vector<SignalInfo> inputs;
+    for (const LevelEntity& entity : level.entities) {
+        const std::string* entityName = findProperty(entity, "name");
+        const EntityClassInfo* entityClass = findEntityClass(entity.className);
+        if (entityName == nullptr || *entityName != name || entityClass == nullptr) {
+            continue;
+        }
+        for (const SignalInfo& input : entityClass->inputs) {
+            if (findSignal(inputs, input.name) == nullptr) {
+                inputs.push_back(input);
+            }
+        }
+    }
+    return inputs;
+}
+
+// A combo of signals (events or inputs); true with the chosen name when one is picked.
+bool signalCombo(const char* label, std::string_view current, std::span<const SignalInfo> signals,
+                 std::string& chosen) {
+    bool picked = false;
+    if (ImGui::BeginCombo(label, std::string(current).c_str())) {
+        for (const SignalInfo& signal : signals) {
+            const std::string name(signal.name);
+            if (ImGui::Selectable(name.c_str(), signal.name == current)) {
+                chosen = name;
+                picked = true;
+            }
+            tooltip(signal.description);
+        }
+        ImGui::EndCombo();
+    }
+    return picked;
+}
+
+// The entity whose inspector the selection shows: the only entity selected, with nothing else but
+// its own brushes.
+std::optional<std::size_t> inspectedEntity(const EditorDocument& document) {
+    std::optional<std::size_t> entity;
+    for (const LevelItem& item : document.selection()) {
+        if (item.kind == LevelItem::Kind::Entity) {
+            if (entity) {
+                return std::nullopt;
+            }
+            entity = item.index;
+        }
+    }
+    if (!entity) {
+        return std::nullopt;
+    }
+    for (const LevelItem& item : document.selection()) {
+        if (item.kind == LevelItem::Kind::Brush &&
+            document.level().brushes[item.index].entity != *entity) {
+            return std::nullopt;
+        }
+    }
+    return entity;
+}
+
+bool anyBrushSelected(const EditorDocument& document) {
+    return std::any_of(document.selection().begin(), document.selection().end(),
+                       [](const LevelItem& item) { return item.kind == LevelItem::Kind::Brush; });
+}
+
+// Menu items that make the selected brushes into an entity of each brush class.
+void brushEntityMenuItems(EditorDocument& document) {
+    for (const EntityClassInfo& entityClass : entityClasses()) {
+        if (entityClass.shape == EntityShape::Brush &&
+            ImGui::MenuItem(std::string(entityClass.name).c_str())) {
+            createBrushEntity(document, entityClass.name);
+        }
+        if (entityClass.shape == EntityShape::Brush) {
+            tooltip(entityClass.description);
+        }
+    }
 }
 
 std::string commandLabel(const char* verb, std::string_view name, const char* shortcut) {
@@ -150,8 +263,20 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
                 viewport.setTool(EditorTool::Draw);
             }
         }
-        ImGui::Separator();
-        requests.addPlayerSpawn = ImGui::MenuItem("Player spawn");
+        ImGui::SeparatorText("Entities");
+        for (const EntityClassInfo& entityClass : entityClasses()) {
+            if (entityClass.shape == EntityShape::Point &&
+                ImGui::MenuItem(std::string(entityClass.name).c_str())) {
+                requests.addEntity = &entityClass;
+            }
+            if (entityClass.shape == EntityShape::Point) {
+                tooltip(entityClass.description);
+            }
+        }
+        if (ImGui::BeginMenu("Make selected brushes into", anyBrushSelected(document))) {
+            brushEntityMenuItems(document);
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Play")) {
@@ -343,13 +468,11 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
         return;
     }
     const Level& level = document.level();
-    // Click selects one item; Ctrl-click adds or removes it.
+    // As in the view: a click selects an item with the rest of its entity, Alt-click just the
+    // item, and Ctrl adds to or takes from the selection.
     const auto clicked = [&](LevelItem item) {
-        if (ImGui::GetIO().KeyCtrl) {
-            document.toggleSelected(item);
-        } else {
-            document.select(item);
-        }
+        const ImGuiIO& io = ImGui::GetIO();
+        selectClicked(document, item, io.KeyCtrl, !io.KeyAlt);
     };
     if (ImGui::CollapsingHeader(std::format("Brushes ({})###brushes", level.brushes.size()).c_str(),
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -358,7 +481,7 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
                 const auto i = static_cast<std::size_t>(row);
-                if (ImGui::Selectable(brushLabel(level.brushes[i], i).c_str(),
+                if (ImGui::Selectable(brushLabel(level, i).c_str(),
                                       document.isSelected(LevelItem::brush(i)))) {
                     clicked(LevelItem::brush(i));
                 }
@@ -369,8 +492,7 @@ void EditorPanels::drawHierarchy(EditorDocument& document) {
             std::format("Entities ({})###entities", level.entities.size()).c_str(),
             ImGuiTreeNodeFlags_DefaultOpen)) {
         for (std::size_t i = 0; i < level.entities.size(); ++i) {
-            const std::string label =
-                std::format("Entity {}  {}##entity{}", i, level.entities[i].className, i);
+            const std::string label = entityLabel(level.entities[i], i);
             if (ImGui::Selectable(label.c_str(), document.isSelected(LevelItem::entity(i)))) {
                 clicked(LevelItem::entity(i));
             }
@@ -385,19 +507,21 @@ void EditorPanels::drawInspector(EditorDocument& document, const EditorSettings&
         m_brushBefore.reset();
         m_activeField = -1;
         m_problem.clear();
+        m_newOutput = {};
     }
     if (ImGui::Begin("Inspector")) {
         const std::optional<LevelItem> single = document.singleSelected();
+        const std::optional<std::size_t> entity = inspectedEntity(document);
         if (document.selection().empty()) {
             ImGui::TextDisabled("Nothing selected.");
             ImGui::TextDisabled("Click a brush or entity in the view or the hierarchy;");
             ImGui::TextDisabled("Ctrl-click or drag a box to select several.");
+        } else if (entity) {
+            drawEntityInspector(document, *entity);
         } else if (!single) {
             drawMultipleInspector(document);
-        } else if (single->kind == LevelItem::Kind::Brush) {
-            drawBrushInspector(document, settings, single->index);
         } else {
-            drawEntityInspector(document, single->index);
+            drawBrushInspector(document, settings, single->index);
         }
         if (!document.selection().empty()) {
             drawSelectionActions(document, settings);
@@ -414,6 +538,12 @@ void EditorPanels::drawBrushInspector(EditorDocument& document, const EditorSett
                                       std::size_t index) {
     const Brush& brush = document.level().brushes[index];
     ImGui::Text("Brush %zu", index);
+    if (brush.entity < document.level().entities.size()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("part of %s %u",
+                            document.level().entities[brush.entity].className.c_str(),
+                            brush.entity);
+    }
     ImGui::Separator();
 
     if (const auto box = boxBounds(brush)) {
@@ -510,7 +640,31 @@ void EditorPanels::drawSelectionActions(EditorDocument& document, const EditorSe
         deleteSelection(document);
     }
 
+    if (!anyBrushSelected(document)) {
+        return;
+    }
     ImGui::SeparatorText("Brushes");
+    if (ImGui::Button("Make into...")) {
+        ImGui::OpenPopup("makeEntity");
+    }
+    ImGui::SetItemTooltip("Make the selected brushes a door, trigger or other brush entity");
+    if (ImGui::BeginPopup("makeEntity")) {
+        brushEntityMenuItems(document);
+        ImGui::EndPopup();
+    }
+    const Level& level = document.level();
+    const bool anyOwned = std::any_of(document.selection().begin(), document.selection().end(),
+                                      [&](const LevelItem& item) {
+                                          return item.kind == LevelItem::Kind::Brush &&
+                                                 level.brushes[item.index].entity != kNoEntity;
+                                      });
+    if (anyOwned) {
+        ImGui::SameLine();
+        if (ImGui::Button("To world")) {
+            moveSelectionToWorld(document);
+        }
+        ImGui::SetItemTooltip("Make the selected brushes world geometry again");
+    }
     if (ImGui::Button("Hollow")) {
         hollowSelection(document, grid);
     }
@@ -539,11 +693,15 @@ void EditorPanels::commitEntity(EditorDocument& document, std::size_t index,
 }
 
 bool EditorPanels::textField(const char* label, int field, const std::string& current,
-                             std::string& result) {
+                             std::string& result, const char* hint) {
     const bool editing = m_activeField == field;
     std::string scratch = current;
     std::string& text = editing ? m_fieldText : scratch;
-    ImGui::InputText(label, &text);
+    if (hint != nullptr) {
+        ImGui::InputTextWithHint(label, hint, &text);
+    } else {
+        ImGui::InputText(label, &text);
+    }
     if (ImGui::IsItemActivated()) {
         m_activeField = field;
         m_fieldText = text;
@@ -560,31 +718,150 @@ bool EditorPanels::textField(const char* label, int field, const std::string& cu
 }
 
 void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t index) {
-    const LevelEntity& entity = document.level().entities[index];
+    const Level& level = document.level();
+    const LevelEntity& entity = level.entities[index];
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    const std::size_t brushCount = entityBrushes(level, index).size();
     ImGui::Text("Entity %zu", index);
+    if (brushCount > 0) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu %s", brushCount, brushCount == 1 ? "brush" : "brushes");
+    }
     ImGui::Separator();
 
-    // Text fields apply when focus leaves them, as one command each.
+    // Text fields apply when focus leaves them, as one command each. The arrow beside the class
+    // lists the classes of the same kind, point or brush.
     constexpr int kClassField = -2;
+    const float classWidth = ImGui::CalcItemWidth() - ImGui::GetFrameHeight();
+    ImGui::SetNextItemWidth(classWidth);
     std::string className;
-    if (textField("Class", kClassField, entity.className, className)) {
+    bool changeClass = textField("##class", kClassField, entity.className, className);
+    ImGui::SameLine(0.0f, 0.0f);
+    if (ImGui::BeginCombo("Class", nullptr,
+                          ImGuiComboFlags_NoPreview | ImGuiComboFlags_PopupAlignLeft)) {
+        const EntityShape shape = brushCount > 0 ? EntityShape::Brush : EntityShape::Point;
+        for (const EntityClassInfo& option : entityClasses()) {
+            if (option.shape != shape) {
+                continue;
+            }
+            if (ImGui::Selectable(std::string(option.name).c_str(),
+                                  option.name == entity.className)) {
+                className = option.name;
+                changeClass = true;
+            }
+            tooltip(option.description);
+        }
+        ImGui::EndCombo();
+    }
+    if (changeClass) {
         LevelEntity edited = entity;
         edited.className = className;
         commitEntity(document, index, edited, "Change entity class");
         return;
     }
+    if (entityClass != nullptr) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", std::string(entityClass->description).c_str());
+        ImGui::PopStyleColor();
+    } else {
+        ImGui::TextDisabled("Not a class the engine knows; the game ignores it.");
+    }
+
+    drawEntityProperties(document, index);
+    drawEntityOutputs(document, index);
+
+    std::string problem;
+    if (entityClass != nullptr &&
+        !checkEntityClassProperties(document.level().entities[index], *entityClass, problem)) {
+        ImGui::Spacing();
+        ImGui::TextColored({1.0f, 0.45f, 0.35f, 1.0f}, "Won't play: %s", problem.c_str());
+    }
+    ImGui::Spacing();
+    if (brushCount > 0) {
+        ImGui::TextDisabled("Alt-click one of its brushes to edit just that one.");
+    } else {
+        ImGui::TextDisabled("Drag in the view to move, Alt-drag to raise or lower.");
+    }
+}
+
+void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t index) {
+    const LevelEntity& entity = document.level().entities[index];
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    std::optional<LevelEntity> edited;
+    const char* editName = "Edit entity property";
+    // Empty text puts a property of the class back to its default.
+    const auto setValue = [&](std::string_view key, std::string value) {
+        edited = entity;
+        if (value.empty()) {
+            std::erase_if(edited->properties,
+                          [&](const EntityProperty& property) { return property.key == key; });
+        } else {
+            setProperty(*edited, key, std::move(value));
+        }
+    };
+    const auto keyCell = [](const std::string& key, std::string_view description, bool set) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        if (set) {
+            ImGui::TextUnformatted(key.c_str());
+        } else {
+            ImGui::TextDisabled("%s", key.c_str());
+        }
+        tooltip(description);
+    };
 
     if (ImGui::BeginTable("properties", 3, ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("remove", ImGuiTableColumnFlags_WidthFixed);
+        const std::span<const PropertyInfo> known =
+            entityClass != nullptr ? entityClass->properties : std::span<const PropertyInfo>{};
+        for (std::size_t i = 0; i < known.size(); ++i) {
+            const PropertyInfo& property = known[i];
+            const std::string key(property.key);
+            const std::string* value = findProperty(entity, key);
+            const int field = 1000 + static_cast<int>(i);
+            ImGui::PushID(field);
+            keyCell(key, property.description, value != nullptr);
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (property.type == PropertyType::Flag) {
+                bool on = propertyValue(entity, property) == "1";
+                if (ImGui::Checkbox("##value", &on)) {
+                    setValue(key, on ? "1" : "0");
+                }
+            } else {
+                const std::string hint(property.defaultValue);
+                std::string text;
+                if (textField("##value", field, value != nullptr ? *value : std::string(), text,
+                              hint.c_str())) {
+                    std::string problem;
+                    if (!text.empty() && !checkPropertyValue(property, text, problem)) {
+                        m_problem = problem;
+                    } else {
+                        setValue(key, std::move(text));
+                    }
+                }
+            }
+            ImGui::TableNextColumn();
+            if (value != nullptr && ImGui::SmallButton("x")) {
+                setValue(key, "");
+                editName = "Reset entity property";
+            }
+            if (value != nullptr) {
+                ImGui::SetItemTooltip("Back to the default");
+            }
+            ImGui::PopID();
+        }
+        // Properties the class doesn't define, or all of them for a class the engine doesn't know.
         for (std::size_t i = 0; i < entity.properties.size(); ++i) {
             const EntityProperty& property = entity.properties[i];
+            if (entityClass != nullptr && findPropertyInfo(*entityClass, property.key) != nullptr) {
+                continue;
+            }
             ImGui::PushID(static_cast<int>(i));
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(property.key.c_str());
+            keyCell(property.key, {}, true);
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-FLT_MIN);
             std::string value;
@@ -593,20 +870,21 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
             const bool remove = ImGui::SmallButton("x");
             ImGui::PopID();
             if (apply || remove) {
-                LevelEntity edited = entity;
+                edited = entity;
                 if (remove) {
-                    edited.properties.erase(edited.properties.begin() +
-                                            static_cast<std::ptrdiff_t>(i));
+                    edited->properties.erase(edited->properties.begin() +
+                                             static_cast<std::ptrdiff_t>(i));
+                    editName = "Remove entity property";
                 } else {
-                    edited.properties[i].value = value;
+                    edited->properties[i].value = value;
                 }
-                commitEntity(document, index, edited,
-                             remove ? "Remove entity property" : "Edit entity property");
-                ImGui::EndTable();
-                return;
             }
         }
         ImGui::EndTable();
+    }
+    if (edited) {
+        commitEntity(document, index, *edited, editName);
+        return;
     }
 
     ImGui::Spacing();
@@ -620,18 +898,147 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
         if (findProperty(entity, m_newKey) != nullptr) {
             m_problem = std::format("'{}' is already set", m_newKey);
         } else {
-            LevelEntity edited = entity;
-            edited.properties.push_back({m_newKey, m_newValue});
-            commitEntity(document, index, edited, "Add entity property");
+            LevelEntity added = entity;
+            added.properties.push_back({m_newKey, m_newValue});
+            commitEntity(document, index, added, "Add entity property");
             if (m_problem.empty()) {
                 m_newKey.clear();
                 m_newValue.clear();
             }
         }
     }
+}
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("Drag in the view to move, Alt-drag to raise or lower.");
+void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index) {
+    const Level& level = document.level();
+    const LevelEntity& entity = level.entities[index];
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    const std::span<const SignalInfo> events =
+        entityClass != nullptr ? entityClass->events : std::span<const SignalInfo>{};
+    if (events.empty() && entity.outputs.empty()) {
+        return;
+    }
+    ImGui::SeparatorText("Outputs");
+    ImGui::TextDisabled("When this happens, send the input to every entity with the name.");
+    const std::vector<std::string> names = entityNames(level);
+
+    // A name field, with an arrow listing the names in the level.
+    const auto targetField = [&](int field, const std::string& current, std::string& chosen) {
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight());
+        bool picked = textField("##target", field, current, chosen, "name");
+        ImGui::SameLine(0.0f, 0.0f);
+        if (ImGui::BeginCombo("##targets", nullptr,
+                              ImGuiComboFlags_NoPreview | ImGuiComboFlags_PopupAlignLeft)) {
+            for (const std::string& name : names) {
+                if (ImGui::Selectable(name.c_str(), name == current)) {
+                    chosen = name;
+                    picked = true;
+                }
+            }
+            if (names.empty()) {
+                ImGui::TextDisabled("No entity has a name yet");
+            }
+            ImGui::EndCombo();
+        }
+        return picked;
+    };
+    // The inputs the target's entities accept, or free text when no entity has its name.
+    const auto inputField = [&](int field, const std::string& target, const std::string& current,
+                                std::string& chosen) {
+        const std::vector<SignalInfo> inputs = inputsOf(level, target);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (inputs.empty()) {
+            return textField("##input", field, current, chosen, "input");
+        }
+        return signalCombo("##input", current, inputs, chosen);
+    };
+    const auto delayField = [&](int field, float delay, float& chosen) {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        std::string text;
+        if (!textField("##delay", field, formatFloat(delay), text)) {
+            return false;
+        }
+        float seconds = 0.0f;
+        if (!parseFloat(text, seconds) || !(seconds >= 0.0f && seconds <= kMaxOutputDelay)) {
+            m_problem = std::format("A delay is 0 to {} seconds.", kMaxOutputDelay);
+            return false;
+        }
+        chosen = seconds;
+        return true;
+    };
+
+    std::optional<LevelEntity> edited;
+    const char* editName = "Edit output";
+    bool adding = false;
+    if (ImGui::BeginTable("outputs", 5, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("When", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("Target", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("Input", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("Delay", ImGuiTableColumnFlags_WidthStretch, 0.5f);
+        ImGui::TableSetupColumn("##remove", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableHeadersRow();
+        for (std::size_t i = 0; i < entity.outputs.size(); ++i) {
+            const EntityOutput& output = entity.outputs[i];
+            const int field = 3000 + static_cast<int>(i) * 4;
+            ImGui::PushID(field);
+            ImGui::TableNextRow();
+            EntityOutput changed = output;
+            bool change = false;
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            change |= signalCombo("##event", output.event, events, changed.event);
+            ImGui::TableNextColumn();
+            change |= targetField(field, output.target, changed.target);
+            ImGui::TableNextColumn();
+            change |= inputField(field + 1, output.target, output.input, changed.input);
+            ImGui::TableNextColumn();
+            change |= delayField(field + 2, output.delay, changed.delay);
+            ImGui::TableNextColumn();
+            const bool remove = ImGui::SmallButton("x");
+            ImGui::PopID();
+            if (change || remove) {
+                edited = entity;
+                if (remove) {
+                    edited->outputs.erase(edited->outputs.begin() + static_cast<std::ptrdiff_t>(i));
+                    editName = "Remove output";
+                } else {
+                    edited->outputs[i] = changed;
+                }
+            }
+        }
+
+        // The last row makes a new output.
+        if (m_newOutput.event.empty() && !events.empty()) {
+            m_newOutput.event = events.front().name;
+        }
+        ImGui::PushID("new");
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        signalCombo("##event", m_newOutput.event, events, m_newOutput.event);
+        ImGui::TableNextColumn();
+        targetField(4000, m_newOutput.target, m_newOutput.target);
+        ImGui::TableNextColumn();
+        inputField(4001, m_newOutput.target, m_newOutput.input, m_newOutput.input);
+        ImGui::TableNextColumn();
+        delayField(4002, m_newOutput.delay, m_newOutput.delay);
+        ImGui::TableNextColumn();
+        adding = ImGui::SmallButton("+");
+        ImGui::SetItemTooltip("Add this output");
+        ImGui::PopID();
+        ImGui::EndTable();
+    }
+    if (adding && !edited) {
+        edited = entity;
+        edited->outputs.push_back(m_newOutput);
+        editName = "Add output";
+    }
+    if (edited) {
+        commitEntity(document, index, *edited, editName);
+        if (adding && m_problem.empty()) {
+            m_newOutput = {};
+        }
+    }
 }
 
 } // namespace ct

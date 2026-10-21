@@ -14,3 +14,8 @@
 "vertex "
 "face "
 " 2\x0a"
+" 3\x0a"
+"output "
+"    brush\x0a"
+"door"
+"on_enter"

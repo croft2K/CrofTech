@@ -1,3 +1,4 @@
+#include "croftech/core/ConfigFile.h"
 #include "croftech/level/BrushGeometry.h"
 #include "croftech/level/LevelFile.h"
 #include "croftech/level/MapImport.h"
@@ -5,6 +6,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -120,20 +122,57 @@ TEST_CASE("player starts become player_spawn entities at the feet, in metres") {
     CHECK(*ct::findProperty(light, "light") == "300");
 }
 
-TEST_CASE("groups import as world brushes; brush entities and patches are skipped") {
+TEST_CASE(
+    "groups import as world brushes, brush entities with their brushes; patches are skipped") {
     const Import result =
         import(worldspawn(kStandardBrush) +
                "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n" + kValveBrush +
-               "}\n" + "{\n\"classname\" \"func_door\"\n" + kStandardBrush + "}\n" +
+               "}\n" + "{\n\"classname\" \"func_wall\"\n" + kStandardBrush + "}\n" +
                "{\n\"classname\" \"worldspawn\"\n"
                "{\npatchDef2\n{\n\"textures/x\"\n( 3 3 0 0 0 )\n(\n"
                "( ( 0 0 0 0 0 ) )\n)\n}\n}\n}\n");
     REQUIRE_MESSAGE(result.level.has_value(), result.error);
-    CHECK(result.level->brushes.size() == 2);
-    CHECK(result.level->entities.empty());
-    REQUIRE(result.warnings.size() == 2);
-    CHECK(result.warnings[0] == "line 28: brush entity 'func_door' is not supported yet; skipped");
-    CHECK(result.warnings[1] == "line 41: patches and brush primitives are not supported; skipped");
+    REQUIRE(result.level->brushes.size() == 3);
+    CHECK(result.level->brushes[0].entity == ct::kNoEntity);
+    CHECK(result.level->brushes[1].entity == ct::kNoEntity);
+    CHECK(result.level->brushes[2].entity == 0);
+    REQUIRE(result.level->entities.size() == 1);
+    CHECK(result.level->entities[0].className == "func_wall");
+    REQUIRE(result.warnings.size() == 1);
+    CHECK(result.warnings[0] == "line 41: patches and brush primitives are not supported; skipped");
+}
+
+TEST_CASE("Quake doors and triggers become door and trigger entities") {
+    const Import result = import(
+        worldspawn("") +
+        "{\n\"classname\" \"func_door\"\n\"angle\" \"90\"\n"
+        "\"speed\" \"200\"\n\"targetname\" \"gate\"\n" +
+        kStandardBrush + "}\n" + "{\n\"classname\" \"func_door\"\n\"angle\" \"-1\"\n" +
+        kStandardBrush + "}\n" + "{\n\"classname\" \"trigger_once\"\n" + kStandardBrush + "}\n");
+    REQUIRE_MESSAGE(result.level.has_value(), result.error);
+    CHECK(result.warnings.empty());
+    REQUIRE(result.level->entities.size() == 3);
+    REQUIRE(result.level->brushes.size() == 3);
+
+    // 128 units wide less the default lip of 8, sideways along +Y.
+    const ct::LevelEntity& gate = result.level->entities[0];
+    CHECK(gate.className == "door");
+    CHECK(*ct::findProperty(gate, "move") == ct::formatVec3({0.0f, 120.0f * 0.0254f, 0.0f}));
+    CHECK(*ct::findProperty(gate, "speed") == ct::formatFloat(200.0f * 0.0254f));
+    CHECK(*ct::findProperty(gate, "name") == "gate");
+    CHECK(ct::findProperty(gate, "angle") == nullptr);
+    CHECK(ct::findProperty(gate, "yaw") == nullptr);
+
+    // Up by its 32 unit height less the lip, at the default 100 units a second.
+    const ct::LevelEntity& lift = result.level->entities[1];
+    CHECK(*ct::findProperty(lift, "move") == ct::formatVec3({0.0f, 0.0f, 24.0f * 0.0254f}));
+    CHECK(*ct::findProperty(lift, "speed") == ct::formatFloat(100.0f * 0.0254f));
+
+    CHECK(result.level->entities[2].className == "trigger");
+    CHECK(*ct::findProperty(result.level->entities[2], "once") == "1");
+    for (std::uint32_t i = 0; i < 3; ++i) {
+        CHECK(result.level->brushes[i].entity == i);
+    }
 }
 
 TEST_CASE("bad brushes are skipped with a warning") {
@@ -201,7 +240,7 @@ TEST_CASE("a brush entity is skipped even when none of its brushes are valid") {
     REQUIRE_MESSAGE(result.level.has_value(), result.error);
     CHECK(result.level->entities.empty());
     REQUIRE(result.warnings.size() == 2);
-    CHECK(result.warnings[1] == "line 1: brush entity 'func_door' is not supported yet; skipped");
+    CHECK(result.warnings[1] == "line 1: brush entity 'func_door' has no valid brushes; skipped");
 }
 
 TEST_CASE("the TrenchBroom sample map imports its world, light and quoted text") {

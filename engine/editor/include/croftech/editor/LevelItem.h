@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace ct {
 
@@ -26,6 +27,10 @@ struct LevelItem {
 };
 
 bool exists(const Level& level, LevelItem item);
+
+// The items plus every entity that one of their brushes belongs to and every brush of every such
+// entity, so a door is picked and edited as one thing. Sorted, with no repeats.
+std::vector<LevelItem> withWholeEntities(const Level& level, std::span<const LevelItem> items);
 
 // The box drawn and picked for an entity: a player-sized box standing on a spawn point, a small
 // cube for anything else. Nullopt if the entity has no readable origin.

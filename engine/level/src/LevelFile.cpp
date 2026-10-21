@@ -66,7 +66,8 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
 
     Level level;
     Block block = Block::None;
-    int blockLine = 0;
+    int blockLine = 0; // where the current entity starts
+    int brushLine = 0;
     int lineNumber = 0;
     bool sawHeader = false;
     int version = kLevelFileVersion;
@@ -98,8 +99,8 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 return fail(lineNumber, std::format("not a level file (expected '{} {}')", kHeader,
                                                     kLevelFileVersion));
             }
-            if (rest == "1") {
-                version = 1;
+            if (rest == "1" || rest == "2") {
+                version = rest.front() - '0';
             } else if (rest != std::to_string(kLevelFileVersion)) {
                 return fail(lineNumber, "unsupported level file version");
             }
@@ -107,16 +108,24 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
             continue;
         }
 
+        const auto startBrush = [&](std::uint32_t owner) -> bool {
+            if (level.brushes.size() >= kMaxLevelBrushes) {
+                return false;
+            }
+            block = Block::Brush;
+            brushLine = lineNumber;
+            brush = {};
+            brush.entity = owner;
+            planes.clear();
+            return true;
+        };
+
         switch (block) {
         case Block::None:
             if (word == "brush" && rest.empty()) {
-                if (level.brushes.size() >= kMaxLevelBrushes) {
+                if (!startBrush(kNoEntity)) {
                     return fail(lineNumber, std::format("more than {} brushes", kMaxLevelBrushes));
                 }
-                block = Block::Brush;
-                blockLine = lineNumber;
-                brush = {};
-                planes.clear();
             } else if (word == "entity") {
                 if (level.entities.size() >= kMaxLevelEntities) {
                     return fail(lineNumber,
@@ -139,17 +148,19 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                     // Version 1 stored planes; they become corners on load.
                     std::optional<Brush> built = brushFromPlanes(planes);
                     if (!built) {
-                        return fail(blockLine, "planes do not enclose a valid brush");
+                        return fail(brushLine, "planes do not enclose a valid brush");
                     }
+                    built->entity = brush.entity;
                     brush = std::move(*built);
                 }
                 std::string problem;
                 if (!checkBrush(brush, problem)) {
-                    return fail(blockLine, problem);
+                    return fail(brushLine, problem);
                 }
+                // A brush inside an entity block belongs to it; the entity is added at its end.
+                block = brush.entity == kNoEntity ? Block::None : Block::Entity;
                 level.brushes.push_back(std::move(brush));
                 brush = {};
-                block = Block::None;
             } else if (version == 1 && word == "plane") {
                 std::array<float, 4> values{};
                 if (!parseFloats(rest, values)) {
@@ -198,6 +209,24 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
                 level.entities.push_back(std::move(entity));
                 entity = {};
                 block = Block::None;
+            } else if (word == "brush" && rest.empty()) {
+                if (!startBrush(static_cast<std::uint32_t>(level.entities.size()))) {
+                    return fail(lineNumber, std::format("more than {} brushes", kMaxLevelBrushes));
+                }
+            } else if (word == "output") {
+                EntityOutput output;
+                output.event = takeWord(rest);
+                output.target = takeWord(rest);
+                output.input = takeWord(rest);
+                const std::string_view delay = takeWord(rest);
+                if (output.input.empty() || !rest.empty() || !parseFloat(delay, output.delay)) {
+                    return fail(lineNumber,
+                                "an output is: output <event> <target> <input> <delay>");
+                }
+                if (entity.outputs.size() >= kMaxEntityOutputs) {
+                    return fail(lineNumber, std::format("more than {} outputs", kMaxEntityOutputs));
+                }
+                entity.outputs.push_back(std::move(output));
             } else {
                 if (!isValidEntityName(word)) {
                     return fail(lineNumber, "invalid property key");
@@ -216,9 +245,15 @@ std::optional<Level> parseLevel(std::string_view text, std::string& error) {
         return fail(std::max(lineNumber, 1), "not a level file (it is empty)");
     }
     if (block != Block::None) {
-        return fail(blockLine,
-                    block == Block::Brush ? "brush has no 'end'" : "entity has no 'end'");
+        return block == Block::Brush ? fail(brushLine, "brush has no 'end'")
+                                     : fail(blockLine, "entity has no 'end'");
     }
+    // In the order formatLevel writes them, which a hand-edited file may not keep.
+    const auto rank = [](const Brush& brush) {
+        return brush.entity == kNoEntity ? 0u : brush.entity + 1u;
+    };
+    std::stable_sort(level.brushes.begin(), level.brushes.end(),
+                     [&rank](const Brush& a, const Brush& b) { return rank(a) < rank(b); });
     return level;
 }
 
@@ -227,27 +262,49 @@ std::optional<std::string> formatLevel(const Level& level, std::string& error) {
         error = "level has too many brushes or entities";
         return std::nullopt;
     }
-    std::string text = std::format("{} {}\n", kHeader, kLevelFileVersion);
     std::string problem;
+    if (!checkBrushOwners(level, problem)) {
+        error = problem;
+        return std::nullopt;
+    }
     for (std::size_t i = 0; i < level.brushes.size(); ++i) {
-        const Brush& brush = level.brushes[i];
-        if (!checkBrush(brush, problem)) {
+        if (!checkBrush(level.brushes[i], problem)) {
             error = std::format("brush {}: {}", i, problem);
             return std::nullopt;
         }
-        text += "\nbrush\n";
+    }
+
+    std::string text = std::format("{} {}\n", kHeader, kLevelFileVersion);
+    const auto writeBrush = [&text](const Brush& brush, std::string_view indent) {
+        text += std::format("{}brush\n", indent);
         for (const Vec3& vertex : brush.vertices) {
-            text += std::format("    vertex {}\n", formatVec3(vertex));
+            text += std::format("{}    vertex {}\n", indent, formatVec3(vertex));
         }
         for (const BrushFace& face : brush.faces) {
-            text += "    face";
+            text += std::format("{}    face", indent);
             for (const std::uint32_t corner : face.corners) {
                 text += std::format(" {}", corner);
             }
             text += '\n';
         }
-        text += "end\n";
+        text += std::format("{}end\n", indent);
+    };
+
+    // World brushes first, then each entity with its brushes inside its block, so a level whose
+    // brushes are in that order loads back exactly as it was.
+    std::vector<std::size_t> owned;
+    for (std::size_t i = 0; i < level.brushes.size(); ++i) {
+        if (level.brushes[i].entity == kNoEntity) {
+            text += '\n';
+            writeBrush(level.brushes[i], "");
+        } else {
+            owned.push_back(i);
+        }
     }
+    std::stable_sort(owned.begin(), owned.end(), [&level](std::size_t a, std::size_t b) {
+        return level.brushes[a].entity < level.brushes[b].entity;
+    });
+    std::size_t nextOwned = 0;
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
         const LevelEntity& entity = level.entities[i];
         if (!checkEntity(entity, problem)) {
@@ -259,6 +316,14 @@ std::optional<std::string> formatLevel(const Level& level, std::string& error) {
             text += property.value.empty()
                         ? std::format("    {}\n", property.key)
                         : std::format("    {} {}\n", property.key, property.value);
+        }
+        for (const EntityOutput& output : entity.outputs) {
+            text += std::format("    output {} {} {} {}\n", output.event, output.target,
+                                output.input, formatFloat(output.delay));
+        }
+        for (; nextOwned < owned.size() && level.brushes[owned[nextOwned]].entity == i;
+             ++nextOwned) {
+            writeBrush(level.brushes[owned[nextOwned]], "    ");
         }
         text += "end\n";
     }
