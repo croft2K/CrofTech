@@ -114,6 +114,17 @@ TEST_CASE("entities move with the transform and turn their yaw") {
         ct::transformedEntity(spawn, ct::AffineTransform::scale({1.0, -1.0, 1.0}, {}));
     CHECK(*ct::findProperty(mirrored, "yaw") == "-30");
 
+    // An enemy placed without a yaw faces its class's default, 0, and gets one when turned, but
+    // not when only moved.
+    const ct::LevelEntity enemy{"enemy", {{"origin", "2 0 0"}}, {}};
+    const ct::LevelEntity enemyTurned =
+        ct::transformedEntity(enemy, ct::AffineTransform::rotation(2, 90.0, {}));
+    REQUIRE(ct::findProperty(enemyTurned, "yaw") != nullptr);
+    CHECK(*ct::findProperty(enemyTurned, "yaw") == "90");
+    const ct::LevelEntity enemyMoved =
+        ct::transformedEntity(enemy, ct::AffineTransform::moveBy({1.0f, 0.0f, 0.0f}));
+    CHECK(ct::findProperty(enemyMoved, "yaw") == nullptr);
+
     const ct::LevelEntity noOrigin{"worldspawn", {{"yaw", "10"}}};
     CHECK(ct::transformedEntity(noOrigin, ct::AffineTransform::moveBy({1.0f, 0.0f, 0.0f})) ==
           noOrigin);

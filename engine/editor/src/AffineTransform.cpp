@@ -1,11 +1,13 @@
 #include "croftech/editor/AffineTransform.h"
 
 #include "croftech/core/ConfigFile.h"
+#include "croftech/level/EntityClasses.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <string>
+#include <string_view>
 
 namespace ct {
 namespace {
@@ -137,9 +139,18 @@ LevelEntity transformedEntity(const LevelEntity& entity, const AffineTransform& 
     }
     setProperty(result, "origin", formatVec3(transform.apply(*origin)));
 
+    // An entity whose class has a yaw but that was never given one (an enemy as placed) faces
+    // the class's default, and turns from there.
+    std::string_view yawText;
+    if (const std::string* own = findProperty(entity, "yaw")) {
+        yawText = *own;
+    } else if (const EntityClassInfo* entityClass = findEntityClass(entity.className)) {
+        if (const PropertyInfo* property = findPropertyInfo(*entityClass, "yaw")) {
+            yawText = property->defaultValue;
+        }
+    }
     float yaw = 0.0f;
-    const std::string* yawText = findProperty(entity, "yaw");
-    if (yawText != nullptr && parseFloat(*yawText, yaw)) {
+    if (!yawText.empty() && parseFloat(yawText, yaw)) {
         double c = 1.0;
         double s = 0.0;
         cosSin(yaw, c, s);
@@ -147,7 +158,11 @@ LevelEntity transformedEntity(const LevelEntity& entity, const AffineTransform& 
         // Turned to face straight up or down, the old yaw is as good as any.
         if (std::hypot(facing.x, facing.y) > 1e-9) {
             const double degrees = std::atan2(facing.y, facing.x) * 180.0 / std::numbers::pi;
-            setProperty(result, "yaw", formatFloat(static_cast<float>(degrees)));
+            const std::string turned = formatFloat(static_cast<float>(degrees));
+            // Only moved, an entity left at its default stays without a yaw of its own.
+            if (findProperty(entity, "yaw") != nullptr || turned != yawText) {
+                setProperty(result, "yaw", turned);
+            }
         }
     }
     return result;
