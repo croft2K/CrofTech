@@ -30,11 +30,14 @@ struct WeaponFloat {
 };
 
 constexpr WeaponInt kWeaponInts[] = {
-    {"damage", &WeaponSettings::damage, 0, kMaxHealthSetting, "each pellet that hits"},
+    {"damage", &WeaponSettings::damage, 0, kMaxHealthSetting,
+     "each pellet or projectile that hits"},
     {"pellets", &WeaponSettings::pellets, 1, 64, "traces per shot"},
     {"ammo_per_shot", &WeaponSettings::ammoPerShot, 0, kMaxAmmo, "0 never runs out"},
     {"start_ammo", &WeaponSettings::startAmmo, 0, kMaxAmmo, "ammo carried at spawn"},
     {"max_ammo", &WeaponSettings::maxAmmo, 0, kMaxAmmo, "most ammo it holds"},
+    {"splash_damage", &WeaponSettings::splashDamage, 0, kMaxHealthSetting,
+     "at the centre of a projectile's explosion, less with distance"},
 };
 
 constexpr WeaponFloat kWeaponFloats[] = {
@@ -46,6 +49,18 @@ constexpr WeaponFloat kWeaponFloats[] = {
      "seconds after switching to it before it fires"},
     {"knockback", &WeaponSettings::knockback, 0.0f, 100.0f,
      "m/s each pellet that hits adds to the target, along the shot"},
+    {"projectile_speed", &WeaponSettings::projectileSpeed, 0.0f, 200.0f,
+     "m/s; 0 traces each pellet at once (hitscan)"},
+    {"projectile_gravity", &WeaponSettings::projectileGravity, 0.0f, 10.0f,
+     "share of movement gravity that pulls a projectile down"},
+    {"bounce", &WeaponSettings::bounce, 0.0f, 1.0f,
+     "share of its speed a projectile keeps bouncing off the world; 0 explodes on it"},
+    {"fuse", &WeaponSettings::fuse, 0.1f, 60.0f, "seconds before a projectile explodes by itself"},
+    {"splash_radius", &WeaponSettings::splashRadius, 0.0f, 50.0f, "m"},
+    {"splash_knockback", &WeaponSettings::splashKnockback, 0.0f, 100.0f,
+     "m/s at the centre of the explosion, away from it"},
+    {"self_damage", &WeaponSettings::selfDamage, 0.0f, 1.0f,
+     "share of its splash damage the shooter takes"},
 };
 
 std::string cvarName(std::string_view key) { return std::string(kRulesCVarPrefix).append(key); }

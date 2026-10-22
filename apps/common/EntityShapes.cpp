@@ -13,6 +13,9 @@ namespace {
 constexpr float kThirdPersonDistance = 3.0f;
 constexpr float kThirdPersonRise = 0.4f;
 constexpr Vec3 kCameraHalfExtents{0.15f, 0.15f, 0.15f};
+constexpr Vec3 kProjectileHalfExtents{0.09f, 0.09f, 0.09f};
+constexpr Vec3 kRocketColor{0.85f, 0.82f, 0.75f};
+constexpr Vec3 kGrenadeColor{0.18f, 0.32f, 0.14f};
 
 // Player colours by input slot, linear RGB.
 constexpr std::array<Vec3, 8> kPlayerColors{{
@@ -106,6 +109,28 @@ void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
         const Vec3 visor{half.x * 0.25f, half.y * 0.7f, 0.08f};
         addBox(out, feet + Vec3{0.0f, 0.0f, movement.eyeHeight} + forward * (half.x + visor.x),
                visor, yaw, {0.05f, 0.05f, 0.06f});
+    }
+}
+
+void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,
+                    LocalGame::Clock::time_point now) {
+    const State* state = game.latestState();
+    if (state == nullptr) {
+        return;
+    }
+    const std::vector<WeaponSettings>& weapons = game.settings().weapons;
+    const World& world = state->world;
+    for (std::size_t i = 0; i < world.projectiles.size(); ++i) {
+        const Projectile& projectile = world.projectiles.components()[i];
+        const std::optional<Transform> transform =
+            game.transform(world.projectiles.entities()[i], now);
+        if (hasExploded(projectile) || !transform) {
+            continue;
+        }
+        const bool bounces =
+            projectile.weapon < weapons.size() && weapons[projectile.weapon].bounce > 0.0f;
+        addBox(out, transform->position, kProjectileHalfExtents, angleToRadians(transform->yaw),
+               bounces ? kGrenadeColor : kRocketColor);
     }
 }
 

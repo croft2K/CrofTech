@@ -9,8 +9,9 @@
 
 namespace ct {
 
-// Short-lived effects for GameEvents, such as the glow where a player respawns. Presentation only,
-// timed by the clock; they are added to the effect geometry each frame until they fade.
+// Short-lived effects for GameEvents: the glow where a player respawns, the flash of an
+// explosion. Presentation only, timed by the clock; they are added to the effect geometry each
+// frame until they fade.
 class GameEffects {
 public:
     using Clock = std::chrono::steady_clock;
@@ -22,10 +23,11 @@ public:
 
 private:
     struct Effect {
+        GameEventKind kind = GameEventKind::Respawn;
         Vec3 position;
         Clock::time_point start;
     };
-    std::vector<Effect> m_effects; // respawn glows
+    std::vector<Effect> m_effects;
 };
 
 } // namespace ct

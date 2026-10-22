@@ -130,9 +130,12 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    `game.cfg`), a `Weapons` component (ammo, the weapon in hand, raise and refire times, a random
    counter), hitscan shots with spread against the world, movers and player boxes, switching by
    number keys and the wheel through the input command's weapon field (plus reserved sub-tick
-   fields, protocol version 3), and changing to the best loaded weapon when one runs dry. Next:
-   3b rockets and grenades, 3c crosshair, ammo on the HUD, view weapon, tracers, impacts and firing
-   sounds.* Each weapon is a data file in the game's content. Hitscan weapons spread their
+   fields, protocol version 3), and changing to the best loaded weapon when one runs dry. 3b done
+   (2026-10-22): projectiles as simulated entities (rocket and grenade launcher files: speed,
+   gravity, bounce, fuse, splash damage, radius and knockback, self damage), explosions that hurt
+   and throw what they can see, rocket jumps, and on the client small boxes for projectiles, an
+   explosion flash and sound. Next: 3c crosshair, ammo on the HUD, view weapon, tracers, impacts
+   and firing sounds.* Each weapon is a data file in the game's content. Hitscan weapons spread their
    shots from a seeded RNG kept in the state. Projectiles are simulated entities: rockets with
    splash damage and knockback (rocket jumps), and grenades that bounce. Weapons have ammo and are
    switched with a new weapon field in the input command, which also reserves the sub-tick fields

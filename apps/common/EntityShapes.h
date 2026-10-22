@@ -23,6 +23,11 @@ void addBox(std::vector<WorldVertex>& out, Vec3 centre, Vec3 halfExtents, float 
 void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
                 LocalGame::Clock::time_point now, bool includeOwn);
 
+// Every rocket and grenade still flying in the newest snapshot, as a small box: pale for those that
+// fly straight, dark for those that bounce.
+void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,
+                    LocalGame::Clock::time_point now);
+
 // Where a camera following the player from behind goes: back from the eyes along the view, and
 // short of any wall in the way.
 Vec3 thirdPersonPosition(const CollisionWorld& world, Vec3 eye, float yawRadians,

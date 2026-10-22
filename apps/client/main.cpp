@@ -599,6 +599,7 @@ int main(int argc, char** argv) {
         shapes.clear();
         effects.clear();
         ct::addPlayers(shapes, *localGame, now, thirdPerson);
+        ct::addProjectiles(shapes, *localGame, now);
         gameEffects.build(now, effects);
         renderer->setDynamicGeometry(shapes, effects);
 

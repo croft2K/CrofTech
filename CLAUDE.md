@@ -48,7 +48,9 @@ play-in-editor); a dead player respawns at the spawn point furthest from other p
 is pressed after `rules.respawn_delay`. Players carry weapons (`sim/Weapons.h`, fired by
 `runWeapons` in `sim/Firing.h`): each is a file, `weapons/<name>.cfg` (variables
 `weapon.<name>.<setting>`), and a game lists its weapons in `game.cfg` in number-key order. Number
-keys and the mouse wheel choose one (`WeaponSelect` in `apps/common/PlayerInput`).
+keys and the mouse wheel choose one (`WeaponSelect` in `apps/common/PlayerInput`). A weapon with a
+projectile speed fires rockets or grenades (`sim/Projectile.h`): simulated entities that explode
+on contact or when their fuse runs out, hurting and throwing what is near (rocket jumps).
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;

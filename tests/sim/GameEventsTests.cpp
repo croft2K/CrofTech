@@ -118,3 +118,28 @@ TEST_CASE("a new timeline starts afresh, with no events for the jump back") {
     const std::vector<ct::GameEvent> seen = watch(sim, events, {}, 1, 1);
     CHECK(seen.empty());
 }
+
+TEST_CASE("a rocket going off is one explosion, where it went off") {
+    ct::WeaponSettings rocket;
+    rocket.given = true;
+    rocket.startAmmo = 5;
+    rocket.raiseTime = 0.0f;
+    rocket.projectileSpeed = 20.0f;
+    rocket.splashRadius = 2.0f;
+    ct::GameSettings settings;
+    settings.weapons = {rocket};
+    SimHarness sim(
+        ct::Level{{floorBrush(), ct::makeBoxBrush({6.0f, -5.0f, 0.0f}, {7.0f, 5.0f, 4.0f})}, {}},
+        settings);
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::GameEvents events;
+    watch(sim, events, {}, 1);
+    watch(sim, events, pressing(ct::kButtonAttack), 1);
+    const std::vector<ct::GameEvent> seen = watch(sim, events, {}, ct::kTickRate);
+    REQUIRE(count(seen, GameEventKind::Explosion) == 1);
+    const auto blast = std::find_if(seen.begin(), seen.end(), [](const ct::GameEvent& e) {
+        return e.kind == GameEventKind::Explosion;
+    });
+    CHECK(blast->position.x == doctest::Approx(6.0f).epsilon(0.01));
+    CHECK(blast->position.z == doctest::Approx(sim.movement().eyeHeight).epsilon(0.01));
+}

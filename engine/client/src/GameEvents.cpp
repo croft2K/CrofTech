@@ -110,6 +110,16 @@ void GameEvents::compare(const State& state, const GameLevel& level,
                        moverCentre(level, ref->index, now), 0.0f, ref->index});
     }
 
+    for (std::size_t i = 0; i < now.projectiles.size(); ++i) {
+        const EntityId id = now.projectiles.entities()[i];
+        const Projectile* last = before.projectiles.get(id);
+        const Transform* transform = now.transforms.get(id);
+        if (hasExploded(now.projectiles.components()[i]) && transform != nullptr &&
+            (last == nullptr || !hasExploded(*last))) {
+            out.push_back({GameEventKind::Explosion, id, transform->position, 0.0f, 0});
+        }
+    }
+
     for (std::size_t i = 0; i < now.checkpoints.size(); ++i) {
         const EntityId id = now.checkpoints.entities()[i];
         const Checkpoint& checkpoint = now.checkpoints.components()[i];

@@ -91,7 +91,9 @@ TEST_CASE("a game's settings files are movement, rules and one per weapon, up to
 }
 
 TEST_CASE("the shipped weapon files set only known settings") {
-    for (const std::string& weapon : {std::string("machinegun"), std::string("shotgun")}) {
+    for (const std::string& weapon :
+         {std::string("machinegun"), std::string("shotgun"), std::string("grenade_launcher"),
+          std::string("rocket_launcher")}) {
         CAPTURE(weapon);
         const auto text =
             ct::readTextFile(std::string(CROFTECH_CONTENT_DIR "/weapons/") + weapon + ".cfg");

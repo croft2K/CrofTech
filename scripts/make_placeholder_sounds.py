@@ -139,9 +139,16 @@ def mover_move():
             * (0.85 + 0.15 * math.sin(2 * math.pi * 4 * i / RATE)) for i in range(count)]
 
 
+def explosion():
+    rumble = burst(1.3, 4.5, 0.035, 6)
+    crack = burst(0.12, 14.0, 0.6, 7)
+    boom = sweep(85, 28, 1.1, 4.0, (1.0, 0.4))
+    return mix(scaled(rumble, 1.0), scaled(crack, 0.5), scaled(boom, 0.9))
+
+
 for name, make in [('footstep', footstep), ('jump', jump), ('land', land), ('pain', pain),
                    ('death', death), ('respawn', respawn), ('checkpoint', checkpoint),
                    ('mover_start', mover_start), ('mover_stop', mover_stop),
-                   ('mover_move', mover_move)]:
+                   ('mover_move', mover_move), ('explosion', explosion)]:
     write(name, make())
     print(f'wrote {name}.wav')

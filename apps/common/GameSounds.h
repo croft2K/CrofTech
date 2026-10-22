@@ -34,7 +34,8 @@ private:
     // Loaded the first time it is asked for; a sound that is missing or broken is reported once
     // and stays silent.
     std::optional<Mixer::SoundId> sound(std::string_view name);
-    void play(std::string_view name, const GameEvent& event, EntityId player, float volume = 1.0f);
+    void play(std::string_view name, const GameEvent& event, EntityId player, float volume = 1.0f,
+              float reach = Mixer::Play{}.reach);
 
     AudioOutput& m_output;
     const ContentPaths& m_content;

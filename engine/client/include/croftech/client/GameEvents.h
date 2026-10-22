@@ -26,6 +26,7 @@ enum class GameEventKind : std::uint8_t {
     MoverStart,
     MoverStop,
     CheckpointReached,
+    Explosion, // a rocket or grenade going off; entity is the projectile
 };
 
 struct GameEvent {

@@ -11,6 +11,10 @@
 namespace ct {
 
 class CollisionScene;
+class GameLevel;
+
+// How long an exploded projectile stays, so every client sees where it went off.
+inline constexpr std::uint32_t kExplosionTicks = kTickRate / 4;
 
 // Where a shot from start towards end stops: at the first box of a living player (or, later,
 // enemy) it passes into, other than the shooter's, or at the world or a mover.
@@ -40,8 +44,15 @@ void armPlayer(Weapons& weapons, const GameSettings& settings, TickIndex tick);
 // stretch of random numbers.
 Weapons startingWeapons(const GameSettings& settings, std::uint32_t inputSlot, TickIndex tick);
 
-// Switches and fires every living player's weapons by their commands. Runs after movement, so
-// shots leave from where players are at the end of the tick.
+// Moves every projectile one tick, bouncing or setting it off when it hits something (never its
+// owner) or its fuse runs out, and removes it a little after it has exploded, or once it falls out
+// of the world.
+void runProjectiles(const CollisionScene& scene, const GameLevel& level,
+                    const GameSettings& settings, State& state);
+
+// Switches and fires every living player's weapons by their commands. Hitscan pellets hit at
+// once; projectiles are launched from the eye and move from the next tick. Runs after movement,
+// so shots leave from where players are at the end of the tick.
 void runWeapons(const CollisionScene& scene, const GameSettings& settings, const InputSet& inputs,
                 State& state);
 

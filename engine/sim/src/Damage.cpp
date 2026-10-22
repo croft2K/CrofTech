@@ -22,7 +22,13 @@ void die(const State& state, Health& health) {
 
 bool applyDamage(State& state, const RulesSettings& rules, EntityId target, const Damage& damage) {
     Health* health = state.world.healths.get(target);
-    if (health == nullptr || isDead(*health) || damage.amount <= 0) {
+    if (health == nullptr || isDead(*health)) {
+        return false;
+    }
+    if (PlayerMotion* motion = state.world.playerMotions.get(target)) {
+        motion->velocity += damage.push;
+    }
+    if (damage.amount <= 0) {
         return false;
     }
     const std::int64_t amount = damage.amount;
@@ -36,9 +42,6 @@ bool applyDamage(State& state, const RulesSettings& rules, EntityId target, cons
     health->hurtTick = state.tick;
     health->hurtKind = static_cast<std::uint32_t>(damage.kind);
     health->attacker = damage.attacker;
-    if (PlayerMotion* motion = state.world.playerMotions.get(target)) {
-        motion->velocity += damage.push;
-    }
     if (health->health > 0) {
         return false;
     }

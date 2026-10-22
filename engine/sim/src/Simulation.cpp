@@ -53,6 +53,7 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     logic.runMovers(m_settings.movement);
     const CollisionScene scene(*m_level, world);
     movePlayers(scene, inputs, next);
+    runProjectiles(scene, *m_level, m_settings, next);
     runWeapons(scene, m_settings, inputs, next);
     logic.activateMovers(m_settings.movement);
     logic.updateTriggers(m_settings.movement);

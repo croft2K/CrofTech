@@ -12,6 +12,7 @@ namespace {
 
 constexpr float kFootstepVolume = 0.45f;
 constexpr float kHumVolume = 0.5f;
+constexpr float kExplosionReach = 90.0f;
 
 } // namespace
 
@@ -44,14 +45,15 @@ std::optional<Mixer::SoundId> GameSounds::sound(std::string_view name) {
     return id;
 }
 
-void GameSounds::play(std::string_view name, const GameEvent& event, EntityId player,
-                      float volume) {
+void GameSounds::play(std::string_view name, const GameEvent& event, EntityId player, float volume,
+                      float reach) {
     const std::optional<Mixer::SoundId> id = sound(name);
     if (!id) {
         return;
     }
     Mixer::Play params;
     params.volume = volume;
+    params.reach = reach;
     if (event.entity != player) {
         params.position = event.position;
     }
@@ -84,6 +86,9 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
             break;
         case GameEventKind::CheckpointReached:
             play("checkpoint", event, player);
+            break;
+        case GameEventKind::Explosion:
+            play("explosion", event, player, 1.0f, kExplosionReach);
             break;
         case GameEventKind::MoverStart: {
             play("mover_start", event, player);

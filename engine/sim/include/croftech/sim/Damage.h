@@ -19,8 +19,9 @@ struct Damage {
 };
 
 // The one way anything is hurt. Armour takes its share of the damage (RulesSettings::armourShare)
-// while it lasts and health takes the rest; at zero health the target dies. Targets without
-// health, and the dead, are left alone. Returns whether this killed the target.
+// while it lasts and health takes the rest; at zero health the target dies. A hit that does no
+// damage still pushes. Targets without health, and the dead, are left alone. Returns whether this
+// killed the target.
 bool applyDamage(State& state, const RulesSettings& rules, EntityId target, const Damage& damage);
 
 // Kills the target whatever its health and armour, as falling out of the world does.

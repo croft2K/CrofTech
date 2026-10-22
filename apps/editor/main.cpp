@@ -644,6 +644,7 @@ int main(int argc, char** argv) {
             shapes.clear();
             effects.clear();
             ct::addPlayers(shapes, play->game(), now, false);
+            ct::addProjectiles(shapes, play->game(), now);
             gameEffects.build(now, effects);
             renderer->setDynamicGeometry(shapes, effects);
             renderer->drawFrame(play->camera(), ui, &rect);

@@ -7,6 +7,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -307,4 +308,231 @@ TEST_CASE("two players shooting each other give the same result every run") {
         return hashes;
     };
     CHECK(duel() == duel());
+}
+
+namespace {
+
+ct::WeaponSettings rocket() {
+    ct::WeaponSettings weapon;
+    weapon.damage = 100;
+    weapon.fireInterval = 0.8f;
+    weapon.knockback = 12.7f;
+    weapon.startAmmo = 10;
+    weapon.given = true;
+    weapon.projectileSpeed = 23.0f;
+    weapon.splashDamage = 100;
+    weapon.splashRadius = 3.0f;
+    weapon.splashKnockback = 12.7f;
+    weapon.selfDamage = 0.5f;
+    return weapon;
+}
+
+ct::WeaponSettings grenade() {
+    ct::WeaponSettings weapon = rocket();
+    weapon.projectileSpeed = 18.0f;
+    weapon.projectileGravity = 1.0f;
+    weapon.bounce = 0.65f;
+    weapon.fuse = 2.5f;
+    weapon.splashRadius = 3.8f;
+    return weapon;
+}
+
+ct::GameSettings sturdy(std::vector<ct::WeaponSettings> weapons) {
+    ct::GameSettings settings = armed(std::move(weapons));
+    settings.rules.startHealth = 200;
+    return settings;
+}
+
+ct::UserCmd firingAt(std::int16_t pitch) {
+    ct::UserCmd cmd = firing();
+    cmd.pitch = pitch;
+    return cmd;
+}
+
+const ct::Projectile* onlyProjectile(const SimHarness& sim) {
+    const auto projectiles = sim.state().world.projectiles.components();
+    return projectiles.size() == 1 ? &projectiles[0] : nullptr;
+}
+
+ct::Vec3 projectilePosition(const SimHarness& sim) {
+    return sim.state().world.transforms.get(sim.state().world.projectiles.entities()[0])->position;
+}
+
+} // namespace
+
+TEST_CASE("a rocket flies straight, hits the first target directly, and goes a moment later") {
+    SimHarness sim(floorWith(), sturdy({rocket()}));
+    const ct::EntityId shooter = sim.spawn({0.0f, 0.0f, 0.0f});
+    const ct::EntityId target = sim.spawn({10.0f, 0.0f, 0.0f}, 0, 1);
+    ready(sim);
+    sim.run(firing(), 1);
+    const ct::Projectile* flying = onlyProjectile(sim);
+    REQUIRE(flying != nullptr);
+    CHECK(flying->owner == shooter);
+    CHECK(flying->velocity.x == doctest::Approx(23.0f));
+    CHECK(projectilePosition(sim).z == doctest::Approx(sim.movement().eyeHeight).epsilon(0.01));
+
+    // 9.6 m at 23 m/s is about 54 ticks.
+    sim.run({}, 50);
+    CHECK(healthOf(sim, target).health == 200);
+    sim.run({}, 10);
+    const ct::Health& hit = healthOf(sim, target);
+    CHECK(hit.health == 100);
+    CHECK(hit.attacker == shooter);
+    REQUIRE(onlyProjectile(sim) != nullptr);
+    CHECK(ct::hasExploded(*onlyProjectile(sim)));
+    CHECK(sim.state().world.playerMotions.get(target)->velocity.x > 5.0f);
+
+    sim.run({}, static_cast<int>(ct::kExplosionTicks));
+    CHECK(sim.state().world.projectiles.size() == 0);
+}
+
+TEST_CASE("an explosion hurts and throws what is near it, less further away, not through walls") {
+    const ct::Brush wall = ct::makeBoxBrush({10.0f, -5.0f, 0.0f}, {10.5f, 5.0f, 4.0f});
+    SimHarness sim(floorWith({wall}), sturdy({rocket()}));
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    const ct::EntityId close = sim.spawn({9.0f, 1.5f, 0.0f}, 0, 1);
+    const ct::EntityId further = sim.spawn({9.0f, -2.5f, 0.0f}, 0, 2);
+    const ct::EntityId hidden = sim.spawn({12.0f, 0.0f, 0.0f}, 0, 3);
+    ready(sim);
+    sim.run(firing(), 1);
+    sim.run({}, ct::kTickRate);
+
+    // The rocket bursts on the wall at eye height; the nearest point of each box counts.
+    const std::int32_t closeLoss = 200 - healthOf(sim, close).health;
+    const std::int32_t furtherLoss = 200 - healthOf(sim, further).health;
+    CHECK(closeLoss > 45);
+    CHECK(closeLoss < 70);
+    CHECK(furtherLoss > 10);
+    CHECK(furtherLoss < closeLoss);
+    CHECK(healthOf(sim, hidden).health == 200);
+    CHECK(sim.health().health == 200);
+    // Thrown away from the blast.
+    CHECK(sim.state().world.transforms.get(close)->position.y > 2.0f);
+}
+
+TEST_CASE("a rocket at your own feet throws you high for half its splash damage") {
+    SimHarness sim(floorWith(), sturdy({rocket()}));
+    const ct::EntityId shooter = sim.spawn({0.0f, 0.0f, 0.0f});
+    ready(sim);
+    sim.run(firingAt(ct::kMaxPitch), 1);
+    float highest = 0.0f;
+    for (int i = 0; i < 2 * static_cast<int>(ct::kTickRate); ++i) {
+        sim.run({}, 1);
+        highest = std::max(highest, sim.feetZ());
+    }
+    CHECK(sim.health().health >= 148);
+    CHECK(sim.health().health <= 152);
+    CHECK(sim.health().attacker == shooter);
+    // 12.7 m/s up rises about 4 m.
+    CHECK(highest > 3.0f);
+    CHECK(sim.onGround());
+}
+
+TEST_CASE("an explosion that does no harm still throws") {
+    ct::WeaponSettings noHarm = rocket();
+    noHarm.selfDamage = 0.0f;
+    SimHarness sim(floorWith(), sturdy({noHarm}));
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ready(sim);
+    sim.run(firingAt(ct::kMaxPitch), 1);
+    float highest = 0.0f;
+    for (int i = 0; i < static_cast<int>(ct::kTickRate); ++i) {
+        sim.run({}, 1);
+        highest = std::max(highest, sim.feetZ());
+    }
+    CHECK(sim.health().health == 200);
+    CHECK(highest > 3.0f);
+}
+
+TEST_CASE("grenades arc, bounce and explode when their fuse runs out") {
+    SimHarness sim(floorWith(), sturdy({grenade()}));
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ready(sim);
+    sim.run(firing(), 1);
+    const ct::TickIndex fired = sim.state().tick;
+    bool fell = false;
+    bool bounced = false;
+    for (int i = 0; i < 2 * static_cast<int>(ct::kTickRate); ++i) {
+        sim.run({}, 1);
+        REQUIRE(onlyProjectile(sim) != nullptr);
+        const float vz = onlyProjectile(sim)->velocity.z;
+        fell = fell || vz < -2.0f;
+        bounced = bounced || (fell && vz > 2.0f);
+        REQUIRE(projectilePosition(sim).z > 0.0f);
+    }
+    CHECK(bounced);
+    CHECK_FALSE(ct::hasExploded(*onlyProjectile(sim)));
+    // A 2.5 s fuse is 320 ticks.
+    sim.run({}, static_cast<int>(fired + 320 - sim.state().tick - 1));
+    CHECK_FALSE(ct::hasExploded(*onlyProjectile(sim)));
+    sim.run({}, 1);
+    CHECK(ct::hasExploded(*onlyProjectile(sim)));
+    CHECK(projectilePosition(sim).x > 10.0f);
+    CHECK(sim.health().health == 200);
+}
+
+TEST_CASE("a grenade dropped at your feet comes to rest, then goes off under you") {
+    ct::WeaponSettings dead = grenade();
+    dead.bounce = 0.3f;
+    SimHarness sim(floorWith(), sturdy({dead}));
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ready(sim);
+    sim.run(firingAt(ct::kMaxPitch), 1);
+    sim.run({}, 2 * static_cast<int>(ct::kTickRate));
+    REQUIRE(onlyProjectile(sim) != nullptr);
+    CHECK((onlyProjectile(sim)->flags & ct::kProjectileResting) != 0);
+    CHECK(onlyProjectile(sim)->velocity == ct::Vec3{});
+    sim.run({}, static_cast<int>(ct::kTickRate) / 2 + 1);
+    CHECK(sim.health().health < 160);
+    CHECK_FALSE(sim.onGround());
+}
+
+TEST_CASE("a grenade that hits someone explodes at once") {
+    SimHarness sim(floorWith(), sturdy({grenade()}));
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    const ct::EntityId target = sim.spawn({5.0f, 0.0f, 0.0f}, 0, 1);
+    ready(sim);
+    sim.run(firing(), 1);
+    sim.run({}, static_cast<int>(ct::kTickRate) / 2);
+    REQUIRE(onlyProjectile(sim) != nullptr);
+    CHECK(ct::hasExploded(*onlyProjectile(sim)));
+    // The direct hit only: the splash leaves the one hit alone.
+    CHECK(healthOf(sim, target).health == 100);
+}
+
+TEST_CASE("projectiles that fall out of the world are removed") {
+    ct::WeaponSettings lob = grenade();
+    lob.fuse = 60.0f;
+    lob.bounce = 0.0f;
+    const ct::Level level{{ct::makeBoxBrush({-2.0f, -2.0f, -1.0f}, {2.0f, 2.0f, 0.0f})}, {}};
+    SimHarness sim(level, sturdy({lob}));
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ready(sim);
+    sim.run(firingAt(-4000), 1);
+    REQUIRE(sim.state().world.projectiles.size() == 1);
+    sim.run({}, 5 * static_cast<int>(ct::kTickRate));
+    CHECK(sim.state().world.projectiles.size() == 0);
+}
+
+TEST_CASE("rockets and grenades give the same result every run") {
+    const auto battle = [] {
+        SimHarness sim(floorWith(), sturdy({rocket(), grenade()}));
+        sim.spawn({0.0f, 0.0f, 0.0f});
+        sim.spawn({8.0f, 2.0f, 0.0f}, 32768, 1);
+        ct::InputSet inputs;
+        std::vector<std::uint64_t> hashes;
+        for (int tick = 0; tick < 4 * static_cast<int>(ct::kTickRate); ++tick) {
+            inputs.commands[0] = choosing(tick > 250 ? 2 : 1, ct::kButtonAttack);
+            inputs.commands[0].yaw = static_cast<std::uint16_t>(400 * (tick % 7));
+            inputs.commands[0].pitch = static_cast<std::int16_t>(tick % 3 == 0 ? 3000 : 0);
+            inputs.commands[1] = choosing(2, ct::kButtonAttack);
+            inputs.commands[1].yaw = 32768;
+            inputs.commands[1].forward = tick % 100 < 50 ? 127 : -127;
+            sim.runInputs(inputs, 1);
+            hashes.push_back(ct::hashState(sim.state()));
+        }
+        return hashes;
+    };
+    CHECK(battle() == battle());
 }

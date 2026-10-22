@@ -47,3 +47,8 @@
 "\x09firedTick"
 "\x06random"
 "\x07ammo[0]"
+"\x0aprojectile"
+"\x05owner"
+"\x06weapon"
+"\x08fuseTick"
+"\x0cexplodedTick"
