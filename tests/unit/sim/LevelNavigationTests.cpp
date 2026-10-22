@@ -23,7 +23,7 @@ TEST_CASE("the shipped levels build navigation meshes with no warnings") {
     }
 }
 
-TEST_CASE("the enemies test level plays with a charger and no warnings") {
+TEST_CASE("the enemies test level plays with chargers and gunners and no warnings") {
     std::vector<std::string> importWarnings;
     std::string error;
     const std::optional<ct::Level> level = ct::loadAnyLevelFile(
@@ -38,10 +38,12 @@ TEST_CASE("the enemies test level plays with a charger and no warnings") {
     ct::EnemySettings charger;
     charger.name = "charger";
     charger.movement = ct::enemyMovement(charger, settings.movement);
-    settings.enemies = {charger};
+    ct::EnemySettings gunner = charger;
+    gunner.name = "gunner";
+    settings.enemies = {charger, gunner};
     const ct::GameLevel gameLevel(*level, {}, settings);
     for (const std::string& warning : gameLevel.warnings()) {
         FAIL_CHECK(warning);
     }
-    CHECK(gameLevel.startState().world.enemies.size() == 5);
+    CHECK(gameLevel.startState().world.enemies.size() == 6);
 }

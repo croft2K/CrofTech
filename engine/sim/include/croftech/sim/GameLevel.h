@@ -154,6 +154,7 @@ public:
         // Enemies.
         std::uint32_t enemyType = kNoEnemyType; // GameSettings::enemies index
         std::uint16_t yaw = 0;
+        bool ambush = false;
 
         // Where a mover's brushes are when it has travelled the distance: exactly its move at
         // the end.

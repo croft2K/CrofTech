@@ -73,12 +73,24 @@ struct EnemySettings {
     float sightRange = 40.0f;     // m
     float sightAngle = 140.0f;    // degrees across its view, until it is alerted
     float reactionTime = 0.3f;    // seconds from noticing a player to going after them
+    float hearingRange = 30.0f;   // m within which it hears a player's shots
+    float footstepRange = 6.0f;   // m within which it hears a player running
     std::int32_t meleeDamage = 0; // each swing that lands; 0 has no melee attack
     float meleeRange = 0.6f;      // m from its box to the target's that a swing reaches
     float meleeWindup = 0.3f;     // seconds from starting a swing to the hit
     float meleeInterval = 1.0f;   // seconds between the starts of swings
     float meleeKnockback = 3.0f;  // m/s a swing that lands adds to the target, away from it
-    float corpseTime = 10.0f;     // seconds its body stays after death; -1 stays for good
+    // A ranged attack with one of the game's weapons, which never runs out: it shoots in bursts,
+    // with its aim off by up to aimError degrees, at targets it can see within attackRange.
+    std::string weapon;                      // the weapon's name; empty has no ranged attack
+    std::uint32_t weaponIndex = 0xFFFFFFFFu; // in GameSettings::weapons, found from the name
+    float attackRange = 25.0f;               // m
+    float keepDistance = 8.0f;               // m it stops closing in at while it can shoot
+    float aimError = 3.0f;                   // degrees
+    std::int32_t burst = 3;                  // shots in a row, each after the weapon's interval
+    float burstPause = 1.0f;                 // seconds between bursts
+    float strafeTime = 0.0f;  // seconds it sidesteps one way while shooting; 0 stands still
+    float corpseTime = 10.0f; // seconds its body stays after death; -1 stays for good
     // The game's movement with the size, eye height, speed and acceleration above.
     MovementSettings movement;
 };

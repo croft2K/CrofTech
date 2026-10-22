@@ -312,8 +312,15 @@ end
 entity enemy
     origin 15 -15 0
     yaw 90
-    type charger
+    type gunner
     name past_the_lava
+end
+
+entity enemy
+    origin -12 14 3
+    yaw -60
+    type gunner
+    name gunner_up_top
 end
 
 entity pickup

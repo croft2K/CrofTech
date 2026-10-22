@@ -172,7 +172,7 @@ void fire(const CollisionScene& scene, const GameSettings& settings, EntityId sh
     weapons.firedTick = state.tick;
     weapons.readyTick = state.tick + std::max(secondsToTicks(weapon.fireInterval), 1u);
 
-    const Vec3 eye = eyePosition(settings.movement, transform);
+    const Vec3 eye = eyePosition(movementOf(state.world, shooter, settings), transform);
     const float range = std::clamp(weapon.range, 0.0f, 1000.0f);
     for (std::int32_t pellet = 0; pellet < std::clamp(weapon.pellets, 1, 64); ++pellet) {
         const Vec3 direction = pelletDirection(transform, weapon.spread, weapons.random);
@@ -194,6 +194,13 @@ void fire(const CollisionScene& scene, const GameSettings& settings, EntityId sh
 }
 
 } // namespace
+
+void fireWeapon(const CollisionScene& scene, const GameSettings& settings, EntityId shooter,
+                Weapons& weapons, const Transform& transform, State& state) {
+    if (weapons.current < settings.weapons.size()) {
+        fire(scene, settings, shooter, weapons, transform, state);
+    }
+}
 
 ShotHit traceShot(const CollisionScene& scene, const World& world, const GameSettings& settings,
                   Vec3 start, Vec3 end, EntityId shooter) {

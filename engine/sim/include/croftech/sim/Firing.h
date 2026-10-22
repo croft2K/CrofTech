@@ -29,6 +29,11 @@ struct ShotHit {
 ShotHit traceShot(const CollisionScene& scene, const World& world, const GameSettings& settings,
                   Vec3 start, Vec3 end, EntityId shooter);
 
+// Fires the weapon in hand from the shooter's eye along where its transform looks, as a player
+// pressing fire does once it is ready: for enemies, which choose when to fire themselves.
+void fireWeapon(const CollisionScene& scene, const GameSettings& settings, EntityId shooter,
+                Weapons& weapons, const Transform& transform, State& state);
+
 // The way a transform looks: yaw 0 is +X, and a positive pitch looks up (as the camera does).
 Vec3 viewForward(const Transform& transform);
 

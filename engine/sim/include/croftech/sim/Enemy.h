@@ -26,6 +26,8 @@ enum EnemyFlags : std::uint32_t {
     kEnemyDeathFired = 1u << 1, // on_death has been sent
     kEnemyHasPath = 1u << 2,    // waypoint is the next corner of a path
     kEnemyRideStart = 1u << 3,  // the waypoint is where the ride of a lift starts
+    kEnemyAmbush = 1u << 4,     // deaf: wakes only on seeing a player or being hurt
+    kEnemyStrafeLeft = 1u << 5, // sidestepping to its left while it shoots
 };
 
 // An enemy's mind: its own body is the Transform, PlayerMotion and Health it also has. Enemies
@@ -44,14 +46,16 @@ struct Enemy {
     std::uint32_t waypointMover = 0; // the door or lift from the waypoint on, as a level entity
     std::uint32_t pathTick = 0;      // when it next finds its path again
     std::uint32_t attackTick = 0;    // while attacking, when the swing lands
-    std::uint32_t readyTick = 0;     // when it may start the next swing
+    std::uint32_t readyTick = 0;     // when it may start the next swing or shot
+    std::uint32_t burstLeft = 0;     // shots left in the burst it is firing
+    std::uint32_t strafeTick = 0;    // when it next changes the way it sidesteps
     std::uint32_t random = 0;        // counter for core/Random.h
 };
 
 template <>
 struct Schema<Enemy> {
-    static constexpr std::array<std::string_view, 4> kFlagNames{"alert_fired", "death_fired",
-                                                                "has_path", "ride_start"};
+    static constexpr std::array<std::string_view, 6> kFlagNames{
+        "alert_fired", "death_fired", "has_path", "ride_start", "ambush", "strafe_left"};
     static constexpr FieldInfo kFields[] = {
         CT_FIELD(Enemy, type).withDescription("Which of the game's enemies it is"),
         CT_FIELD(Enemy, state)
@@ -75,7 +79,9 @@ struct Schema<Enemy> {
             .withDescription("The door or lift from the waypoint on (level entity)"),
         CT_FIELD(Enemy, pathTick).withDescription("Tick it finds its path again"),
         CT_FIELD(Enemy, attackTick).withDescription("While attacking, tick the swing lands"),
-        CT_FIELD(Enemy, readyTick).withDescription("Tick it may start its next swing"),
+        CT_FIELD(Enemy, readyTick).withDescription("Tick it may start its next swing or shot"),
+        CT_FIELD(Enemy, burstLeft).withDescription("Shots left in its burst"),
+        CT_FIELD(Enemy, strafeTick).withDescription("Tick it changes the way it sidesteps"),
         CT_FIELD(Enemy, random).withDescription("Random number counter"),
     };
     static constexpr TypeSchema value{"enemy", sizeof(Enemy), kFields};

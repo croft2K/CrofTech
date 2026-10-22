@@ -5,9 +5,11 @@
 
 #include "croftech/core/Angle.h"
 #include "croftech/core/Profile.h"
+#include "croftech/core/Random.h"
 #include "croftech/nav/NavQuery.h"
 #include "croftech/sim/CollisionScene.h"
 #include "croftech/sim/Damage.h"
+#include "croftech/sim/Firing.h"
 #include "croftech/sim/PlayerMovement.h"
 
 #include <algorithm>
@@ -42,6 +44,15 @@ constexpr float kSwingSlack = 0.3f;
 constexpr float kSwingLift = 0.3f;
 // Doors and lifts at most that a path search avoids.
 constexpr std::size_t kMaxBlockedMovers = 64;
+// It shoots only when facing within this of the target (about 20 degrees); the shot itself is
+// aimed at the target, off by the kind's aim error.
+constexpr std::int32_t kShotAim = 3641;
+// Players moving faster than this on the ground are heard running.
+constexpr float kRunningSpeed = 3.0f;
+// While sidestepping it also keeps going along its path, at this share of the step.
+constexpr float kStrafeShare = 0.7f;
+// It checks for floor this far to the side before stepping that way.
+constexpr float kStrafeLook = 1.0f;
 
 TickIndex secondsToTicks(float seconds) {
     return static_cast<TickIndex>(std::max(seconds, 0.0f) * static_cast<float>(kTickRate) + 0.5f);
@@ -106,6 +117,37 @@ bool canSee(const CollisionScene& scene, const World& world, const GameSettings&
            scene.traceBox(eye, other->position, {}).fraction >= 1.0f;
 }
 
+// The nearest living player it hears: shooting within its hearing range, or running within its
+// footstep range. Walls don't stop sound.
+EntityId hearPlayer(const World& world, const EnemySettings& type, Vec3 position, TickIndex tick) {
+    EntityId heard;
+    float best = std::numeric_limits<float>::max();
+    for (const EntityId player : world.playerControls.entities()) {
+        if (!isLivingPlayer(world, player)) {
+            continue;
+        }
+        const Vec3 offset = world.transforms.get(player)->position - position;
+        const float distance = dot(offset, offset);
+        bool loud = false;
+        // Players fire after enemies think, so a shot last tick is the newest.
+        if (const Weapons* weapons = world.weapons.get(player);
+            weapons != nullptr && weapons->firedTick != 0 && weapons->firedTick + 1 >= tick) {
+            loud = distance <= type.hearingRange * type.hearingRange;
+        }
+        if (const PlayerMotion* motion = world.playerMotions.get(player);
+            !loud && motion != nullptr && (motion->flags & kPlayerOnGround) != 0) {
+            const Vec3 velocity = flat(motion->velocity);
+            loud = dot(velocity, velocity) >= kRunningSpeed * kRunningSpeed &&
+                   distance <= type.footstepRange * type.footstepRange;
+        }
+        if (loud && distance < best) {
+            best = distance;
+            heard = player;
+        }
+    }
+    return heard;
+}
+
 // The angle units a type turns in one tick.
 std::int32_t turnStep(const EnemySettings& type) {
     return std::max(
@@ -141,6 +183,16 @@ void makeEnemy(World& world, EntityId id, const GameSettings& settings, std::uin
     enemy.waypointMover = kNoNavMover;
     enemy.random = (id.index << 16) ^ type;
     world.enemies.add(id, enemy);
+    const std::uint32_t weapon = enemySettings.weaponIndex;
+    if (weapon < settings.weapons.size() && weapon < kMaxWeapons) {
+        // Its gun, with ammo it never runs out of.
+        Weapons weapons;
+        weapons.owned = 1u << weapon;
+        weapons.current = weapon;
+        weapons.ammo[weapon] = static_cast<std::int16_t>(kMaxAmmo);
+        weapons.random = enemy.random ^ 0x9E3779B9u;
+        world.weapons.add(id, weapons);
+    }
 }
 
 EntityId LevelLogic::nearestPlayer(Vec3 point) const {
@@ -267,7 +319,16 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
             if (seen.isValid() && ref != nullptr) {
                 alertEnemy(ref->index, enemy, seen);
             }
-        } else if (!isLivingPlayer(world, enemy.target)) {
+        }
+        if (state == EnemyState::Idle || state == EnemyState::Lost) {
+            // Shots and running nearby wake it, or tell it where its lost target went.
+            if (const EntityId heard = hearPlayer(world, type, transform->position, tick);
+                heard.isValid() && (enemy.flags & kEnemyAmbush) == 0 && ref != nullptr &&
+                enemyState(enemy) == state) {
+                alertEnemy(ref->index, enemy, heard);
+            }
+        }
+        if (enemyState(enemy) != EnemyState::Idle && !isLivingPlayer(world, enemy.target)) {
             // Its target died or left: it hunts whoever else it can see, or stands down.
             enemy.target = {};
             enemy.state = static_cast<std::uint32_t>(EnemyState::Idle);
@@ -278,6 +339,7 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
 
         const Vec3 feet = transform->position - Vec3{0.0f, 0.0f, movement.halfExtents.z};
         UserCmd cmd{transform->yaw, transform->pitch, 0, 0, 0};
+        bool shoot = false;
         if (state != EnemyState::Idle) {
             const Transform& target = *world.transforms.get(enemy.target);
             const MovementSettings& targetMovement = movementOf(world, enemy.target, settings);
@@ -317,9 +379,13 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
             const float gap = groundGap(transform->position, movement.halfExtents, target.position,
                                         targetMovement.halfExtents, level);
             const bool inReach = type.meleeDamage > 0 && visible && level && gap <= type.meleeRange;
+            Weapons* weapons = world.weapons.get(id);
+            const float distance = length(target.position - transform->position);
+            const bool inRange = weapons != nullptr && weapons->current < settings.weapons.size() &&
+                                 visible && distance <= type.attackRange;
+            const NavMesh& mesh = m_level.navMesh(navAgent(movement));
             Vec3 heading;
             if (state != EnemyState::Alerted && !inReach) {
-                const NavMesh& mesh = m_level.navMesh(navAgent(movement));
                 const auto follow = [&](const NavCorner& corner) {
                     enemy.waypoint = corner.position;
                     enemy.waypointArea = static_cast<std::uint32_t>(corner.area);
@@ -395,6 +461,37 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
                 }
             }
 
+            // Shooting: it stops closing in at its distance, and sidesteps one way then the
+            // other, turning back where there is no floor to step on.
+            if (inRange && state == EnemyState::Chase) {
+                if (distance <= type.keepDistance) {
+                    heading = {};
+                }
+                if (type.strafeTime > 0.0f) {
+                    if (tick >= enemy.strafeTick) {
+                        enemy.strafeTick =
+                            tick + std::max(secondsToTicks(type.strafeTime *
+                                                           (0.5f + randomUnit(enemy.random))),
+                                            1u);
+                        if (randomUnit(enemy.random) < 0.5f) {
+                            enemy.flags ^= kEnemyStrafeLeft;
+                        }
+                    }
+                    const Vec3 toTarget = normalize(flat(target.position - transform->position));
+                    const float sign = (enemy.flags & kEnemyStrafeLeft) != 0 ? 1.0f : -1.0f;
+                    Vec3 side = Vec3{-toTarget.y, toTarget.x, 0.0f} * sign;
+                    const Vec3 reach{0.3f, 0.3f, movement.stepHeight + 0.1f};
+                    if (!queries.forMesh(mesh).nearestPoint(feet + side * kStrafeLook, filter,
+                                                            reach)) {
+                        enemy.flags ^= kEnemyStrafeLeft;
+                        side = -side;
+                    }
+                    heading = dot(heading, heading) > 0.0f
+                                  ? normalize(heading) + side * kStrafeShare
+                                  : side;
+                }
+            }
+
             // Faces the target while it can see it, and otherwise the way it is going.
             const Vec3 look = visible ? target.position - transform->position : heading;
             if (dot(flat(look), flat(look)) > 0.0f) {
@@ -426,6 +523,8 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
                 enemy.attackTick = tick + secondsToTicks(type.meleeWindup);
                 enemy.readyTick = tick + std::max(secondsToTicks(type.meleeInterval), 1u);
             }
+            shoot = inRange && state == EnemyState::Chase && tick >= enemy.readyTick &&
+                    angleBetween(cmd.yaw, towards) <= kShotAim;
             if (state == EnemyState::Attack && tick >= enemy.attackTick) {
                 if (level && gap <= type.meleeRange + kSwingSlack) {
                     Vec3 away = flat(target.position - transform->position);
@@ -442,9 +541,33 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
             }
         }
 
-        movePlayer(scene, movement, cmd, *transform, *motion);
+        movePlayer(scene.withBodies(settings, id), movement, cmd, *transform, *motion);
         if (transform->position.z - movement.halfExtents.z < m_level.killHeight()) {
             kill(m_state, id, DamageKind::OutOfWorld);
+        }
+        if (shoot) {
+            // Aimed at the target's middle from where it now stands, off by up to its aim error.
+            // The aim stays in its transform for the tick, so clients draw the shot as fired.
+            Weapons& weapons = *world.weapons.get(id);
+            const Vec3 aim =
+                world.transforms.get(enemy.target)->position - eyePosition(movement, *transform);
+            const float error = type.aimError / 360.0f * static_cast<float>(kAngleUnitsPerTurn);
+            const auto yawError =
+                static_cast<std::int32_t>((randomUnit(enemy.random) * 2.0f - 1.0f) * error);
+            const auto pitchError =
+                static_cast<std::int32_t>((randomUnit(enemy.random) * 2.0f - 1.0f) * error);
+            transform->yaw = static_cast<std::uint16_t>(directionToAngle(aim.x, aim.y) + yawError);
+            transform->pitch = static_cast<std::int16_t>(std::clamp<std::int32_t>(
+                pitchToward(length(flat(aim)), aim.z) + pitchError, -kMaxPitch, kMaxPitch));
+            fireWeapon(scene, settings, id, weapons, *transform, m_state);
+            weapons.ammo[weapons.current] = static_cast<std::int16_t>(kMaxAmmo);
+            if (enemy.burstLeft == 0) {
+                enemy.burstLeft = static_cast<std::uint32_t>(std::max(type.burst, 1));
+            }
+            --enemy.burstLeft;
+            const float wait = enemy.burstLeft > 0 ? settings.weapons[weapons.current].fireInterval
+                                                   : type.burstPause;
+            enemy.readyTick = tick + std::max(secondsToTicks(wait), 1u);
         }
     }
     for (std::size_t i = 0; i < goneCount; ++i) {

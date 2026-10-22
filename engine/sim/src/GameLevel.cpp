@@ -364,6 +364,7 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
         const double degrees = angleProperty(levelEntity, *entityClass, "yaw");
         entity.yaw = static_cast<std::uint16_t>(
             std::llround(degrees / 360.0 * static_cast<double>(kAngleUnitsPerTurn)) & 0xFFFF);
+        entity.ambush = flagProperty(levelEntity, *entityClass, "ambush");
         const std::string_view type = textProperty(levelEntity, *entityClass, "type");
         if (settings.enemies.empty()) {
             m_warnings.push_back(std::format("{}: the game has no enemies (enemies in game.cfg)",
@@ -522,6 +523,9 @@ void GameLevel::spawnLogic(const GameSettings& settings) {
             if (entity.enemyType < settings.enemies.size()) {
                 makeEnemy(world, entity.id, settings, entity.enemyType, entity.position,
                           entity.yaw);
+                if (entity.ambush) {
+                    world.enemies.get(entity.id)->flags |= kEnemyAmbush;
+                }
             }
             break;
         case LogicClass::None:

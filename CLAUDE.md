@@ -64,11 +64,14 @@ variables `enemy.<name>.<setting>`) are bodies moved by the player movement code
 size and speed (`movementOf` in `sim/Enemies.h`; every system that touches bodies uses each one's
 own box), driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
 `sim/Enemy.h`). Each stays idle until it sees a player in its view cone with nothing in between,
-is hurt, or gets the alert input (on_alert); then it reacts, chases along the navigation mesh
-(opening doors, waiting for and riding lifts, going round doors it can't open) and strikes in
-reach. on_death goes to the wiring, and the body goes after its corpse time. Players hold lifts
-at their end; enemies don't, so a lift carries a waiting enemy back. `--map enemies_test` has
-chargers in the open, on a platform with a lift, behind a door and beyond lava.
+hears one shoot or run nearby (unless it lies in ambush), is hurt, or gets the alert input
+(on_alert); then it reacts, chases along the navigation mesh (opening doors, waiting for and
+riding lifts, going round doors it can't open), strikes in reach and, with a weapon (the
+gunner), shoots in bursts through the weapon code from its distance, sidestepping. on_death goes
+to the wiring, and the body goes after its corpse time. Players and enemies are solid to each
+other (`CollisionScene::withBodies`). Players hold lifts at their end; enemies don't, so a lift
+carries a waiting enemy back. `--map enemies_test` has chargers in the open, on a platform with
+a lift and behind a door, and gunners on the platform and beyond lava.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;

@@ -172,6 +172,8 @@ constexpr PropertyInfo kEnemyProperties[] = {
     kName,
     {"type", Enemy, "",
      "The kind of enemy, from the game's list (enemies in game.cfg); empty is the first"},
+    {"ambush", Flag, "0",
+     "Deaf to shots and footsteps: it wakes only on seeing a player or being hurt"},
 };
 constexpr SignalInfo kEnemyEvents[] = {
     {"on_alert", "It noticed a player (saw one, was hurt, or was told to) and went after them"},

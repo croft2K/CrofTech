@@ -132,7 +132,7 @@ TEST_CASE("enemy files set enemy.<name>.* variables, and each kind moves at its 
 }
 
 TEST_CASE("the shipped enemy files set only known settings") {
-    for (const std::string& enemy : {std::string("charger")}) {
+    for (const std::string& enemy : {std::string("charger"), std::string("gunner")}) {
         CAPTURE(enemy);
         const auto text =
             ct::readTextFile(std::string(CROFTECH_CONTENT_DIR "/enemies/") + enemy + ".cfg");
@@ -141,6 +141,20 @@ TEST_CASE("the shipped enemy files set only known settings") {
         const std::vector<std::string> enemies{enemy};
         ct::registerGameCVars(console, {}, enemies);
         CHECK(console.applyConfig(ct::enemyCVarPrefix(enemy), oneLayer(*text)).empty());
-        CHECK(ct::gameSettingsFromCVars(console, {}, enemies).enemies.at(0).meleeDamage > 0);
+        const ct::EnemySettings settings =
+            ct::gameSettingsFromCVars(console, {}, enemies).enemies.at(0);
+        CHECK((settings.meleeDamage > 0 || !settings.weapon.empty()));
     }
+}
+
+TEST_CASE("an enemy's weapon is found among the game's weapons by name") {
+    const std::vector<std::string> weapons{"pistol", "rifle"};
+    const std::vector<std::string> enemies{"grunt", "brute"};
+    ct::Console console;
+    ct::registerGameCVars(console, weapons, enemies);
+    console.execute("enemy.grunt.weapon rifle; enemy.brute.weapon cannon");
+    const ct::GameSettings settings = ct::gameSettingsFromCVars(console, weapons, enemies);
+    CHECK(settings.enemies[0].weaponIndex == 1);
+    CHECK(settings.enemies[1].weapon == "cannon");
+    CHECK(settings.enemies[1].weaponIndex == 0xFFFFFFFFu);
 }

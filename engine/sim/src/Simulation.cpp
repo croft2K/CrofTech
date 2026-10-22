@@ -99,8 +99,10 @@ void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs
                 continue;
             }
             cmd = UserCmd{transform->yaw, transform->pitch, 0, 0, 0};
+            movePlayer(scene, movement, cmd, *transform, *motion);
+            continue;
         }
-        movePlayer(scene, movement, cmd, *transform, *motion);
+        movePlayer(scene.withBodies(m_settings, id), movement, cmd, *transform, *motion);
         if (transform->position.z - movement.halfExtents.z < m_level->killHeight()) {
             kill(state, id, DamageKind::OutOfWorld);
         }

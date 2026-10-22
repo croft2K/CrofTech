@@ -81,6 +81,54 @@ ct::GameSettings withCharger() {
     return settings;
 }
 
+// The charger and a gunner with a hitscan gun that never misses, as its second kind.
+ct::GameSettings withGunner() {
+    ct::GameSettings settings = withCharger();
+    ct::WeaponSettings gun;
+    gun.name = "gun";
+    gun.damage = 5;
+    gun.fireInterval = 0.1f;
+    gun.ammoPerShot = 1;
+    settings.weapons = {gun};
+    ct::EnemySettings gunner;
+    gunner.name = "gunner";
+    gunner.health = 40;
+    gunner.reactionTime = 0.25f;
+    gunner.weapon = "gun";
+    gunner.weaponIndex = 0;
+    gunner.attackRange = 25.0f;
+    gunner.keepDistance = 8.0f;
+    gunner.aimError = 0.0f;
+    gunner.burst = 3;
+    gunner.burstPause = 0.5f;
+    gunner.strafeTime = 0.5f;
+    gunner.movement = ct::enemyMovement(gunner, settings.movement);
+    settings.enemies.push_back(gunner);
+    return settings;
+}
+
+ct::LevelEntity gunnerAt(float x, float y, float yaw) {
+    ct::LevelEntity enemy = enemyAt(x, y, yaw);
+    enemy.properties.push_back({"type", "gunner"});
+    return enemy;
+}
+
+// A player that holds the trigger, with a gun to fire.
+ct::GameSettings armedPlayer(ct::GameSettings settings) {
+    ct::WeaponSettings pistol;
+    pistol.name = "pistol";
+    pistol.given = true;
+    pistol.startAmmo = 50;
+    pistol.fireInterval = 0.25f;
+    settings.weapons.insert(settings.weapons.begin(), pistol);
+    for (ct::EnemySettings& enemy : settings.enemies) {
+        if (enemy.weaponIndex != 0xFFFFFFFFu) {
+            ++enemy.weaponIndex;
+        }
+    }
+    return settings;
+}
+
 const ct::Enemy& enemyOf(const SimHarness& sim) {
     return *sim.state().world.enemies.get(sim.level().entity(0)->id);
 }
@@ -281,12 +329,86 @@ TEST_CASE("a lift carries a waiting enemy back down, since only players hold it 
     CHECK(sim.health().health < 100);
 }
 
+TEST_CASE("players and enemies don't walk through each other") {
+    // Facing away and deaf, so it stays put while the player walks into its back.
+    ct::LevelEntity enemy = enemyAt(3.0f, 0.0f, 0.0f);
+    enemy.properties.push_back({"ambush", "1"});
+    SimHarness sim(levelWith({arenaFloor()}, enemy), withCharger());
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::UserCmd forward;
+    forward.forward = 127;
+    sim.run(forward, kSecond);
+    const float playerX = sim.transform().position.x;
+    const float enemyX = enemyTransform(sim).position.x;
+    CHECK(enemyX - playerX >= 0.8f - 0.01f);
+    CHECK(enemyX - playerX < 0.9f);
+}
+
+TEST_CASE("enemies hear shots and running nearby, unless they lie in ambush") {
+    const ct::GameSettings settings = armedPlayer(withCharger());
+    // Fired away from the enemy, so it is heard rather than felt.
+    ct::UserCmd shoot;
+    shoot.yaw = 32768;
+    shoot.buttons = ct::kButtonAttack;
+    {
+        // Facing away from the player, 10 m off: it hears the shot, fired the other way.
+        SimHarness sim(levelWith({arenaFloor()}, enemyAt(0.0f, 0.0f, 0.0f)), settings);
+        sim.spawn({-10.0f, 0.0f, 0.0f}, 32768);
+        sim.run({}, kSecond / 2);
+        CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+        sim.run(shoot, 4);
+        CHECK(ct::enemyState(enemyOf(sim)) != ct::EnemyState::Idle);
+        CHECK(countOf(sim, 1) == 1);
+    }
+    {
+        ct::LevelEntity deaf = enemyAt(0.0f, 0.0f, 0.0f);
+        deaf.properties.push_back({"ambush", "1"});
+        SimHarness sim(levelWith({arenaFloor()}, deaf), settings);
+        sim.spawn({-10.0f, 0.0f, 0.0f}, 32768);
+        sim.run(shoot, kSecond);
+        CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+    }
+    {
+        // Running up behind it: heard within 6 m, not before.
+        SimHarness sim(levelWith({arenaFloor()}, enemyAt(0.0f, 0.0f, 0.0f)), settings);
+        sim.spawn({-12.0f, 0.0f, 0.0f});
+        ct::UserCmd run;
+        run.forward = 127;
+        sim.run(run, kSecond / 4);
+        CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+        sim.run(run, kSecond);
+        CHECK(ct::enemyState(enemyOf(sim)) != ct::EnemyState::Idle);
+    }
+}
+
+TEST_CASE("a gunner shoots from a distance, keeps it, and sidesteps as it fires") {
+    SimHarness sim(levelWith({arenaFloor()}, gunnerAt(-12.0f, 0.0f, 0.0f)), withGunner());
+    const ct::EntityId gunner = sim.level().entity(0)->id;
+    CHECK(sim.state().world.weapons.has(gunner));
+    sim.spawn({6.0f, 0.0f, 0.0f});
+    float sideways = 0.0f;
+    for (int i = 0; i < 4 * kSecond; ++i) {
+        sim.run({}, 1);
+        sideways = std::max(sideways, std::fabs(enemyTransform(sim).position.y));
+    }
+    CHECK(sim.health().health < 100);
+    CHECK(sim.health().hurtKind == static_cast<std::uint32_t>(ct::DamageKind::Weapon));
+    CHECK(sim.health().attacker == gunner);
+    // Shots of 5 come in bursts of three.
+    CHECK((100 - sim.health().health) % 5 == 0);
+    const ct::Vec3 between = sim.transform().position - enemyTransform(sim).position;
+    CHECK(std::sqrt(between.x * between.x + between.y * between.y) > 7.0f);
+    CHECK(sideways > 0.3f);
+    // Its gun never runs dry.
+    CHECK(sim.state().world.weapons.get(gunner)->ammo[0] == ct::kMaxAmmo);
+}
+
 TEST_CASE("enemies think the same way every time") {
     const auto run = [] {
         SimHarness sim(
             levelWith({arenaFloor(), ct::makeBoxBrush({-0.5f, -15.0f, 0.0f}, {0.5f, 6.0f, 3.0f})},
-                      enemyAt(-6.0f, 0.0f, 0.0f), {alertAt(2)}),
-            withCharger());
+                      enemyAt(-6.0f, 0.0f, 0.0f), {alertAt(2), gunnerAt(-8.0f, 8.0f, 0.0f)}),
+            withGunner());
         sim.spawn({6.0f, 0.0f, 0.0f});
         std::vector<std::uint64_t> hashes;
         for (int i = 0; i < 4 * kSecond; ++i) {

@@ -85,6 +85,8 @@ constexpr EnemyInt kEnemyInts[] = {
     {"health", &EnemySettings::health, 1, kMaxHealthSetting, "health it starts with"},
     {"melee_damage", &EnemySettings::meleeDamage, 0, kMaxHealthSetting,
      "each swing that lands; 0 has no melee attack"},
+    {"burst", &EnemySettings::burst, 1, 100,
+     "shots in a row, each after its weapon's fire_interval"},
 };
 
 constexpr EnemyFloat kEnemyFloats[] = {
@@ -100,6 +102,18 @@ constexpr EnemyFloat kEnemyFloats[] = {
      "degrees across its view, until it is alerted"},
     {"reaction_time", &EnemySettings::reactionTime, 0.0f, 10.0f,
      "seconds from noticing a player to going after them"},
+    {"hearing_range", &EnemySettings::hearingRange, 0.0f, 1000.0f,
+     "m within which it hears a player's shots"},
+    {"footstep_range", &EnemySettings::footstepRange, 0.0f, 1000.0f,
+     "m within which it hears a player running"},
+    {"attack_range", &EnemySettings::attackRange, 0.0f, 1000.0f,
+     "m within which it shoots at targets it can see"},
+    {"keep_distance", &EnemySettings::keepDistance, 0.0f, 1000.0f,
+     "m it stops closing in at while it can shoot"},
+    {"aim_error", &EnemySettings::aimError, 0.0f, 45.0f, "degrees its aim may be off by"},
+    {"burst_pause", &EnemySettings::burstPause, 0.0f, 30.0f, "seconds between bursts"},
+    {"strafe_time", &EnemySettings::strafeTime, 0.0f, 10.0f,
+     "seconds it sidesteps one way while shooting; 0 stands still"},
     {"melee_range", &EnemySettings::meleeRange, 0.0f, 10.0f,
      "m from its box to the target's that a swing reaches"},
     {"melee_windup", &EnemySettings::meleeWindup, 0.0f, 5.0f,
@@ -139,10 +153,13 @@ void registerEnemyCVars(Console& console, std::string_view enemy) {
         console.add(CVar::makeFloat(prefix + std::string(setting.key), defaults.*setting.field,
                                     setting.min, setting.max, std::string(setting.description)));
     }
+    console.add(CVar::makeString(prefix + "weapon", defaults.weapon,
+                                 "the game's weapon it shoots; empty has no ranged attack"));
 }
 
 EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
-                             const MovementSettings& movement) {
+                             const MovementSettings& movement,
+                             std::span<const WeaponSettings> weapons) {
     const std::string prefix = enemyCVarPrefix(enemy);
     EnemySettings settings;
     settings.name = std::string(enemy);
@@ -151,6 +168,12 @@ EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
     }
     for (const EnemyFloat& setting : kEnemyFloats) {
         settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asFloat();
+    }
+    settings.weapon = findCVar(console, prefix + "weapon").text();
+    for (std::uint32_t i = 0; i < weapons.size(); ++i) {
+        if (!settings.weapon.empty() && weapons[i].name == settings.weapon) {
+            settings.weaponIndex = i;
+        }
     }
     settings.movement = enemyMovement(settings, movement);
     return settings;
@@ -260,7 +283,8 @@ GameSettings gameSettingsFromCVars(const Console& console, std::span<const std::
         settings.weapons.push_back(weaponFromCVars(console, weapon));
     }
     for (const std::string& enemy : usableEnemies(enemies)) {
-        settings.enemies.push_back(enemyFromCVars(console, enemy, settings.movement));
+        settings.enemies.push_back(
+            enemyFromCVars(console, enemy, settings.movement, settings.weapons));
     }
     return settings;
 }

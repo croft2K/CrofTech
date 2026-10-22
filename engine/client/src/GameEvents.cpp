@@ -208,7 +208,7 @@ void GameEvents::compareWeapons(const State& state, const GameLevel& level,
             continue;
         }
         const WeaponSettings& weapon = settings.weapons[weapons.current];
-        const Vec3 eye = eyePosition(settings.movement, *transform);
+        const Vec3 eye = eyePosition(movementOf(now, id, settings), *transform);
         GameEvent fire = makeEvent(GameEventKind::Fire, id, eye);
         fire.weapon = weapons.current;
         out.push_back(fire);
