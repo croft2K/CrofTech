@@ -205,6 +205,40 @@ brush
     face 4 5 7 6
 end
 
+brush
+    vertex 12 -15 0
+    vertex 13 -15 0
+    vertex 12 -14 0
+    vertex 13 -14 0
+    vertex 12 -15 3
+    vertex 13 -15 3
+    vertex 12 -14 3
+    vertex 13 -14 3
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex 17 -13 0
+    vertex 18 -13 0
+    vertex 17 -12 0
+    vertex 18 -12 0
+    vertex 17 -13 3
+    vertex 18 -13 3
+    vertex 17 -12 3
+    vertex 18 -12 3
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
 entity player_spawn
     origin 0 -16 0
     yaw 90
@@ -317,10 +351,61 @@ entity enemy
 end
 
 entity enemy
+    origin 8 2 0
+    yaw 0
+    type charger
+    name east_guard
+    patrol east_1
+end
+
+entity patrol_point
+    origin 11 0 0
+    name east_1
+    next east_2
+    wait 1
+end
+
+entity patrol_point
+    origin 17 0 0
+    name east_2
+    next east_3
+    wait 0
+end
+
+entity patrol_point
+    origin 17 5 0
+    name east_3
+    next east_4
+    wait 1
+end
+
+entity patrol_point
+    origin 11 5 0
+    name east_4
+    next east_1
+    wait 0
+end
+
+entity enemy
     origin -12 14 3
     yaw -60
     type gunner
     name gunner_up_top
+    patrol gunner_up_top_1
+end
+
+entity patrol_point
+    origin -16 12 3
+    name gunner_up_top_1
+    next gunner_up_top_2
+    wait 2
+end
+
+entity patrol_point
+    origin -5 12 3
+    name gunner_up_top_2
+    next gunner_up_top_1
+    wait 2
 end
 
 entity pickup

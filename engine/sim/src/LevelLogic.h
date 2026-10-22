@@ -13,6 +13,8 @@ namespace ct {
 
 class CollisionScene;
 class NavQueries;
+class NavQuery;
+struct NavFilter;
 
 // Runs the level's logic entities for one tick of a state: delivers inputs, fires events and
 // passes them along the wiring. Made on the stack for each tick, so it holds no state of its own
@@ -65,6 +67,23 @@ private:
     // Enemies (Enemies.cpp): goes after the target, which must be a living player, unless it is
     // already after one.
     void alertEnemy(std::uint32_t index, Enemy& enemy, EntityId target);
+    // Gives up its target and walks back to its patrol, or its post.
+    void goBack(Enemy& enemy);
+    // Having lost its target and got to where it last knew it to be, it looks about there (or
+    // goes back, for kinds that don't search).
+    void startSearch(Enemy& enemy, const EnemySettings& type);
+    // As its kind's cover chance says, runs for a spot hidden from its target. Whether it does.
+    bool takeCover(const CollisionScene& scene, const GameSettings& settings, EntityId id,
+                   Enemy& enemy, const EnemySettings& type, NavQuery& query,
+                   const NavFilter& filter);
+    struct Steering {
+        Vec3 heading;         // the way to go across the ground; zero to stand
+        bool waiting = false; // for a lift, or riding one
+    };
+    // Steers along its path to its goal, finding the path again from time to time. Sets
+    // kEnemyAtGoal once there, or as near as the mesh lets it get.
+    Steering steer(EntityId id, Enemy& enemy, const MovementSettings& movement, NavQuery& query,
+                   const NavFilter& filter);
     // The living player nearest the point, if any.
     EntityId nearestPlayer(Vec3 point) const;
 

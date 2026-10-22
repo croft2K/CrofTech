@@ -27,10 +27,15 @@ enum class PropertyType : std::uint8_t {
     Choice, // one of a list of words
     Weapon, // the name of one of the game's weapons (its game.cfg lists them), or empty
     Enemy,  // the name of one of the game's kinds of enemy (its game.cfg lists them), or empty
+    // The name of another entity this one uses (a patrol's next point), or empty; its choices are
+    // the classes that entity may be of.
+    Reference,
 };
 
 // Enemies placed in a level, standing where their origin is.
 inline constexpr std::string_view kEnemyClass = "enemy";
+// The points of an enemy's patrol route: it walks from each to the next.
+inline constexpr std::string_view kPatrolPointClass = "patrol_point";
 
 // Items players pick up by walking into them. The origin is where one rests; it is taken by
 // touching this box above it.
@@ -44,7 +49,8 @@ struct PropertyInfo {
     std::string_view description;
     float minimum = 0.0f; // Number and Count only
     float maximum = 0.0f;
-    std::span<const std::string_view> choices{}; // Choice only
+    // Choice: the words it may be. Reference: the classes the entity it names may be of.
+    std::span<const std::string_view> choices{};
 };
 
 // An event an entity fires, or an input it accepts.
@@ -100,7 +106,7 @@ Vec3 vectorProperty(const LevelEntity& entity, const EntityClassInfo& entityClas
 // The index of the value in the property's choices.
 std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                            std::string_view key);
-// Text, names, weapons and enemies.
+// Text, names, weapons, enemies and references.
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key);
 

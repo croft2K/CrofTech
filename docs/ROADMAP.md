@@ -172,9 +172,13 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    `levels/enemies_test.level`. 6b done (2026-10-22): players and enemies solid to each other,
    hearing shots and running (with an ambush setting for the deaf), and the gunner: a weapon from
    the game's list fired through the weapon code in bursts, with aim error, from a distance it
-   keeps, sidestepping where there is floor. 6c: taking cover, searching where the target was
-   lost, and patrols. 6d: sounds and effects of their own, editor markers at each kind's size, and
-   an AI debug view (state, path, what it sees).* Enemy types are data: health, size, speed, senses, attacks and behaviour tuning.
+   keeps, sidestepping where there is floor. 6c done (2026-10-22): patrols (a `patrol_point` class
+   naming the next point, with a wait and on_arrive; an enemy's `patrol` names the first; routes
+   drawn in the editor, which adds the next point with one button), searching (it follows a lost
+   target round the corner, searches spots about where it lost it, then walks back to its post or
+   patrol), and cover for the gunner (after a burst or a hit, by chance, it runs to a nearby spot
+   the target can't see, waits, and comes out again). 6d: sounds and effects of their own, editor
+   markers at each kind's size, and an AI debug view (state, path, what it sees).* Enemy types are data: health, size, speed, senses, attacks and behaviour tuning.
    Enemies move with the player movement code, driven by commands from their AI, so they step,
    slide and ride lifts the way players do. They see players inside a view cone with line of
    sight, and hear shots and footsteps. Behaviour is a state machine (idle, patrol, alerted, chase,

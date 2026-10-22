@@ -433,6 +433,7 @@ void LevelLogic::apply(const Queued& input) {
             alertEnemy(input.target, *enemy, target);
         }
         return;
+    case LogicClass::PatrolPoint:
     case LogicClass::None:
         return;
     }

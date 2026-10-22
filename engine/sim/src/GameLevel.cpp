@@ -15,11 +15,11 @@ namespace ct {
 namespace {
 
 constexpr std::string_view kEventNames[] = {
-    "on_enter",         "on_exit",        "on_trigger",     "on_reached",
-    "on_timer",         "on_leave_start", "on_reached_end", "on_leave_end",
-    "on_reached_start", "on_pickup",      "on_alert",       "on_death",
+    "on_enter",       "on_exit",        "on_trigger",   "on_reached",       "on_timer",
+    "on_leave_start", "on_reached_end", "on_leave_end", "on_reached_start", "on_pickup",
+    "on_alert",       "on_death",       "on_arrive",
 };
-static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnDeath) + 1);
+static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnArrive) + 1);
 
 constexpr std::string_view kInputNames[] = {
     "enable", "disable", "toggle",      "trigger",       "add",    "reset",
@@ -66,6 +66,9 @@ LogicClass logicClassOf(std::string_view className) {
     }
     if (className == kEnemyClass) {
         return LogicClass::Enemy;
+    }
+    if (className == kPatrolPointClass) {
+        return LogicClass::PatrolPoint;
     }
     return LogicClass::None;
 }
@@ -128,6 +131,27 @@ Vec3 liftOutOfFloor(const CollisionWorld& world, Vec3 feet, Vec3 halfExtents, fl
         return feet;
     }
     return down.endPosition - Vec3{0.0f, 0.0f, halfExtents.z + CollisionWorld::kSurfaceEpsilon};
+}
+
+// Entities by name, sorted, with their indices, to find the entities a name stands for.
+using NameTable = std::vector<std::pair<std::string_view, std::uint32_t>>;
+
+NameTable sortedNames(const Level& level) {
+    NameTable names;
+    for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
+        const std::string* name = findProperty(level.entities[i], "name");
+        if (name != nullptr && !name->empty()) {
+            names.emplace_back(*name, i);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+NameTable::const_iterator firstNamed(const NameTable& names, std::string_view name) {
+    return std::lower_bound(
+        names.begin(), names.end(), name,
+        [](const auto& entry, std::string_view wanted) { return entry.first < wanted; });
 }
 
 std::string describe(const Level& level, std::uint32_t index) {
@@ -250,6 +274,7 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         }
     }
     resolveOutputs(level);
+    resolveReferences(level);
     spawnLogic(settings);
     findKillHeight(level);
     // While the level loads, rather than on an enemy's first thought.
@@ -408,21 +433,18 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
             liftOutOfFloor(m_collision, entity.position, movement.halfExtents, movement.stepHeight);
         break;
     }
+    case LogicClass::PatrolPoint:
+        entity.position = vectorProperty(levelEntity, *entityClass, "origin");
+        entity.waitTicks = static_cast<std::int32_t>(
+            secondsToTicks(clampedNumber(levelEntity, *entityClass, "wait")));
+        break;
     case LogicClass::None:
         break;
     }
 }
 
 void GameLevel::resolveOutputs(const Level& level) {
-    // Entities by name, sorted, to find what each output targets.
-    std::vector<std::pair<std::string_view, std::uint32_t>> names;
-    for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
-        const std::string* name = findProperty(level.entities[i], "name");
-        if (name != nullptr && !name->empty()) {
-            names.emplace_back(*name, i);
-        }
-    }
-    std::sort(names.begin(), names.end());
+    const NameTable names = sortedNames(level);
 
     // Outputs and targets are gathered as ranges first and turned into spans once both vectors
     // have stopped growing.
@@ -449,9 +471,7 @@ void GameLevel::resolveOutputs(const Level& level) {
                 continue;
             }
             Range targets{m_targets.size(), 0};
-            auto it = std::lower_bound(
-                names.begin(), names.end(), std::string_view(levelOutput.target),
-                [](const auto& entry, std::string_view name) { return entry.first < name; });
+            auto it = firstNamed(names, levelOutput.target);
             if (it == names.end() || it->first != levelOutput.target) {
                 m_warnings.push_back(std::format("{} {}: no entity is named '{}'",
                                                  describe(level, source), levelOutput.event,
@@ -489,13 +509,48 @@ void GameLevel::resolveOutputs(const Level& level) {
     }
 }
 
+void GameLevel::resolveReferences(const Level& level) {
+    const NameTable names = sortedNames(level);
+    for (std::uint32_t index = 0; index < m_entities.size(); ++index) {
+        Entity& entity = m_entities[index];
+        const LevelEntity& levelEntity = level.entities[index];
+        const EntityClassInfo* entityClass = findEntityClass(levelEntity.className);
+        std::string_view key;
+        if (entity.logicClass == LogicClass::Enemy) {
+            key = "patrol";
+        } else if (entity.logicClass == LogicClass::PatrolPoint) {
+            key = "next";
+        }
+        if (key.empty() || entityClass == nullptr) {
+            continue;
+        }
+        const std::string_view name = textProperty(levelEntity, *entityClass, key);
+        if (name.empty()) {
+            continue;
+        }
+        // Of several points with the name, the first.
+        const auto it = firstNamed(names, name);
+        if (it == names.end() || it->first != name) {
+            m_warnings.push_back(
+                std::format("{} {}: no entity is named '{}'", describe(level, index), key, name));
+        } else if (m_entities[it->second].logicClass != LogicClass::PatrolPoint) {
+            m_warnings.push_back(std::format("{} {}: {} is not a patrol point",
+                                             describe(level, index), key,
+                                             describe(level, it->second)));
+        } else {
+            entity.next = it->second;
+        }
+    }
+}
+
 void GameLevel::spawnLogic(const GameSettings& settings) {
     m_start = std::make_unique<State>();
     World& world = m_start->world;
     std::uint32_t spawned = 0;
     for (std::uint32_t index = 0; index < m_entities.size(); ++index) {
         Entity& entity = m_entities[index];
-        if (entity.logicClass == LogicClass::None) {
+        // Patrol points are only places, which nothing in play changes.
+        if (entity.logicClass == LogicClass::None || entity.logicClass == LogicClass::PatrolPoint) {
             continue;
         }
         if (spawned == kMaxLevelLogicEntities) {
@@ -546,11 +601,18 @@ void GameLevel::spawnLogic(const GameSettings& settings) {
             if (entity.enemyType < settings.enemies.size()) {
                 makeEnemy(world, entity.id, settings, entity.enemyType, entity.position,
                           entity.yaw);
+                Enemy& enemy = *world.enemies.get(entity.id);
                 if (entity.ambush) {
-                    world.enemies.get(entity.id)->flags |= kEnemyAmbush;
+                    enemy.flags |= kEnemyAmbush;
+                }
+                if (entity.next != kNoEntity) {
+                    enemy.state = static_cast<std::uint32_t>(EnemyState::Patrol);
+                    enemy.patrolPoint = entity.next;
+                    enemy.goal = m_entities[entity.next].position;
                 }
             }
             break;
+        case LogicClass::PatrolPoint:
         case LogicClass::None:
             break;
         }

@@ -89,7 +89,17 @@ struct EnemySettings {
     float aimError = 3.0f;                   // degrees
     std::int32_t burst = 3;                  // shots in a row, each after the weapon's interval
     float burstPause = 1.0f;                 // seconds between bursts
-    float strafeTime = 0.0f;  // seconds it sidesteps one way while shooting; 0 stands still
+    float strafeTime = 0.0f; // seconds it sidesteps one way while shooting; 0 stands still
+    float walkSpeed = 2.5f;  // m/s on patrol and going back to its post
+    // After losing its target it goes to where it last knew it to be, then searches about there
+    // (within searchRadius) for searchTime before going back.
+    float searchTime = 8.0f;   // seconds; 0 goes straight back
+    float searchRadius = 8.0f; // m
+    // Each time it is hurt or ends a burst, the chance it runs to a spot within coverRange that
+    // the target can't see, where it stays for coverTime.
+    float coverChance = 0.0f;
+    float coverTime = 2.0f;   // seconds
+    float coverRange = 8.0f;  // m
     float corpseTime = 10.0f; // seconds its body stays after death; -1 stays for good
     // The game's movement with the size, eye height, speed and acceleration above.
     MovementSettings movement;

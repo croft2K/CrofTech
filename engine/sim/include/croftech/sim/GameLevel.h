@@ -29,6 +29,7 @@ enum class LogicClass : std::uint8_t {
     Mover,
     Pickup,
     Enemy,
+    PatrolPoint,
 };
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
@@ -46,6 +47,7 @@ enum class LogicEvent : std::uint8_t {
     OnPickup,
     OnAlert,
     OnDeath,
+    OnArrive,
 };
 
 enum class LogicInput : std::uint8_t {
@@ -138,7 +140,9 @@ public:
         float length = 0.0f;
         float speed = 0.0f; // metres per tick
         MoverActivation activate = MoverActivation::Input;
-        std::int32_t waitTicks = 0; // at the end before coming back; -1 stays there
+        // At the end before coming back, -1 staying there; for patrol points, how long an
+        // enemy stands at it.
+        std::int32_t waitTicks = 0;
         bool loop = false;
         bool startMoving = false;
         bool startAtEnd = false;
@@ -151,10 +155,13 @@ public:
         std::uint32_t weapon = kNoWeapon; // GameSettings::weapons index
         std::int32_t respawnTicks = -1;   // -1 never comes back
 
-        // Enemies.
+        // Enemies, and patrol points (position is where their enemies' feet go).
         std::uint32_t enemyType = kNoEnemyType; // GameSettings::enemies index
         std::uint16_t yaw = 0;
         bool ambush = false;
+        // The patrol point an enemy walks to first, or the one after a patrol point; kNoEntity
+        // for none.
+        std::uint32_t next = kNoEntity;
 
         // Where a mover's brushes are when it has travelled the distance: exactly its move at
         // the end.
@@ -196,6 +203,7 @@ public:
 private:
     void readEntity(const Level& level, std::uint32_t index, const GameSettings& settings);
     void resolveOutputs(const Level& level);
+    void resolveReferences(const Level& level);
     void spawnLogic(const GameSettings& settings);
     void findKillHeight(const Level& level);
 

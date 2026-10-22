@@ -166,6 +166,8 @@ constexpr SignalInfo kPickupInputs[] = {
     {"toggle", "Show it if hidden, hide it if shown"},
 };
 
+constexpr std::string_view kPatrolPointClasses[] = {kPatrolPointClass};
+
 constexpr PropertyInfo kEnemyProperties[] = {
     {"origin", Vector, "", "Where its feet are, metres"},
     {"yaw", Angle, "0", "Direction it faces, degrees; 0 is +X, 90 is +Y"},
@@ -174,6 +176,10 @@ constexpr PropertyInfo kEnemyProperties[] = {
      "The kind of enemy, from the game's list (enemies in game.cfg); empty is the first"},
     {"ambush", Flag, "0",
      "Deaf to shots and footsteps: it wakes only on seeing a player or being hurt"},
+    {"patrol", Reference, "",
+     "The patrol point it walks to first, then on from point to point; empty stands guard where "
+     "it is",
+     0.0f, 0.0f, kPatrolPointClasses},
 };
 constexpr SignalInfo kEnemyEvents[] = {
     {"on_alert", "It noticed a player (saw one, was hurt, or was told to) and went after them"},
@@ -181,6 +187,19 @@ constexpr SignalInfo kEnemyEvents[] = {
 };
 constexpr SignalInfo kEnemyInputs[] = {
     {"alert", "Go after the player who set this off, or the nearest one"},
+};
+
+constexpr PropertyInfo kPatrolPointProperties[] = {
+    {"origin", Vector, "", "Where the enemy walks to, metres"},
+    kName,
+    {"next", Reference, "",
+     "The point it walks to after this one; empty ends the patrol here. Name the first to go "
+     "round again",
+     0.0f, 0.0f, kPatrolPointClasses},
+    {"wait", Number, "0", "Seconds it stands here before walking on", 0.0f, 3600.0f},
+};
+constexpr SignalInfo kPatrolPointEvents[] = {
+    {"on_arrive", "An enemy on patrol reached it"},
 };
 
 constexpr EntityClassInfo kClasses[] = {
@@ -209,6 +228,12 @@ constexpr EntityClassInfo kClasses[] = {
      EntityShape::Point, kPickupProperties, kPickupEvents, kPickupInputs},
     {kEnemyClass, "An enemy that hunts players once it notices them", EntityShape::Point,
      kEnemyProperties, kEnemyEvents, kEnemyInputs},
+    {kPatrolPointClass,
+     "A point of an enemy's patrol route",
+     EntityShape::Point,
+     kPatrolPointProperties,
+     kPatrolPointEvents,
+     {}},
 };
 
 constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"}, {"wait", "3"}};
@@ -314,6 +339,13 @@ constexpr EntityPreset kPresets[] = {
      {},
      false,
      {}},
+    {"Patrol point",
+     "A point an enemy walks to on patrol (name it in the enemy's patrol, or a point's next)",
+     kPatrolPointClass,
+     {},
+     {},
+     false,
+     {}},
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,
@@ -375,6 +407,7 @@ bool checkPropertyValue(const PropertyInfo& property, std::string_view value,
     case Text:
         return true;
     case Name:
+    case Reference:
         if (!value.empty() && !isValidEntityName(value)) {
             problem = std::format("{} must be letters, digits, '_', '.' or '-'", property.key);
             return false;
@@ -509,8 +542,9 @@ std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& ent
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key) {
     const PropertyInfo* property = findPropertyInfo(entityClass, key);
-    CT_ASSERT(property != nullptr && (property->type == Text || property->type == Name ||
-                                      property->type == Weapon || property->type == Enemy));
+    CT_ASSERT(property != nullptr &&
+              (property->type == Text || property->type == Name || property->type == Weapon ||
+               property->type == Enemy || property->type == Reference));
     return propertyValue(entity, *property);
 }
 

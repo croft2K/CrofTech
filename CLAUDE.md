@@ -65,15 +65,22 @@ from the game's list: `enemies` in `game.cfg`, each kind a file `enemies/<name>.
 variables `enemy.<name>.<setting>`) are bodies moved by the player movement code at their kind's
 size and speed (`movementOf` in `sim/Enemies.h`; every system that touches bodies uses each one's
 own box), driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
-`sim/Enemy.h`). Each stays idle until it sees a player in its view cone with nothing in between,
-hears one shoot or run nearby (unless it lies in ambush), is hurt, or gets the alert input
-(on_alert); then it reacts, chases along the navigation mesh (opening doors, waiting for and
-riding lifts, going round doors it can't open), strikes in reach and, with a weapon (the
-gunner), shoots in bursts through the weapon code from its distance, sidestepping. on_death goes
-to the wiring, and the body goes after its corpse time. Players and enemies are solid to each
+`sim/Enemy.h`). Each stands at its post, or walks its patrol (`patrol` names a `patrol_point`,
+each point names its `next` and has a wait and on_arrive), until it sees a player in its view
+cone with nothing in between, hears one shoot or run nearby (unless it lies in ambush), is hurt,
+or gets the alert input (on_alert); then it reacts, chases along the navigation mesh (opening
+doors, waiting for and riding lifts, going round doors it can't open), strikes in reach and, with
+a weapon (the gunner), shoots in bursts through the weapon code from its distance, sidestepping,
+and by its kind's cover chance runs after a burst or a hit to a nearby spot the target can't see,
+for a while. A target lost from sight is followed for a moment, then searched for about where
+it was lost; then the enemy walks back to its post or patrol. on_death goes to the wiring, and
+the body goes after its corpse time. Players and enemies are solid to each
 other (`CollisionScene::withBodies`). Players hold lifts at their end; enemies don't, so a lift
 carries a waiting enemy back. `--map enemies_test` has chargers in the open, on a platform with
-a lift and behind a door, and gunners on the platform and beyond lava.
+a lift and behind a door, one on patrol, and gunners on the platform (on patrol) and beyond lava
+(with pillars to hide behind). In the editor, the patrol routes of selected entities are drawn in
+green (`entityReferences` in `editor/EntityLinks.h`, for any property of the Reference type), and
+the inspector's "Add patrol point" puts the next point of a route a few metres on, linked in.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;

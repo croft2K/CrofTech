@@ -61,6 +61,7 @@ constexpr ImU32 kGhostEdge = IM_COL32(120, 190, 255, 200);
 constexpr ImU32 kEndHandleColor = IM_COL32(120, 190, 255, 255);
 constexpr ImU32 kWireOutColor = IM_COL32(110, 230, 255, 230);
 constexpr ImU32 kWireInColor = IM_COL32(200, 150, 255, 200);
+constexpr ImU32 kRouteColor = IM_COL32(130, 230, 110, 220);
 constexpr ImU32 kWireLabelBackground = IM_COL32(15, 15, 20, 190);
 constexpr std::array<ImU32, 3> kAxisColors{IM_COL32(235, 75, 75, 255), IM_COL32(115, 205, 65, 255),
                                            IM_COL32(75, 135, 245, 255)};
@@ -341,6 +342,24 @@ void drawWires(const Level& level, std::span<const ShownWire> wires, const LineP
                                {corner.x + size.x + 4.0f, corner.y + size.y + 1.0f},
                                kWireLabelBackground, 3.0f);
         drawList.AddText(corner, color, label.c_str());
+    }
+}
+
+// Lines with arrows from entities to the entities their properties name: patrol routes.
+void drawReferences(const Level& level, std::span<const Reference> references,
+                    const LinePainter& painter) {
+    for (const Reference& reference : references) {
+        const std::optional<Vec3> from = entityAnchor(level, reference.from);
+        const std::optional<Vec3> to = entityAnchor(level, reference.to);
+        if (!from || !to) {
+            continue;
+        }
+        painter.line(*from, *to, kRouteColor, 2.0f);
+        const std::optional<ImVec2> a = painter.projector().screen(*from);
+        const std::optional<ImVec2> b = painter.projector().screen(*to);
+        if (a && b) {
+            arrowHead(painter.drawList(), *a, *b, kRouteColor);
+        }
     }
 }
 
@@ -1785,12 +1804,15 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
         outline(item, kSelectedColor, 2.0f);
     }
 
-    // The wires of the selected entities (or of every entity), then the selected mover's end.
+    // The wires and routes of the selected entities (or of every entity), then the selected
+    // mover's end.
     std::vector<ShownWire> wires;
+    std::vector<Reference> references;
     if (settings.showAllWires) {
         for (const Wire& wire : allWires(level)) {
             wires.push_back({wire, true});
         }
+        references = allReferences(level);
     } else {
         for (const LevelItem& item : document.selection()) {
             if (item.kind != LevelItem::Kind::Entity) {
@@ -1806,8 +1828,19 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
                     wires.push_back({wire, wire.from == item.index});
                 }
             }
+            for (const Reference& reference : entityReferences(level, item.index)) {
+                const bool seen =
+                    std::any_of(references.begin(), references.end(), [&](const Reference& shown) {
+                        return shown.from == reference.from && shown.to == reference.to &&
+                               shown.key == reference.key;
+                    });
+                if (!seen) {
+                    references.push_back(reference);
+                }
+            }
         }
     }
+    drawReferences(level, references, painter);
     drawWires(level, wires, painter);
     if (const std::optional<MoverPath> path = shownMover(document)) {
         drawMoverEnd(level, *path, painter,

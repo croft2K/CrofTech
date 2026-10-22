@@ -4,6 +4,7 @@
 
 #include <ostream>
 #include <string>
+#include <utility>
 
 TEST_CASE("every class default is valid, except positions an entity must set") {
     for (const ct::EntityClassInfo& entityClass : ct::entityClasses()) {
@@ -125,4 +126,22 @@ TEST_CASE("pickups name a weapon of the game by its file name") {
     CHECK(ct::checkPropertyValue(*weapon, "", problem));
     CHECK_FALSE(ct::checkPropertyValue(*weapon, "Rocket Launcher", problem));
     CHECK(problem.find("weapon") != std::string::npos);
+}
+
+TEST_CASE("enemies name the first point of their patrol, and each point the next") {
+    for (const auto& [className, key] :
+         {std::pair{ct::kEnemyClass, "patrol"}, std::pair{ct::kPatrolPointClass, "next"}}) {
+        CAPTURE(className);
+        const ct::EntityClassInfo* entityClass = ct::findEntityClass(className);
+        REQUIRE(entityClass != nullptr);
+        const ct::PropertyInfo* property = ct::findPropertyInfo(*entityClass, key);
+        REQUIRE(property != nullptr);
+        CHECK(property->type == ct::PropertyType::Reference);
+        REQUIRE(property->choices.size() == 1);
+        CHECK(property->choices[0] == ct::kPatrolPointClass);
+        std::string problem;
+        CHECK(ct::checkPropertyValue(*property, "guard_2", problem));
+        CHECK(ct::checkPropertyValue(*property, "", problem));
+        CHECK_FALSE(ct::checkPropertyValue(*property, "two words", problem));
+    }
 }

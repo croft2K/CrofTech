@@ -143,6 +143,29 @@ std::uint32_t countOf(const SimHarness& sim, std::uint32_t levelEntity) {
 
 constexpr int kSecond = static_cast<int>(ct::kTickRate);
 
+// A point of a patrol, with its next point and wait, firing on_arrive into the counter "arrived".
+ct::LevelEntity patrolPoint(std::string name, float x, float y, std::string next,
+                            float wait = 0.0f) {
+    return entity(std::string(ct::kPatrolPointClass),
+                  {{"origin", std::format("{} {} 0", x, y)},
+                   {"name", std::move(name)},
+                   {"next", std::move(next)},
+                   {"wait", std::format("{}", wait)}},
+                  {{"on_arrive", "arrived", "add", 0.0f}});
+}
+
+float flatDistance(ct::Vec3 a, ct::Vec3 b) {
+    return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+}
+
+// A closed room, a box of walls 3 m high, with its inside from min to max.
+std::vector<ct::Brush> closedRoom(float minX, float minY, float maxX, float maxY) {
+    return {ct::makeBoxBrush({minX - 0.5f, minY - 0.5f, 0.0f}, {maxX + 0.5f, minY, 3.0f}),
+            ct::makeBoxBrush({minX - 0.5f, maxY, 0.0f}, {maxX + 0.5f, maxY + 0.5f, 3.0f}),
+            ct::makeBoxBrush({minX - 0.5f, minY, 0.0f}, {minX, maxY, 3.0f}),
+            ct::makeBoxBrush({maxX, minY, 0.0f}, {maxX + 0.5f, maxY, 3.0f})};
+}
+
 } // namespace
 
 TEST_CASE("enemies stand where they are put, as the level and their kind say") {
@@ -418,12 +441,154 @@ TEST_CASE("enemies and spawns put a little inside the floor stand on it instead"
     CHECK(enemyTransform(sim).position.x > startX + 1.0f);
 }
 
+TEST_CASE("an enemy walks its patrol from point to point, waiting where it is told to") {
+    // Out to the east point, where it waits a second, to the west point, and round again.
+    ct::LevelEntity guard = enemyAt(0.0f, -6.0f, 0.0f);
+    guard.properties.push_back({"patrol", "east"});
+    ct::GameSettings settings = withCharger();
+    settings.enemies[0].walkSpeed = 2.0f;
+    SimHarness sim(levelWith({arenaFloor()}, guard,
+                             {patrolPoint("east", 8.0f, -6.0f, "west", 1.0f),
+                              patrolPoint("west", -8.0f, -6.0f, "east"), counter("arrived")}),
+                   settings);
+    CHECK(sim.level().warnings().empty());
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Patrol);
+    // It walks rather than runs.
+    sim.run({}, kSecond);
+    CHECK(enemyTransform(sim).position.x > 1.5f);
+    CHECK(enemyTransform(sim).position.x < 2.5f);
+    // At the east point after about 4 s, it stands there for its wait, facing the way it came.
+    sim.run({}, 3 * kSecond + kSecond / 2);
+    CHECK(countOf(sim, 5) == 1);
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+    CHECK(flatDistance(enemyTransform(sim).position, {8.0f, -6.0f, 0.0f}) < 0.6f);
+    sim.run({}, kSecond / 2);
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+    // Then on to the west point, 16 m away, and on round.
+    float westmost = 8.0f;
+    for (int i = 0; i < 12 * kSecond; ++i) {
+        sim.run({}, 1);
+        westmost = std::min(westmost, enemyTransform(sim).position.x);
+    }
+    CHECK(westmost < -7.4f);
+    CHECK(countOf(sim, 5) == 2);
+    CHECK(enemyTransform(sim).position.x > -6.0f);
+}
+
+TEST_CASE("an enemy that loses its target searches where it was last seen, then goes back") {
+    // The player is shut in a room the enemy can neither see into nor reach.
+    std::vector<ct::Brush> brushes = closedRoom(9.0f, 9.0f, 13.0f, 13.0f);
+    brushes.push_back(arenaFloor());
+    ct::GameSettings settings = withCharger();
+    settings.enemies[0].searchTime = 5.0f;
+    settings.enemies[0].searchRadius = 5.0f;
+    SimHarness sim(levelWith(brushes, enemyAt(-8.0f, -8.0f, 45.0f)), settings);
+    const ct::EntityId player = sim.spawn({11.0f, 11.0f, 0.0f});
+    sim.run({}, kSecond);
+    REQUIRE(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+    // As if it had just lost sight of the player at the middle of the floor, a second ago.
+    ct::Enemy& enemy = *sim.state().world.enemies.get(sim.level().entity(0)->id);
+    enemy.target = player;
+    enemy.state = static_cast<std::uint32_t>(ct::EnemyState::Lost);
+    enemy.lastSeen = {0.0f, 0.0f, 0.9f};
+    enemy.seenTick = sim.state().tick - static_cast<std::uint32_t>(kSecond);
+    // It goes there, and starts searching on arriving.
+    int ticks = 0;
+    for (; ticks < 4 * kSecond && ct::enemyState(enemyOf(sim)) == ct::EnemyState::Lost; ++ticks) {
+        sim.run({}, 1);
+    }
+    REQUIRE(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Search);
+    CHECK(flatDistance(enemyTransform(sim).position, {}) < 1.0f);
+    // It looks about, going from spot to spot near there.
+    float furthest = 0.0f;
+    bool searched = true;
+    for (int i = 0; i < 4 * kSecond; ++i) {
+        sim.run({}, 1);
+        const float away = flatDistance(enemyTransform(sim).position, {});
+        furthest = std::max(furthest, away);
+        searched = searched && away < 7.0f;
+    }
+    CHECK(searched);
+    CHECK(furthest > 1.5f);
+    // Then gives up and walks back to its post, where it faces the way it did.
+    sim.run({}, 2 * kSecond);
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Patrol);
+    CHECK_FALSE(enemyOf(sim).target.isValid());
+    sim.run({}, 10 * kSecond);
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Idle);
+    CHECK(flatDistance(enemyTransform(sim).position, {-8.0f, -8.0f, 0.0f}) < 0.6f);
+    CHECK(std::abs(static_cast<std::int16_t>(enemyTransform(sim).yaw - 8192)) < 200);
+}
+
+TEST_CASE("a gunner runs for cover between bursts, and comes out again to shoot") {
+    // A pillar a few metres north of the gunner, which hides it from the player once it is behind
+    // the pillar's west side.
+    ct::GameSettings settings = withGunner();
+    settings.enemies[1].coverChance = 1.0f;
+    settings.enemies[1].coverTime = 1.5f;
+    settings.enemies[1].coverRange = 8.0f;
+    settings.enemies[1].strafeTime = 0.0f;
+    const ct::Brush pillar = ct::makeBoxBrush({-8.0f, 2.0f, 0.0f}, {-7.0f, 4.0f, 3.0f});
+    SimHarness sim(levelWith({arenaFloor(), pillar}, gunnerAt(-10.0f, 0.0f, 0.0f)), settings);
+    sim.spawn({8.0f, 0.0f, 0.0f});
+    bool tookCover = false;
+    bool hidden = false;
+    bool cameOut = false;
+    int hurtWhileHidden = 0;
+    for (int i = 0; i < 8 * kSecond; ++i) {
+        const std::int32_t before = sim.health().health;
+        sim.run({}, 1);
+        const ct::EnemyState state = ct::enemyState(enemyOf(sim));
+        const ct::Vec3 at = enemyTransform(sim).position;
+        if (state == ct::EnemyState::Cover) {
+            tookCover = true;
+            if ((enemyOf(sim).flags & ct::kEnemyAtGoal) != 0) {
+                hidden = true;
+                // Behind the pillar, from the player's side.
+                CHECK(at.x < -8.0f);
+                CHECK(at.y > 1.5f);
+                hurtWhileHidden += before != sim.health().health ? 1 : 0;
+            }
+        } else if (hidden && state == ct::EnemyState::Chase) {
+            cameOut = true;
+        }
+    }
+    CHECK(tookCover);
+    CHECK(hidden);
+    CHECK(cameOut);
+    CHECK(hurtWhileHidden == 0);
+    CHECK(sim.health().health < 100);
+}
+
+TEST_CASE("patrols naming what isn't a patrol point are reported") {
+    ct::LevelEntity lost = enemyAt(0.0f, 0.0f, 0.0f);
+    lost.properties.push_back({"patrol", "nowhere"});
+    const ct::GameLevel missing(levelWith({arenaFloor()}, lost), {}, withCharger());
+    REQUIRE(missing.warnings().size() == 1);
+    CHECK(missing.warnings()[0].find("no entity is named 'nowhere'") != std::string::npos);
+    CHECK(ct::enemyState(*missing.startState().world.enemies.get(missing.entity(0)->id)) ==
+          ct::EnemyState::Idle);
+
+    ct::LevelEntity confused = enemyAt(0.0f, 0.0f, 0.0f);
+    confused.properties.push_back({"patrol", "alerted"});
+    const ct::GameLevel wrong(levelWith({arenaFloor()}, confused), {}, withCharger());
+    REQUIRE(wrong.warnings().size() == 1);
+    CHECK(wrong.warnings()[0].find("is not a patrol point") != std::string::npos);
+}
+
 TEST_CASE("enemies think the same way every time") {
     const auto run = [] {
+        ct::GameSettings settings = withGunner();
+        settings.enemies[1].coverChance = 0.5f;
+        ct::LevelEntity guard = enemyAt(8.0f, -10.0f, 180.0f, "guard");
+        guard.properties.push_back({"patrol", "a"});
         SimHarness sim(
             levelWith({arenaFloor(), ct::makeBoxBrush({-0.5f, -15.0f, 0.0f}, {0.5f, 6.0f, 3.0f})},
-                      enemyAt(-6.0f, 0.0f, 0.0f), {alertAt(2), gunnerAt(-8.0f, 8.0f, 0.0f)}),
-            withGunner());
+                      enemyAt(-6.0f, 0.0f, 0.0f),
+                      {alertAt(2), gunnerAt(-8.0f, 8.0f, 0.0f), guard,
+                       patrolPoint("a", 8.0f, -4.0f, "b"), patrolPoint("b", 12.0f, -10.0f, "a"),
+                       counter("arrived")}),
+            settings);
         sim.spawn({6.0f, 0.0f, 0.0f});
         std::vector<std::uint64_t> hashes;
         for (int i = 0; i < 4 * kSecond; ++i) {

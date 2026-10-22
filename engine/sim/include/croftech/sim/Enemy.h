@@ -2,6 +2,7 @@
 
 #include "croftech/core/Math.h"
 #include "croftech/core/Schema.h"
+#include "croftech/level/Level.h"
 #include "croftech/sim/EntityId.h"
 
 #include <array>
@@ -13,13 +14,16 @@ namespace ct {
 // What an enemy is doing. Each tick its AI (runEnemies, sim/Enemies.h) reads the state, looks
 // around, and turns it into an input command that moves it with the player movement code.
 enum class EnemyState : std::uint32_t {
-    Idle,    // where it was put, watching its view cone
+    Idle,    // standing at its post or a patrol point, watching its view cone
     Alerted, // has noticed a player, and turns to them until its reaction time is up
     Chase,   // following its path to the target
     Attack,  // a swing on its way, which lands at attackTick
     Lost,    // the target went out of sight: going to where it was last seen
+    Search,  // looking about where it lost the target, from spot to spot
+    Cover,   // running to a spot the target can't see, and staying there a while
+    Patrol,  // walking to the next point of its patrol, or back to its post
 };
-inline constexpr std::uint32_t kEnemyStateCount = 5;
+inline constexpr std::uint32_t kEnemyStateCount = 8;
 
 enum EnemyFlags : std::uint32_t {
     kEnemyAlertFired = 1u << 0, // on_alert has been sent
@@ -28,6 +32,7 @@ enum EnemyFlags : std::uint32_t {
     kEnemyRideStart = 1u << 3,  // the waypoint is where the ride of a lift starts
     kEnemyAmbush = 1u << 4,     // deaf: wakes only on seeing a player or being hurt
     kEnemyStrafeLeft = 1u << 5, // sidestepping to its left while it shoots
+    kEnemyAtGoal = 1u << 6,     // standing at its goal, or as near as the mesh lets it get
 };
 
 // An enemy's mind: its own body is the Transform, PlayerMotion and Health it also has. Enemies
@@ -38,9 +43,12 @@ struct Enemy {
     std::uint32_t stateTick = 0; // when it went into the state
     std::uint32_t flags = 0;
     EntityId target;
-    Vec3 lastSeen;                   // the target's feet when it was last seen
-    std::uint32_t seenTick = 0;      // when that was
-    std::uint32_t hurtSeen = 0;      // the Health::hurtTick it last reacted to
+    Vec3 lastSeen;              // the target's feet when it was last seen, or last known of
+    std::uint32_t seenTick = 0; // when it last saw the target
+    std::uint32_t hurtSeen = 0; // the Health::hurtTick it last reacted to
+    // Where its path leads: the target's last known place, a patrol point, a spot to search or
+    // hide in, or its post.
+    Vec3 goal;
     Vec3 waypoint;                   // the next corner of its path
     std::uint32_t waypointArea = 0;  // the NavArea from the waypoint on
     std::uint32_t waypointMover = 0; // the door or lift from the waypoint on, as a level entity
@@ -49,26 +57,35 @@ struct Enemy {
     std::uint32_t readyTick = 0;     // when it may start the next swing or shot
     std::uint32_t burstLeft = 0;     // shots left in the burst it is firing
     std::uint32_t strafeTick = 0;    // when it next changes the way it sidesteps
-    std::uint32_t random = 0;        // counter for core/Random.h
+    Vec3 home;                       // its post: where its feet were put...
+    std::uint32_t homeYaw = 0;       // ...and the way it faced there
+    // The level entity of the patrol point it is walking to or standing at, or kNoEntity.
+    std::uint32_t patrolPoint = kNoEntity;
+    std::uint32_t waitTick = 0; // standing at a patrol point, search spot or cover: when it goes on
+    std::uint32_t lookYaw = 0;  // standing with no target in sight, the way it turns to face
+    std::uint32_t coverTick = 0; // when it may next run for cover
+    std::uint32_t random = 0;    // counter for core/Random.h
 };
 
 template <>
 struct Schema<Enemy> {
-    static constexpr std::array<std::string_view, 6> kFlagNames{
-        "alert_fired", "death_fired", "has_path", "ride_start", "ambush", "strafe_left"};
+    static constexpr std::array<std::string_view, 7> kFlagNames{
+        "alert_fired", "death_fired", "has_path", "ride_start", "ambush", "strafe_left", "at_goal"};
     static constexpr FieldInfo kFields[] = {
         CT_FIELD(Enemy, type).withDescription("Which of the game's enemies it is"),
         CT_FIELD(Enemy, state)
             .withRange(0, kEnemyStateCount - 1)
-            .withDescription("0 idle, 1 alerted, 2 chase, 3 attack, 4 lost"),
+            .withDescription(
+                "0 idle, 1 alerted, 2 chase, 3 attack, 4 lost, 5 search, 6 cover, 7 patrol"),
         CT_FIELD(Enemy, stateTick).withDescription("Tick it went into the state"),
         CT_FIELD(Enemy, flags).withFlagNames(kFlagNames),
         CT_FIELD(Enemy, target).withDescription("The player it is after"),
         CT_FIELD(Enemy, lastSeen)
             .withHint(FieldHint::Distance)
-            .withDescription("The target's feet when last seen"),
+            .withDescription("The target's feet when last seen or known of"),
         CT_FIELD(Enemy, seenTick).withDescription("Tick it last saw the target"),
         CT_FIELD(Enemy, hurtSeen).withDescription("The hurt tick it last reacted to"),
+        CT_FIELD(Enemy, goal).withHint(FieldHint::Distance).withDescription("Where its path leads"),
         CT_FIELD(Enemy, waypoint)
             .withHint(FieldHint::Distance)
             .withDescription("Next corner of its path"),
@@ -82,6 +99,14 @@ struct Schema<Enemy> {
         CT_FIELD(Enemy, readyTick).withDescription("Tick it may start its next swing or shot"),
         CT_FIELD(Enemy, burstLeft).withDescription("Shots left in its burst"),
         CT_FIELD(Enemy, strafeTick).withDescription("Tick it changes the way it sidesteps"),
+        CT_FIELD(Enemy, home).withHint(FieldHint::Distance).withDescription("Its post"),
+        CT_FIELD(Enemy, homeYaw).withDescription("The way it faced at its post (angle units)"),
+        CT_FIELD(Enemy, patrolPoint)
+            .withDescription("Patrol point it is going to or standing at (level entity)"),
+        CT_FIELD(Enemy, waitTick).withDescription("Standing still: tick it goes on"),
+        CT_FIELD(Enemy, lookYaw)
+            .withDescription("Standing still: the way it turns to (angle units)"),
+        CT_FIELD(Enemy, coverTick).withDescription("Tick it may next run for cover"),
         CT_FIELD(Enemy, random).withDescription("Random number counter"),
     };
     static constexpr TypeSchema value{"enemy", sizeof(Enemy), kFields};

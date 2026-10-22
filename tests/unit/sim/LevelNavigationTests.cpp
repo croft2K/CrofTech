@@ -3,7 +3,9 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -45,5 +47,11 @@ TEST_CASE("the enemies test level plays with chargers and gunners and no warning
     for (const std::string& warning : gameLevel.warnings()) {
         FAIL_CHECK(warning);
     }
-    CHECK(gameLevel.startState().world.enemies.size() == 6);
+    const std::span<const ct::Enemy> enemies = gameLevel.startState().world.enemies.components();
+    CHECK(enemies.size() == 7);
+    const auto patrolling =
+        std::count_if(enemies.begin(), enemies.end(), [](const ct::Enemy& enemy) {
+            return ct::enemyState(enemy) == ct::EnemyState::Patrol;
+        });
+    CHECK(patrolling == 2);
 }

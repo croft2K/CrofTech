@@ -56,12 +56,16 @@ void tooltip(std::string_view text) {
     }
 }
 
-// The names outputs can target, sorted, without repeats.
-std::vector<std::string> entityNames(const Level& level) {
+// The names outputs can target (or, given classes, only those of entities of the classes),
+// sorted, without repeats.
+std::vector<std::string> entityNames(const Level& level,
+                                     std::span<const std::string_view> classes = {}) {
     std::vector<std::string> names;
     for (const LevelEntity& entity : level.entities) {
         const std::string* name = findProperty(entity, "name");
-        if (name != nullptr && !name->empty()) {
+        if (name != nullptr && !name->empty() &&
+            (classes.empty() ||
+             std::find(classes.begin(), classes.end(), entity.className) != classes.end())) {
             names.push_back(*name);
         }
     }
@@ -778,7 +782,7 @@ void EditorPanels::drawInspector(EditorDocument& document, const EditorSettings&
             ImGui::TextDisabled("Click a brush or entity in the view or the hierarchy;");
             ImGui::TextDisabled("Ctrl-click or drag a box to select several.");
         } else if (entity) {
-            drawEntityInspector(document, *entity);
+            drawEntityInspector(document, *entity, settings.grid());
         } else if (!single) {
             drawMultipleInspector(document);
         } else {
@@ -991,7 +995,7 @@ bool EditorPanels::textField(const char* label, int field, const std::string& cu
     return true;
 }
 
-void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t index) {
+void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t index, float grid) {
     const Level& level = document.level();
     const LevelEntity& entity = level.entities[index];
     const EntityClassInfo* entityClass = findEntityClass(entity.className);
@@ -1042,6 +1046,17 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
     }
 
     drawEntityProperties(document, index);
+    if (entity.className == kEnemyClass || entity.className == kPatrolPointClass) {
+        // index is still this entity: properties that change apply on a later frame.
+        if (ImGui::Button("Add patrol point")) {
+            addPatrolPoint(document, index, grid);
+            return;
+        }
+        ImGui::SetItemTooltip("A point %g m on, which this %s then walks to, selected so it can "
+                              "be dragged into place",
+                              static_cast<double>(kPatrolPointStep),
+                              entity.className == kEnemyClass ? "enemy" : "route");
+    }
     drawEntityOutputs(document, index);
 
     std::string problem;
@@ -1121,6 +1136,35 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
                         }
                     }
                     ImGui::EndCombo();
+                }
+            } else if (property.type == PropertyType::Reference) {
+                // A name field, with an arrow listing the entities it may name.
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight());
+                std::string text;
+                bool picked = textField("##value", field, value != nullptr ? *value : std::string(),
+                                        text, "none");
+                ImGui::SameLine(0.0f, 0.0f);
+                if (ImGui::BeginCombo("##names", nullptr,
+                                      ImGuiComboFlags_NoPreview | ImGuiComboFlags_PopupAlignLeft)) {
+                    const std::vector<std::string> names =
+                        entityNames(document.level(), property.choices);
+                    const std::string current(propertyValue(entity, property));
+                    for (const std::string& name : names) {
+                        if (ImGui::Selectable(name.c_str(), name == current)) {
+                            text = name;
+                            picked = true;
+                        }
+                    }
+                    if (names.empty()) {
+                        ImGui::TextDisabled("None to choose from yet");
+                    }
+                    ImGui::EndCombo();
+                }
+                std::string problem;
+                if (picked && !text.empty() && !checkPropertyValue(property, text, problem)) {
+                    m_problem = problem;
+                } else if (picked) {
+                    setValue(key, std::move(text));
                 }
             } else if (property.type == PropertyType::Choice) {
                 const std::string current(propertyValue(entity, property));

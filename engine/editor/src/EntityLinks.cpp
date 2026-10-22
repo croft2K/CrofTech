@@ -1,10 +1,14 @@
 #include "croftech/editor/EntityLinks.h"
 
+#include "croftech/editor/BrushEditing.h"
 #include "croftech/editor/LevelCommands.h"
+#include "croftech/editor/LevelItem.h"
 #include "croftech/level/BrushGeometry.h"
 #include "croftech/level/EntityClasses.h"
 
 #include <algorithm>
+#include <format>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -42,16 +46,39 @@ NameIndex indexNames(const Level& level) {
     return names;
 }
 
+NameIndex::const_iterator firstNamed(const NameIndex& names, std::string_view name) {
+    return std::lower_bound(
+        names.begin(), names.end(), name,
+        [](const auto& entry, std::string_view wanted) { return entry.first < wanted; });
+}
+
+// The references from each Reference property of the entity to each entity with the name.
+void addReferences(const Level& level, const NameIndex& names, std::size_t from,
+                   std::vector<Reference>& references) {
+    const LevelEntity& entity = level.entities[from];
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    if (entityClass == nullptr) {
+        return;
+    }
+    for (const PropertyInfo& property : entityClass->properties) {
+        if (property.type != PropertyType::Reference) {
+            continue;
+        }
+        const std::string_view target = propertyValue(entity, property);
+        for (auto it = firstNamed(names, target);
+             !target.empty() && it != names.end() && it->first == target; ++it) {
+            references.push_back({from, it->second, property.key});
+        }
+    }
+}
+
 // The wires from each output of the entity to each entity with its target name.
 void addOutputWires(const Level& level, const NameIndex& names, std::size_t from,
                     std::vector<Wire>& wires) {
     const std::vector<EntityOutput>& outputs = level.entities[from].outputs;
     for (std::size_t i = 0; i < outputs.size(); ++i) {
         const std::string_view target = outputs[i].target;
-        auto it = std::lower_bound(
-            names.begin(), names.end(), target,
-            [](const auto& entry, std::string_view name) { return entry.first < name; });
-        for (; it != names.end() && it->first == target; ++it) {
+        for (auto it = firstNamed(names, target); it != names.end() && it->first == target; ++it) {
             wires.push_back({from, it->second, i});
         }
     }
@@ -155,6 +182,129 @@ std::vector<Wire> allWires(const Level& level) {
         addOutputWires(level, names, from, wires);
     }
     return wires;
+}
+
+std::vector<Reference> entityReferences(const Level& level, std::size_t entity) {
+    std::vector<Reference> references;
+    if (entity >= level.entities.size()) {
+        return references;
+    }
+    const NameIndex names = indexNames(level);
+    std::vector<bool> onChain(level.entities.size(), false);
+    std::vector<std::size_t> chain{entity};
+    onChain[entity] = true;
+    for (std::size_t i = 0; i < chain.size(); ++i) {
+        const std::size_t first = references.size();
+        addReferences(level, names, chain[i], references);
+        for (std::size_t j = first; j < references.size(); ++j) {
+            if (!onChain[references[j].to]) {
+                onChain[references[j].to] = true;
+                chain.push_back(references[j].to);
+            }
+        }
+    }
+    std::vector<Reference> from;
+    for (std::size_t other = 0; other < level.entities.size(); ++other) {
+        if (onChain[other]) {
+            continue;
+        }
+        from.clear();
+        addReferences(level, names, other, from);
+        for (const Reference& reference : from) {
+            if (reference.to == entity) {
+                references.push_back(reference);
+            }
+        }
+    }
+    return references;
+}
+
+std::vector<Reference> allReferences(const Level& level) {
+    std::vector<Reference> references;
+    const NameIndex names = indexNames(level);
+    for (std::size_t from = 0; from < level.entities.size(); ++from) {
+        addReferences(level, names, from, references);
+    }
+    return references;
+}
+
+bool addPatrolPoint(EditorDocument& document, std::size_t entity, float grid) {
+    const Level& level = document.level();
+    if (entity >= level.entities.size() || level.entities.size() >= kMaxLevelEntities) {
+        return false;
+    }
+    const LevelEntity& source = level.entities[entity];
+    const bool enemy = source.className == kEnemyClass;
+    const std::optional<Vec3> origin = entityOrigin(source);
+    if ((!enemy && source.className != kPatrolPointClass) || !origin) {
+        return false;
+    }
+    const std::string key = enemy ? "patrol" : "next";
+
+    // On the way the enemy faces, or the way the route came into the point.
+    Vec3 direction{1.0f, 0.0f, 0.0f};
+    if (enemy) {
+        direction = entityFacing(source).value_or(direction);
+    } else {
+        for (const Reference& reference : allReferences(level)) {
+            const std::optional<Vec3> before = entityAnchor(level, reference.from);
+            if (reference.to != entity || reference.from == entity || !before) {
+                continue;
+            }
+            const Vec3 along{origin->x - before->x, origin->y - before->y, 0.0f};
+            if (dot(along, along) > 0.0f) {
+                direction = normalize(along);
+                break;
+            }
+        }
+    }
+    Vec3 point = *origin + direction * kPatrolPointStep;
+    if (grid > 0.0f) {
+        point = {snapToGrid(point.x, grid), snapToGrid(point.y, grid), origin->z};
+    }
+
+    // Named after the route: the enemy's name, or the point's without its number.
+    std::string base = "patrol";
+    if (const std::string* name = findProperty(source, "name"); name != nullptr && !name->empty()) {
+        base = *name;
+        if (!enemy) {
+            const std::size_t digits = base.find_last_not_of("0123456789");
+            if (digits != std::string::npos && digits + 1 < base.size() && base[digits] == '_') {
+                base.resize(digits);
+            }
+        }
+    }
+    const NameIndex names = indexNames(level);
+    std::string name;
+    for (int number = 1;; ++number) {
+        name = std::format("{}_{}", base, number);
+        const auto it = firstNamed(names, name);
+        if (it == names.end() || it->first != name) {
+            break;
+        }
+    }
+    if (!isValidEntityName(name)) {
+        return false;
+    }
+
+    LevelEntity added{std::string(kPatrolPointClass), {}};
+    setProperty(added, "origin", formatVec3(point));
+    setProperty(added, "name", name);
+    if (const std::string* next = findProperty(source, key); next != nullptr && !next->empty()) {
+        setProperty(added, "next", *next);
+    }
+    added.group = source.group;
+    LevelEntity linked = source;
+    setProperty(linked, key, name);
+
+    const std::string command = "Add patrol point";
+    const std::size_t index = level.entities.size();
+    std::vector<std::unique_ptr<Command>> commands;
+    commands.push_back(makeSetEntity(command, entity, source, std::move(linked)));
+    commands.push_back(makeInsertEntity(command, index, std::move(added)));
+    document.execute(makeCompound(command, std::move(commands)));
+    document.select(LevelItem::entity(index));
+    return true;
 }
 
 } // namespace ct

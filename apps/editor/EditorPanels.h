@@ -58,7 +58,7 @@ private:
                          LevelItem item);
     void drawBrushInspector(EditorDocument& document, const EditorSettings& settings,
                             std::size_t index);
-    void drawEntityInspector(EditorDocument& document, std::size_t index);
+    void drawEntityInspector(EditorDocument& document, std::size_t index, float grid);
     // The entity's properties: those of its class, with their defaults, then any others.
     void drawEntityProperties(EditorDocument& document, std::size_t index);
     // The entity's outputs, as a table of event, target, input and delay.
