@@ -225,7 +225,7 @@ TEST_CASE("building the same level twice gives the same mesh") {
         }
         CHECK(a[i].area == b[i].area);
     }
-    CHECK(first.boundaryEdges().size() == second.boundaryEdges().size());
+    CHECK(first.edges().size() == second.edges().size());
 }
 
 TEST_CASE("a game level builds its mesh once, when first asked, for the player's size") {

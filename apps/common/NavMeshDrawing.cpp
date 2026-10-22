@@ -71,9 +71,14 @@ void NavMeshDrawing::set(const NavMesh& mesh) {
                     kFloorAlpha);
     }
     const Vec3 edgeLift{0.0f, 0.0f, kEdgeLift};
-    for (const NavEdge& edge : mesh.boundaryEdges()) {
-        addLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth,
-                {0.1f, 0.8f, 0.5f}, 0.8f);
+    for (const NavEdge& edge : mesh.edges()) {
+        if (edge.boundary) {
+            addLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth,
+                    {0.1f, 0.8f, 0.5f}, 0.8f);
+        } else {
+            addLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth * 0.5f,
+                    {0.05f, 0.3f, 0.25f}, 0.6f);
+        }
     }
     for (const NavLink& link : mesh.links()) {
         const Vec3 colour{0.6f, 0.3f, 1.0f};

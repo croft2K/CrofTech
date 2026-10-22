@@ -697,7 +697,7 @@ std::vector<NavTriangle> NavMesh::triangles() const {
     return triangles;
 }
 
-std::vector<NavEdge> NavMesh::boundaryEdges() const {
+std::vector<NavEdge> NavMesh::edges() const {
     std::vector<NavEdge> edges;
     const dtNavMesh& mesh = *m_mesh;
     for (int t = 0; t < mesh.getMaxTiles(); ++t) {
@@ -711,13 +711,17 @@ std::vector<NavEdge> NavMesh::boundaryEdges() const {
                 continue;
             }
             for (unsigned char i = 0; i < poly.vertCount; ++i) {
-                // Edges to a neighbour, in this tile or the next, aren't boundaries.
-                if (poly.neis[i] != 0) {
+                const unsigned short neighbour = poly.neis[i];
+                // A shared edge is taken from one side only: in a tile, from the polygon with the
+                // lower index; between tiles, from the tile whose neighbour is on its +x or +z
+                // side (Detour's sides 0 to 3, in its axes).
+                if ((neighbour & DT_EXT_LINK) != 0 ? (neighbour & 0xff) >= 4
+                                                   : neighbour != 0 && neighbour - 1 < p) {
                     continue;
                 }
                 const unsigned char j = static_cast<unsigned char>((i + 1) % poly.vertCount);
                 edges.push_back({fromDetour(&tile->verts[poly.verts[i] * 3]),
-                                 fromDetour(&tile->verts[poly.verts[j] * 3])});
+                                 fromDetour(&tile->verts[poly.verts[j] * 3]), neighbour == 0});
             }
         }
     }

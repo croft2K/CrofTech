@@ -61,10 +61,12 @@ struct NavTriangle {
     std::uint32_t polygon = 0;
 };
 
-// An edge of the mesh with nothing beyond it: a wall, or a drop.
+// An edge of a polygon of the mesh: between two polygons, or a boundary with nothing beyond it
+// (a wall, or a drop).
 struct NavEdge {
     Vec3 start;
     Vec3 end;
+    bool boundary = false;
 };
 
 // A way between two parts of the mesh that isn't walked: the ride of a lift. Both ways.
@@ -92,7 +94,8 @@ public:
 
     // The mesh's surface, edges and links, for drawing.
     std::vector<NavTriangle> triangles() const;
-    std::vector<NavEdge> boundaryEdges() const;
+    // Each edge once, shared or not.
+    std::vector<NavEdge> edges() const;
     std::vector<NavLink> links() const;
 
     // The door or lift a polygon or link belongs to, or kNoNavMover. Detour's polygon reference
