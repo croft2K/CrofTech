@@ -1,11 +1,14 @@
 #include "croftech/editor/BrushEditing.h"
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
+#include "croftech/editor/LevelItem.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/level/BrushGeometry.h"
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -171,4 +174,20 @@ TEST_CASE("item bounds cover brushes and entity markers") {
     CHECK(bounds->min == ct::Vec3{-0.5f, -0.5f, 0.0f});
     CHECK(bounds->max == ct::Vec3{5.0f, 1.0f, 3.0f});
     CHECK_FALSE(ct::itemBounds(level, LevelItem::brush(9), half).has_value());
+}
+
+TEST_CASE("entities with a yaw face that way, or their class's default") {
+    const std::optional<ct::Vec3> north =
+        ct::entityFacing(ct::makePlayerSpawn({0.0f, 0.0f, 0.0f}, 90.0f));
+    REQUIRE(north);
+    CHECK(std::fabs(north->x) < 1e-6f);
+    CHECK(north->y == doctest::Approx(1.0f));
+    // An enemy left at its class's default faces +X.
+    const ct::LevelEntity enemy{"enemy", {{"origin", "0 0 0"}}, {}};
+    const std::optional<ct::Vec3> east = ct::entityFacing(enemy);
+    REQUIRE(east);
+    CHECK(east->x == doctest::Approx(1.0f));
+    // Pickups and relays don't face anywhere.
+    CHECK_FALSE(ct::entityFacing({"pickup", {{"origin", "0 0 0"}}, {}}));
+    CHECK_FALSE(ct::entityFacing({"relay", {{"origin", "0 0 0"}}, {}}));
 }

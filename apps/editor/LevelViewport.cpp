@@ -286,6 +286,21 @@ void arrowHead(ImDrawList& drawList, ImVec2 from, ImVec2 to, ImU32 color) {
                                {back.x + dy * head * 0.4f, back.y - dx * head * 0.4f}, color);
 }
 
+// An arrow from the middle of an entity's marker out the way it faces, at eye height for
+// player-sized markers, so spawns and enemies can be aimed; seen end-on it is just its head.
+void drawFacing(const LinePainter& painter, const Aabb& marker, Vec3 facing, ImU32 color) {
+    const Vec3 size = marker.max - marker.min;
+    const Vec3 from{(marker.min.x + marker.max.x) * 0.5f, (marker.min.y + marker.max.y) * 0.5f,
+                    marker.min.z + size.z * 0.8f};
+    const Vec3 to = from + facing * std::max(std::max(size.x, size.y) * 1.5f, 1.0f);
+    painter.line(from, to, color, 2.0f);
+    const std::optional<ImVec2> start = painter.projector().screen(from);
+    const std::optional<ImVec2> end = painter.projector().screen(to);
+    if (start && end) {
+        arrowHead(painter.drawList(), *start, *end, color);
+    }
+}
+
 struct ShownWire {
     Wire wire;
     bool outgoing = true; // from a selected entity, rather than into one
@@ -1744,7 +1759,11 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
         if (const auto marker = entityMarker(level.entities[i], halfExtents)) {
             const bool spawn = level.entities[i].className == kPlayerSpawnClass;
-            painter.box(*marker, spawn ? kSpawnColor : kEntityColor, 1.5f);
+            const ImU32 color = spawn ? kSpawnColor : kEntityColor;
+            painter.box(*marker, color, 1.5f);
+            if (const std::optional<Vec3> facing = entityFacing(level.entities[i])) {
+                drawFacing(painter, *marker, *facing, color);
+            }
         }
     }
 

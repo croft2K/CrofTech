@@ -1,9 +1,12 @@
 #include "croftech/editor/LevelItem.h"
 
+#include "croftech/core/ConfigFile.h"
 #include "croftech/level/BrushGeometry.h"
 #include "croftech/level/EntityClasses.h"
 
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 
 namespace ct {
 namespace {
@@ -117,6 +120,27 @@ std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExten
     }
     const Vec3 half{kEntityMarkerHalfSize, kEntityMarkerHalfSize, kEntityMarkerHalfSize};
     return Aabb{*origin - half, *origin + half};
+}
+
+std::optional<Vec3> entityFacing(const LevelEntity& entity) {
+    std::string_view text;
+    if (const std::string* yaw = findProperty(entity, "yaw")) {
+        text = *yaw;
+    } else if (const EntityClassInfo* entityClass = findEntityClass(entity.className)) {
+        const PropertyInfo* property = findPropertyInfo(*entityClass, "yaw");
+        if (property == nullptr) {
+            return std::nullopt;
+        }
+        text = property->defaultValue;
+    } else {
+        return std::nullopt;
+    }
+    float degrees = 0.0f;
+    if (!parseFloat(text, degrees) || !std::isfinite(degrees)) {
+        return std::nullopt;
+    }
+    const double radians = static_cast<double>(degrees) * (std::numbers::pi / 180.0);
+    return Vec3{static_cast<float>(std::cos(radians)), static_cast<float>(std::sin(radians)), 0.0f};
 }
 
 std::optional<Aabb> itemBounds(const Level& level, LevelItem item, Vec3 playerHalfExtents) {

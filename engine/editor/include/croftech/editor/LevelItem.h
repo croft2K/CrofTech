@@ -46,6 +46,10 @@ std::vector<LevelItem> withWholeGroups(const Level& level, std::span<const Level
 // cube for anything else. Nullopt if the entity has no readable origin.
 std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExtents);
 
+// The way an entity faces across the ground, as a unit vector, for those with a "yaw" (player
+// spawns, enemies): its own value, or its class's default. Nullopt for entities without one.
+std::optional<Vec3> entityFacing(const LevelEntity& entity);
+
 // The box around a brush's corners or an entity's marker.
 std::optional<Aabb> itemBounds(const Level& level, LevelItem item, Vec3 playerHalfExtents);
 std::optional<Aabb> itemBounds(const Level& level, std::span<const LevelItem> items,
