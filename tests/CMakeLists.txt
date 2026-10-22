@@ -49,6 +49,7 @@ ct_add_test(ct_unit_tests)
 add_executable(ct_sim_tests
     unit/Main.cpp
     sim/DeterminismTests.cpp
+    sim/EnemyTests.cpp
     sim/GameEventsTests.cpp
     sim/HealthTests.cpp
     sim/LogicTests.cpp

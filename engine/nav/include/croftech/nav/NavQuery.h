@@ -22,6 +22,9 @@ struct NavCorner {
     // corner where the ride begins.
     NavArea area = NavArea::Ground;
     std::uint32_t mover = kNoNavMover;
+    // Where a link starts: the ride of a lift begins here. Corners where a path only steps onto a
+    // lift's top have its area and mover too, but aren't links.
+    bool link = false;
 };
 
 // The corners from start to goal, both included. Held in fixed storage, so finding one allocates

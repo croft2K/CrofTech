@@ -26,7 +26,7 @@ struct ShotHit {
     EntityId mover;  // the mover hit, if the shot stopped at one
 };
 
-ShotHit traceShot(const CollisionScene& scene, const World& world, const MovementSettings& movement,
+ShotHit traceShot(const CollisionScene& scene, const World& world, const GameSettings& settings,
                   Vec3 start, Vec3 end, EntityId shooter);
 
 // The way a transform looks: yaw 0 is +X, and a positive pitch looks up (as the camera does).

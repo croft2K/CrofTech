@@ -11,6 +11,9 @@
 
 namespace ct {
 
+class CollisionScene;
+class NavQueries;
+
 // Runs the level's logic entities for one tick of a state: delivers inputs, fires events and
 // passes them along the wiring. Made on the stack for each tick, so it holds no state of its own
 // between ticks.
@@ -25,11 +28,11 @@ public:
     // Inputs whose delay ends this tick, oldest first.
     void deliverPendingInputs();
     void runTimers();
-    // Movers set off, travel and arrive, pushing players out of the way and carrying the ones
-    // standing on them. Before players move, so they move against where movers now are.
-    void runMovers(const MovementSettings& movement);
-    // Players walking into doors and standing on lifts, after they have moved.
-    void activateMovers(const MovementSettings& movement);
+    // Movers set off, travel and arrive, pushing players and enemies out of the way and carrying
+    // the ones standing on them. Before anything moves, so it moves against where movers now are.
+    void runMovers(const GameSettings& settings);
+    // Players and enemies walking into doors and standing on lifts, after they have moved.
+    void activateMovers(const GameSettings& settings);
     // Players going into and out of triggers and reaching checkpoints, after they have moved.
     void updateTriggers(const MovementSettings& movement);
     // Hurt volumes hurt what is inside them, each thing at most once per interval.
@@ -37,6 +40,9 @@ public:
     // Taken pickups come back when their time is up, and living players take the ones they touch
     // and need, in input-slot order.
     void runPickups(const GameSettings& settings);
+    // Enemies look, think and move (Enemies.cpp): after players have moved, so they act on where
+    // players are now. The dead fall, and are taken away when their corpse time is up.
+    void runEnemies(const CollisionScene& scene, const GameSettings& settings, NavQueries& queries);
 
 private:
     struct Queued {
@@ -56,6 +62,12 @@ private:
     // What the pickup gives, if the player needs it; whether it was taken.
     bool give(const GameLevel::Entity& pickup, const GameSettings& settings, EntityId player);
 
+    // Enemies (Enemies.cpp): goes after the target, which must be a living player, unless it is
+    // already after one.
+    void alertEnemy(std::uint32_t index, Enemy& enemy, EntityId target);
+    // The living player nearest the point, if any.
+    EntityId nearestPlayer(Vec3 point) const;
+
     // Movers (Movers.cpp).
     void applyMoverInput(std::uint32_t index, const GameLevel::Entity& entity, Mover& mover,
                          LogicInput input, EntityId activator);
@@ -65,7 +77,7 @@ private:
     void extendWait(const GameLevel::Entity& entity, Mover& mover) const;
     std::uint32_t departureTick(const GameLevel::Entity& entity, bool atEnd) const;
     bool moveMover(EntityId id, const GameLevel::Entity& entity, Mover& mover, float distance,
-                   const MovementSettings& movement);
+                   const GameSettings& settings);
 
     const GameLevel& m_level;
     State& m_state;

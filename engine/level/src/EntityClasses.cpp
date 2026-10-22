@@ -166,6 +166,21 @@ constexpr SignalInfo kPickupInputs[] = {
     {"toggle", "Show it if hidden, hide it if shown"},
 };
 
+constexpr PropertyInfo kEnemyProperties[] = {
+    {"origin", Vector, "", "Where its feet are, metres"},
+    {"yaw", Angle, "0", "Direction it faces, degrees; 0 is +X, 90 is +Y"},
+    kName,
+    {"type", Enemy, "",
+     "The kind of enemy, from the game's list (enemies in game.cfg); empty is the first"},
+};
+constexpr SignalInfo kEnemyEvents[] = {
+    {"on_alert", "It noticed a player (saw one, was hurt, or was told to) and went after them"},
+    {"on_death", "It was killed"},
+};
+constexpr SignalInfo kEnemyInputs[] = {
+    {"alert", "Go after the player who set this off, or the nearest one"},
+};
+
 constexpr EntityClassInfo kClasses[] = {
     {kPlayerSpawnClass, "Where a player starts", EntityShape::Point, kSpawnProperties, {}, {}},
     {"trigger", "An invisible volume that fires events when players go in and out",
@@ -190,6 +205,8 @@ constexpr EntityClassInfo kClasses[] = {
      EntityShape::Brush, kMoverProperties, kMoverEvents, kMoverInputs},
     {kPickupClass, "An item players take by walking into it: health, armour, ammo, a weapon",
      EntityShape::Point, kPickupProperties, kPickupEvents, kPickupInputs},
+    {kEnemyClass, "An enemy that hunts players once it notices them", EntityShape::Point,
+     kEnemyProperties, kEnemyEvents, kEnemyInputs},
 };
 
 constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"}, {"wait", "3"}};
@@ -285,6 +302,13 @@ constexpr EntityPreset kPresets[] = {
      "The weapon it names, with some ammo (set weapon in the inspector)",
      kPickupClass,
      kWeaponPreset,
+     {},
+     false,
+     {}},
+    {"Enemy",
+     "The game's first kind of enemy, standing here (set type in the inspector)",
+     kEnemyClass,
+     {},
      {},
      false,
      {}},
@@ -396,12 +420,13 @@ bool checkPropertyValue(const PropertyInfo& property, std::string_view value,
         }
         return true;
     case Weapon:
+    case Enemy:
         if (!value.empty() && !std::all_of(value.begin(), value.end(), [](char c) {
                 return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
             })) {
-            problem = std::format("{} must be a weapon's name: lowercase letters, digits, '-' or "
-                                  "'_'",
-                                  property.key);
+            problem =
+                std::format("{} must be {} name: lowercase letters, digits, '-' or '_'",
+                            property.key, property.type == Weapon ? "a weapon's" : "an enemy's");
             return false;
         }
         return true;
@@ -440,6 +465,13 @@ float numberProperty(const LevelEntity& entity, const EntityClassInfo& entityCla
     return value;
 }
 
+float angleProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
+                    std::string_view key) {
+    float value = 0.0f;
+    parseFloat(propertyValue(entity, requireProperty(entityClass, key, Angle)), value);
+    return value;
+}
+
 std::uint32_t countProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                             std::string_view key) {
     const PropertyInfo& property = requireProperty(entityClass, key, Count);
@@ -475,8 +507,8 @@ std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& ent
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key) {
     const PropertyInfo* property = findPropertyInfo(entityClass, key);
-    CT_ASSERT(property != nullptr &&
-              (property->type == Text || property->type == Name || property->type == Weapon));
+    CT_ASSERT(property != nullptr && (property->type == Text || property->type == Name ||
+                                      property->type == Weapon || property->type == Enemy));
     return propertyValue(entity, *property);
 }
 

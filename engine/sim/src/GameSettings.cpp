@@ -65,6 +65,53 @@ constexpr WeaponFloat kWeaponFloats[] = {
      "share of its splash damage the shooter takes"},
 };
 
+struct EnemyInt {
+    std::string_view key;
+    std::int32_t EnemySettings::* field;
+    int min;
+    int max;
+    std::string_view description;
+};
+
+struct EnemyFloat {
+    std::string_view key;
+    float EnemySettings::* field;
+    float min;
+    float max;
+    std::string_view description;
+};
+
+constexpr EnemyInt kEnemyInts[] = {
+    {"health", &EnemySettings::health, 1, kMaxHealthSetting, "health it starts with"},
+    {"melee_damage", &EnemySettings::meleeDamage, 0, kMaxHealthSetting,
+     "each swing that lands; 0 has no melee attack"},
+};
+
+constexpr EnemyFloat kEnemyFloats[] = {
+    {"width", &EnemySettings::width, 0.2f, 8.0f, "of its box, m"},
+    {"height", &EnemySettings::height, 0.2f, 8.0f, "of its box, m"},
+    {"eye_height", &EnemySettings::eyeHeight, 0.0f, 8.0f, "above its feet, where it sees from"},
+    {"speed", &EnemySettings::speed, 0.0f, 50.0f, "m/s running"},
+    {"acceleration", &EnemySettings::acceleration, 0.0f, 100.0f,
+     "as movement's ground_acceleration"},
+    {"turn_speed", &EnemySettings::turnSpeed, 10.0f, 3600.0f, "degrees a second"},
+    {"sight_range", &EnemySettings::sightRange, 0.0f, 1000.0f, "m"},
+    {"sight_angle", &EnemySettings::sightAngle, 1.0f, 360.0f,
+     "degrees across its view, until it is alerted"},
+    {"reaction_time", &EnemySettings::reactionTime, 0.0f, 10.0f,
+     "seconds from noticing a player to going after them"},
+    {"melee_range", &EnemySettings::meleeRange, 0.0f, 10.0f,
+     "m from its box to the target's that a swing reaches"},
+    {"melee_windup", &EnemySettings::meleeWindup, 0.0f, 5.0f,
+     "seconds from starting a swing to the hit"},
+    {"melee_interval", &EnemySettings::meleeInterval, kTickSeconds, 10.0f,
+     "seconds between the starts of swings"},
+    {"melee_knockback", &EnemySettings::meleeKnockback, 0.0f, 100.0f,
+     "m/s a swing that lands adds to the target, away from it"},
+    {"corpse_time", &EnemySettings::corpseTime, -1.0f, 600.0f,
+     "seconds its body stays after death; -1 stays for good"},
+};
+
 std::string cvarName(std::string_view key) { return std::string(kRulesCVarPrefix).append(key); }
 
 const CVar& findCVar(const Console& console, const std::string& name) {
@@ -75,6 +122,38 @@ const CVar& findCVar(const Console& console, const std::string& name) {
 
 std::span<const std::string> usable(std::span<const std::string> weapons) {
     return weapons.first(std::min<std::size_t>(weapons.size(), kMaxWeapons));
+}
+
+std::span<const std::string> usableEnemies(std::span<const std::string> enemies) {
+    return enemies.first(std::min<std::size_t>(enemies.size(), kMaxEnemyTypes));
+}
+
+void registerEnemyCVars(Console& console, std::string_view enemy) {
+    const std::string prefix = enemyCVarPrefix(enemy);
+    const EnemySettings defaults;
+    for (const EnemyInt& setting : kEnemyInts) {
+        console.add(CVar::makeInt(prefix + std::string(setting.key), defaults.*setting.field,
+                                  setting.min, setting.max, std::string(setting.description)));
+    }
+    for (const EnemyFloat& setting : kEnemyFloats) {
+        console.add(CVar::makeFloat(prefix + std::string(setting.key), defaults.*setting.field,
+                                    setting.min, setting.max, std::string(setting.description)));
+    }
+}
+
+EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
+                             const MovementSettings& movement) {
+    const std::string prefix = enemyCVarPrefix(enemy);
+    EnemySettings settings;
+    settings.name = std::string(enemy);
+    for (const EnemyInt& setting : kEnemyInts) {
+        settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asInt();
+    }
+    for (const EnemyFloat& setting : kEnemyFloats) {
+        settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asFloat();
+    }
+    settings.movement = enemyMovement(settings, movement);
+    return settings;
 }
 
 void registerWeaponCVars(Console& console, std::string_view weapon) {
@@ -111,7 +190,22 @@ std::string weaponCVarPrefix(std::string_view weapon) {
     return std::string("weapon.").append(weapon).append(".");
 }
 
-std::vector<GameConfigFile> gameConfigFiles(std::span<const std::string> weapons) {
+std::string enemyCVarPrefix(std::string_view enemy) {
+    return std::string("enemy.").append(enemy).append(".");
+}
+
+MovementSettings enemyMovement(const EnemySettings& enemy, const MovementSettings& movement) {
+    MovementSettings result = movement;
+    result.halfExtents = {enemy.width * 0.5f, enemy.width * 0.5f, enemy.height * 0.5f};
+    result.eyeHeight = std::min(enemy.eyeHeight, enemy.height);
+    result.maxGroundSpeed = enemy.speed;
+    result.groundAcceleration = enemy.acceleration;
+    result.autoJump = false;
+    return result;
+}
+
+std::vector<GameConfigFile> gameConfigFiles(std::span<const std::string> weapons,
+                                            std::span<const std::string> enemies) {
     std::vector<GameConfigFile> files{
         {"config/movement.cfg", std::string(kMovementCVarPrefix)},
         {"config/rules.cfg", std::string(kRulesCVarPrefix)},
@@ -119,10 +213,14 @@ std::vector<GameConfigFile> gameConfigFiles(std::span<const std::string> weapons
     for (const std::string& weapon : usable(weapons)) {
         files.push_back({"weapons/" + weapon + ".cfg", weaponCVarPrefix(weapon)});
     }
+    for (const std::string& enemy : usableEnemies(enemies)) {
+        files.push_back({"enemies/" + enemy + ".cfg", enemyCVarPrefix(enemy)});
+    }
     return files;
 }
 
-void registerGameCVars(Console& console, std::span<const std::string> weapons) {
+void registerGameCVars(Console& console, std::span<const std::string> weapons,
+                       std::span<const std::string> enemies) {
     registerMovementCVars(console);
     const RulesSettings defaults;
     console.add(CVar::makeInt(cvarName("start_health"), defaults.startHealth, 1, kMaxHealthSetting,
@@ -142,9 +240,13 @@ void registerGameCVars(Console& console, std::span<const std::string> weapons) {
     for (const std::string& weapon : usable(weapons)) {
         registerWeaponCVars(console, weapon);
     }
+    for (const std::string& enemy : usableEnemies(enemies)) {
+        registerEnemyCVars(console, enemy);
+    }
 }
 
-GameSettings gameSettingsFromCVars(const Console& console, std::span<const std::string> weapons) {
+GameSettings gameSettingsFromCVars(const Console& console, std::span<const std::string> weapons,
+                                   std::span<const std::string> enemies) {
     GameSettings settings;
     settings.movement = movementSettingsFromCVars(console);
     settings.rules.startHealth = findCVar(console, cvarName("start_health")).asInt();
@@ -156,6 +258,9 @@ GameSettings gameSettingsFromCVars(const Console& console, std::span<const std::
     settings.rules.overchargeDecay = findCVar(console, cvarName("overcharge_decay")).asFloat();
     for (const std::string& weapon : usable(weapons)) {
         settings.weapons.push_back(weaponFromCVars(console, weapon));
+    }
+    for (const std::string& enemy : usableEnemies(enemies)) {
+        settings.enemies.push_back(enemyFromCVars(console, enemy, settings.movement));
     }
     return settings;
 }

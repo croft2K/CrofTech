@@ -4,6 +4,7 @@
 
 #include "croftech/core/Profile.h"
 #include "croftech/sim/CollisionScene.h"
+#include "croftech/sim/Enemies.h"
 
 #include <algorithm>
 #include <array>
@@ -93,7 +94,7 @@ std::uint32_t LevelLogic::departureTick(const GameLevel::Entity& entity, bool at
     return m_state.tick + static_cast<std::uint32_t>(entity.waitTicks);
 }
 
-void LevelLogic::runMovers(const MovementSettings& movement) {
+void LevelLogic::runMovers(const GameSettings& settings) {
     CT_PROFILE_ZONE();
     World& world = m_state.world;
     for (std::size_t i = 0; i < world.movers.size(); ++i) {
@@ -116,7 +117,7 @@ void LevelLogic::runMovers(const MovementSettings& movement) {
         const float target = toEnd ? entity->length : 0.0f;
         const float distance = toEnd ? std::min(mover.distance + entity->speed, target)
                                      : std::max(mover.distance - entity->speed, 0.0f);
-        if (moveMover(id, *entity, mover, distance, movement)) {
+        if (moveMover(id, *entity, mover, distance, settings)) {
             if (distance == target) {
                 arrive(index, *entity, mover, toEnd);
             }
@@ -133,7 +134,7 @@ void LevelLogic::runMovers(const MovementSettings& movement) {
 // with it, and players standing on it are carried; if any of them would end up inside something
 // solid, nothing moves and it returns false.
 bool LevelLogic::moveMover(EntityId id, const GameLevel::Entity& entity, Mover& mover,
-                           float distance, const MovementSettings& movement) {
+                           float distance, const GameSettings& settings) {
     World& world = m_state.world;
     const CollisionScene scene(m_level, world);
     const Vec3 delta = entity.moverOffset(distance) - mover.offset;
@@ -141,16 +142,19 @@ bool LevelLogic::moveMover(EntityId id, const GameLevel::Entity& entity, Mover& 
     struct Pushed {
         Transform* transform = nullptr;
         Vec3 from;
+        Vec3 halfExtents;
     };
     std::array<Pushed, kMaxPushed> pushed{};
     std::size_t pushedCount = 0;
     // Riders are found before the mover moves out from under them.
     std::array<bool, kMaxPushed> riding{};
     const std::span<const PlayerMotion> motions = world.playerMotions.components();
+    const std::span<const EntityId> bodies = world.playerMotions.entities();
     for (std::size_t i = 0; i < motions.size() && i < kMaxPushed; ++i) {
-        const Transform* transform = world.transforms.get(world.playerMotions.entities()[i]);
+        const Transform* transform = world.transforms.get(bodies[i]);
         riding[i] =
-            transform != nullptr && standingOn(scene, movement, *transform, motions[i]) == id;
+            transform != nullptr &&
+            standingOn(scene, movementOf(world, bodies[i], settings), *transform, motions[i]) == id;
     }
 
     const Mover before = mover;
@@ -158,13 +162,13 @@ bool LevelLogic::moveMover(EntityId id, const GameLevel::Entity& entity, Mover& 
     mover.distance = distance;
     bool blocked = false;
     for (std::size_t i = 0; i < motions.size() && !blocked; ++i) {
-        Transform* transform = world.transforms.get(world.playerMotions.entities()[i]);
+        Transform* transform = world.transforms.get(bodies[i]);
         if (transform == nullptr) {
             continue;
         }
-        const bool inTheWay =
-            entity.model != nullptr &&
-            entity.model->overlapsBox(transform->position - mover.offset, movement.halfExtents);
+        const Vec3 half = movementOf(world, bodies[i], settings).halfExtents;
+        const bool inTheWay = entity.model != nullptr &&
+                              entity.model->overlapsBox(transform->position - mover.offset, half);
         if (!inTheWay && !(i < kMaxPushed && riding[i])) {
             continue;
         }
@@ -172,12 +176,12 @@ bool LevelLogic::moveMover(EntityId id, const GameLevel::Entity& entity, Mover& 
             blocked = true;
             break;
         }
-        pushed[pushedCount++] = {transform, transform->position};
+        pushed[pushedCount++] = {transform, transform->position, half};
         transform->position += delta;
     }
     for (std::size_t i = 0; i < pushedCount && !blocked; ++i) {
         blocked =
-            scene.overlapsBox(pushed[i].transform->position, movement.halfExtents, kStuckInset);
+            scene.overlapsBox(pushed[i].transform->position, pushed[i].halfExtents, kStuckInset);
     }
     if (blocked) {
         mover = before;
@@ -188,7 +192,7 @@ bool LevelLogic::moveMover(EntityId id, const GameLevel::Entity& entity, Mover& 
     return !blocked;
 }
 
-void LevelLogic::activateMovers(const MovementSettings& movement) {
+void LevelLogic::activateMovers(const GameSettings& settings) {
     CT_PROFILE_ZONE();
     World& world = m_state.world;
     const CollisionScene scene(m_level, world);
@@ -202,30 +206,38 @@ void LevelLogic::activateMovers(const MovementSettings& movement) {
             continue;
         }
         EntityId activator;
-        const std::span<const PlayerControl> controls = world.playerControls.components();
-        for (std::size_t p = 0; p < controls.size() && !activator.isValid(); ++p) {
-            const EntityId player = world.playerControls.entities()[p];
-            const Transform* transform = world.transforms.get(player);
-            const PlayerMotion* motion = world.playerMotions.get(player);
-            if (transform == nullptr || motion == nullptr) {
+        bool playerHolds = false;
+        const std::span<const PlayerMotion> motions = world.playerMotions.components();
+        for (std::size_t p = 0; p < motions.size() && !playerHolds; ++p) {
+            const EntityId body = world.playerMotions.entities()[p];
+            const Transform* transform = world.transforms.get(body);
+            if (transform == nullptr) {
                 continue;
             }
+            const MovementSettings& movement = movementOf(world, body, settings);
             const bool activates =
                 entity->activate == MoverActivation::Touch
                     ? entity->model->overlapsBox(transform->position - mover.offset,
                                                  movement.halfExtents +
                                                      Vec3{kTouchMargin, kTouchMargin, kTouchMargin})
-                    : standingOn(scene, movement, *transform, *motion) == id;
+                    : standingOn(scene, movement, *transform, motions[p]) == id;
             if (activates) {
-                activator = player;
+                activator = activator.isValid() ? activator : body;
+                playerHolds = world.playerControls.has(body);
             }
         }
         if (!activator.isValid()) {
             continue;
         }
+        // Anyone in a doorway keeps a door open, but only players hold a lift at its end or send
+        // it back up on its way down: an enemy riding it back waits for it to go. Enemies set a
+        // lift going only from rest at its start.
+        const bool anyone = entity->activate == MoverActivation::Touch || playerHolds;
         if (phaseOf(mover) == MoverPhase::AtEnd) {
-            extendWait(*entity, mover);
-        } else if (headingToStart(mover)) {
+            if (anyone) {
+                extendWait(*entity, mover);
+            }
+        } else if (headingToStart(mover) && (anyone || phaseOf(mover) == MoverPhase::AtStart)) {
             setOff(index, mover, true, activator);
         }
     }

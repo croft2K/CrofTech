@@ -3,6 +3,7 @@
 #include "croftech/core/Profile.h"
 #include "croftech/level/EntityClasses.h"
 #include "croftech/sim/Damage.h"
+#include "croftech/sim/Enemies.h"
 #include "croftech/sim/Firing.h"
 
 #include <algorithm>
@@ -180,7 +181,8 @@ void LevelLogic::runHurtVolumes(const GameSettings& settings) {
             Health& health = world.healths.components()[j];
             const Transform* transform = world.transforms.get(target);
             if (transform == nullptr || isDead(health) || health.hazardTick > m_state.tick ||
-                !entity->model->overlapsBox(transform->position, settings.movement.halfExtents)) {
+                !entity->model->overlapsBox(transform->position,
+                                            movementOf(world, target, settings).halfExtents)) {
                 continue;
             }
             health.hazardTick = m_state.tick + entity->intervalTicks;
@@ -417,6 +419,18 @@ void LevelLogic::apply(const Queued& input) {
             } else if (input.input == LogicInput::Disable || input.input == LogicInput::Toggle) {
                 pickup->flags &= ~kLogicEnabled;
             }
+        }
+        return;
+    case LogicClass::Enemy:
+        if (Enemy* enemy = world.enemies.get(id);
+            enemy != nullptr && input.input == LogicInput::Alert) {
+            const bool player = world.playerControls.has(input.activator);
+            EntityId target = input.activator;
+            if (!player) {
+                const Transform* transform = world.transforms.get(id);
+                target = transform != nullptr ? nearestPlayer(transform->position) : EntityId{};
+            }
+            alertEnemy(input.target, *enemy, target);
         }
         return;
     case LogicClass::None:

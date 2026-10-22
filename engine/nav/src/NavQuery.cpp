@@ -133,6 +133,7 @@ bool NavQuery::findPath(Vec3 start, Vec3 goal, const NavFilter& filter, NavPath&
         corner.position = fromDetour(&points[i * 3]);
         corner.area = NavArea::Ground;
         corner.mover = kNoNavMover;
+        corner.link = (flags[i] & DT_STRAIGHTPATH_OFFMESH_CONNECTION) != 0;
         // The corner at the goal enters nothing.
         if (entered[i] != 0) {
             unsigned char area = 0;

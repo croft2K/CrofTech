@@ -1,6 +1,7 @@
 #include "croftech/client/GameEvents.h"
 
 #include "croftech/sim/CollisionScene.h"
+#include "croftech/sim/Enemies.h"
 #include "croftech/sim/Firing.h"
 #include "croftech/sim/Health.h"
 
@@ -58,12 +59,13 @@ void GameEvents::update(const State* state, std::uint32_t timeline, const GameLe
 
 void GameEvents::compare(const State& state, const GameLevel& level, const GameSettings& settings,
                          std::vector<GameEvent>& out) {
-    const MovementSettings& movement = settings.movement;
     const World& now = state.world;
     const World& before = m_last->world;
 
-    const std::span<const EntityId> players = now.playerControls.entities();
-    for (const EntityId id : players) {
+    // Players and enemies: every body that moves by the player movement code.
+    const std::span<const EntityId> bodies = now.playerMotions.entities();
+    for (const EntityId id : bodies) {
+        const MovementSettings& movement = movementOf(now, id, settings);
         const Transform* transform = now.transforms.get(id);
         const PlayerMotion* motion = now.playerMotions.get(id);
         const Transform* lastTransform = before.transforms.get(id);
@@ -219,8 +221,7 @@ void GameEvents::compareWeapons(const State& state, const GameLevel& level,
         const float range = std::clamp(weapon.range, 0.0f, 1000.0f);
         for (std::uint32_t pellet = 0; pellet < pellets; ++pellet) {
             const Vec3 direction = pelletDirection(*transform, weapon.spread, random);
-            const ShotHit hit =
-                traceShot(scene, now, settings.movement, eye, eye + direction * range, id);
+            const ShotHit hit = traceShot(scene, now, settings, eye, eye + direction * range, id);
             if (hit.fraction >= 1.0f) {
                 continue;
             }

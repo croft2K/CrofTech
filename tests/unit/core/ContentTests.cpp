@@ -79,7 +79,8 @@ TEST_CASE("layered config returns every layer lowest first, then only after chan
 TEST_CASE("game manifests load from games/<name>/game.cfg") {
     TempDirectory temp;
     writeFile(temp.path() / "sandbox/game.cfg",
-              "title  My Sandbox\nstart_map  arena\nweapons  pistol\tsuper-shotgun  rail_gun\n");
+              "title  My Sandbox\nstart_map  arena\nweapons  pistol\tsuper-shotgun  rail_gun\n"
+              "enemies  grunt big_one\n");
     writeFile(temp.path() / "unarmed/game.cfg", "title  Unarmed\n");
     writeFile(temp.path() / "badweapon/game.cfg", "weapons  pistol ../escape\n");
 
@@ -90,6 +91,7 @@ TEST_CASE("game manifests load from games/<name>/game.cfg") {
     CHECK(game->startMap == "arena");
     CHECK(game->root == temp.path() / "sandbox");
     CHECK(game->weapons == std::vector<std::string>{"pistol", "super-shotgun", "rail_gun"});
+    CHECK(game->enemies == std::vector<std::string>{"grunt", "big_one"});
     CHECK(ct::loadGameManifest(temp.path(), "unarmed", error)->weapons.empty());
     CHECK_FALSE(ct::loadGameManifest(temp.path(), "badweapon", error).has_value());
     CHECK(error.find("../escape") != std::string::npos);

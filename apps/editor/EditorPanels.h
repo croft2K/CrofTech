@@ -37,6 +37,7 @@ public:
     void drawInspector(EditorDocument& document, const EditorSettings& settings);
     // The game's weapons, which pickups choose from.
     void setWeaponNames(std::vector<std::string> names) { m_weaponNames = std::move(names); }
+    void setEnemyNames(std::vector<std::string> names) { m_enemyNames = std::move(names); }
 
 private:
     // Sides, steps, thickness and facing for the shape being drawn.
@@ -84,6 +85,7 @@ private:
     EntityOutput m_newOutput;
     std::string m_problem;
     std::vector<std::string> m_weaponNames;
+    std::vector<std::string> m_enemyNames;
 
     // The rows shown in the hierarchy, in order, for Shift-click ranges: this frame's so far and
     // last frame's, which every click sees in full.

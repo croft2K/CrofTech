@@ -20,6 +20,8 @@ struct NavAgent {
     float height = 1.8f;
     float climb = 0.457f;          // tallest step up or down
     float minGroundNormalZ = 0.7f; // steeper surfaces aren't walked on
+
+    friend bool operator==(const NavAgent&, const NavAgent&) = default;
 };
 
 // What a polygon or link of the mesh is. Paths give it at each corner, so whatever follows one

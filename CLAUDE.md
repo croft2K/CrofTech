@@ -58,7 +58,17 @@ did, for tracers and sparks, and each weapon fires with `sounds/<weapon>_fire.wa
 (the `pickup` class: health, armour, ammo or a weapon named from the game's list) are taken by
 walking into them when needed, come back after their respawn time (or never, for single
 player) and fire on_pickup; health and armour above `rules.max_health`/`max_armour` drain away.
-`--map weapons_test` is a small arena with all of them.
+`--map weapons_test` is a small arena with all of them. Enemies (the `enemy` class, of a kind
+from the game's list: `enemies` in `game.cfg`, each kind a file `enemies/<name>.cfg` with
+variables `enemy.<name>.<setting>`) are bodies moved by the player movement code at their kind's
+size and speed (`movementOf` in `sim/Enemies.h`; every system that touches bodies uses each one's
+own box), driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
+`sim/Enemy.h`). Each stays idle until it sees a player in its view cone with nothing in between,
+is hurt, or gets the alert input (on_alert); then it reacts, chases along the navigation mesh
+(opening doors, waiting for and riding lifts, going round doors it can't open) and strikes in
+reach. on_death goes to the wiring, and the body goes after its corpse time. Players hold lifts
+at their end; enemies don't, so a lift carries a waiting enemy back. `--map enemies_test` has
+chargers in the open, on a platform with a lift, behind a door and beyond lava.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -116,7 +126,7 @@ content layers; a name with an extension is a path. Shipped games will later coo
 assets into packed binary files; the text file stays the source.
 
 CrofTech is an engine; games are built on it. Each game lives in `games/<name>/` with a `game.cfg`
-(title, start_map, weapons) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
+(title, start_map, weapons, enemies) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
 Config files merge setting by setting (a game lists only what it changes); other files are taken
 whole from the highest layer that has them (`ct::ContentPaths`, `ct::LayeredConfig`). Development
 builds read content from the source tree and reload config whenever it is saved. Debug builds
@@ -149,7 +159,7 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
                      knows nothing of the simulation, so the editor can build one too
                      (core, level)
     engine/sim       ECS world, components, collision, movement, level logic and gameplay
-                     (health, damage, weapons, pickups; later AI, encounters)
+                     (health, damage, weapons, pickups, enemies; later encounters)
                      (core, level, nav)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    client connection, LocalGame (server thread + client over an in-memory
@@ -192,8 +202,8 @@ Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct
 - Floats: no fast-math; FMA contraction is disabled build-wide (`-ffp-contract=off`). Do not
   re-enable it or add `/fp:fast`.
 - No `std::sin`/`std::cos`/`std::atan2` etc. in simulation code: their results differ between
-  platforms, and the Linux server must match Windows clients. Use `ct::sinCos` (core/Angle.h) and
-  `+ - * / sqrt` only. Angles in the simulation are 16-bit turn fractions, as in `UserCmd`.
+  platforms, and the Linux server must match Windows clients. Use `ct::sinCos`,
+  `ct::directionToAngle` and `ct::pitchToward` (core/Angle.h) and `+ - * / sqrt` only. Angles in the simulation are 16-bit turn fractions, as in `UserCmd`.
 - Every component has a schema next to it (`Schema<T>`, one `CT_FIELD` per member, or one
   `CT_FIELD_ELEMENT` per element of a `std::array` member, core/Schema.h)
   and a `static_assert(describesEveryByte(...))`, which fails if a field is missing from the schema
@@ -203,8 +213,9 @@ Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct
   Register every new component pool in `forEachPool` (sim/World.h).
 - Units are metres and seconds, Z up. Everything a game tunes reaches the simulation as a
   `GameSettings` (sim/GameSettings.h): `MovementSettings` from `config/movement.cfg`,
-  `RulesSettings` (health, armour, respawning) from `config/rules.cfg`, and a `WeaponSettings` for
-  each weapon the game lists. `gameConfigFiles` names the files.
+  `RulesSettings` (health, armour, respawning) from `config/rules.cfg`, a `WeaponSettings` for
+  each weapon the game lists and an `EnemySettings` for each kind of enemy. `gameConfigFiles`
+  names the files.
 - All damage goes through `applyDamage` (sim/Damage.h), so armour, knockback and death work the
   same for every source.
 - Components are trivially copyable plain structs with no pointers. Refer to other entities by

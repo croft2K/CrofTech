@@ -28,6 +28,12 @@ void addBox(std::vector<WorldVertex>& out, Vec3 centre, Vec3 halfExtents, float 
 void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
                 LocalGame::Clock::time_point now, bool includeOwn);
 
+// Every enemy in the newest snapshot as a body the size of its kind's box, in a dark colour of its
+// kind with pale eyes facing where it looks, and an arm raised while a swing winds up; the dead
+// lie flat.
+void addEnemies(std::vector<WorldVertex>& out, const LocalGame& game,
+                LocalGame::Clock::time_point now);
+
 // Every rocket and grenade still flying in the newest snapshot, as a small box: pale for those that
 // fly straight, dark for those that bounce.
 void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,

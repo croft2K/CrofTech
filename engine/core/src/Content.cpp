@@ -91,21 +91,23 @@ std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesD
             manifest.title = entry.value;
         } else if (entry.key == "start_map") {
             manifest.startMap = entry.value;
-        } else if (entry.key == "weapons") {
-            manifest.weapons.clear();
+        } else if (entry.key == "weapons" || entry.key == "enemies") {
+            const bool weapons = entry.key == "weapons";
+            std::vector<std::string>& names = weapons ? manifest.weapons : manifest.enemies;
+            names.clear();
             std::size_t start = 0;
             while (start < entry.value.size()) {
                 const std::size_t end =
                     std::min(entry.value.find_first_of(" 	", start), entry.value.size());
-                const std::string_view weapon =
+                const std::string_view item =
                     std::string_view(entry.value).substr(start, end - start);
-                if (!weapon.empty()) {
-                    if (!validName(weapon)) {
-                        error = std::format("game.cfg: line {}: invalid weapon name '{}'",
-                                            entry.line, weapon);
+                if (!item.empty()) {
+                    if (!validName(item)) {
+                        error = std::format("game.cfg: line {}: invalid {} name '{}'", entry.line,
+                                            weapons ? "weapon" : "enemy", item);
                         return std::nullopt;
                     }
-                    manifest.weapons.emplace_back(weapon);
+                    names.emplace_back(item);
                 }
                 start = end + 1;
             }

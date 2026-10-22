@@ -82,8 +82,8 @@ CommandLine parseCommandLine(int argc, char** argv) {
 // The game's settings: the player size spawn markers show, and how play-in-editor plays.
 ct::GameSettings loadGameSettings(const ct::ContentPaths& content, const ct::GameManifest& game) {
     ct::Console console;
-    ct::registerGameCVars(console, game.weapons);
-    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game.weapons)) {
+    ct::registerGameCVars(console, game.weapons, game.enemies);
+    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game.weapons, game.enemies)) {
         ct::LayeredConfig config(content, file.path);
         if (const auto layers = config.reloadIfChanged()) {
             for (const std::string& problem : console.applyConfig(file.prefix, *layers)) {
@@ -91,7 +91,7 @@ ct::GameSettings loadGameSettings(const ct::ContentPaths& content, const ct::Gam
             }
         }
     }
-    return ct::gameSettingsFromCVars(console, game.weapons);
+    return ct::gameSettingsFromCVars(console, game.weapons, game.enemies);
 }
 
 ct::Camera startingCamera(const ct::Level& level) {
@@ -297,6 +297,7 @@ int main(int argc, char** argv) {
     ct::ConsoleWindow consoleWindow(console, ct::ConsoleStyle::Panel);
     ct::EditorPanels panels;
     panels.setWeaponNames(game->weapons);
+    panels.setEnemyNames(game->enemies);
     bool running = true;
     bool quitRequested = false;
     bool flying = false;
@@ -653,6 +654,7 @@ int main(int argc, char** argv) {
             shapes.clear();
             effects.clear();
             ct::addPlayers(shapes, play->game(), now, false);
+            ct::addEnemies(shapes, play->game(), now);
             ct::addProjectiles(shapes, play->game(), now);
             ct::addPickups(shapes, play->game(), now);
             ct::addViewWeapon(shapes, play->game(), camera.position, camera.yawRadians,

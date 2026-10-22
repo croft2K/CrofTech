@@ -1102,15 +1102,19 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
                 if (ImGui::Checkbox("##value", &on)) {
                     setValue(key, on ? "1" : "0");
                 }
-            } else if (property.type == PropertyType::Weapon) {
+            } else if (property.type == PropertyType::Weapon ||
+                       property.type == PropertyType::Enemy) {
+                const bool weapon = property.type == PropertyType::Weapon;
+                const std::vector<std::string>& names = weapon ? m_weaponNames : m_enemyNames;
+                const char* none = weapon ? "(none)" : "(the first)";
                 const std::string current(propertyValue(entity, property));
-                if (ImGui::BeginCombo("##value", current.empty() ? "(none)" : current.c_str())) {
-                    if (ImGui::Selectable("(none)", current.empty())) {
+                if (ImGui::BeginCombo("##value", current.empty() ? none : current.c_str())) {
+                    if (ImGui::Selectable(none, current.empty())) {
                         setValue(key, "");
                     }
-                    for (const std::string& weapon : m_weaponNames) {
-                        if (ImGui::Selectable(weapon.c_str(), weapon == current)) {
-                            setValue(key, weapon);
+                    for (const std::string& name : names) {
+                        if (ImGui::Selectable(name.c_str(), name == current)) {
+                            setValue(key, name);
                         }
                     }
                     ImGui::EndCombo();

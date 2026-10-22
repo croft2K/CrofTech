@@ -4,6 +4,7 @@
 #include "croftech/core/Random.h"
 #include "croftech/sim/CollisionScene.h"
 #include "croftech/sim/Damage.h"
+#include "croftech/sim/Enemies.h"
 #include "croftech/sim/GameLevel.h"
 
 #include <algorithm>
@@ -129,7 +130,6 @@ void explode(const CollisionScene& scene, const GameSettings& settings,
         return;
     }
     World& world = state.world;
-    const Vec3 half = settings.movement.halfExtents;
     const std::span<const EntityId> targets = world.healths.entities();
     for (std::size_t i = 0; i < targets.size(); ++i) {
         const EntityId target = targets[i];
@@ -137,6 +137,7 @@ void explode(const CollisionScene& scene, const GameSettings& settings,
         if (target == direct || transform == nullptr || isDead(world.healths.components()[i])) {
             continue;
         }
+        const Vec3 half = movementOf(world, target, settings).halfExtents;
         const Vec3 centre = transform->position;
         const float distance =
             length(closestPoint({centre - half, centre + half}, position) - position);
@@ -180,7 +181,7 @@ void fire(const CollisionScene& scene, const GameSettings& settings, EntityId sh
             continue;
         }
         const ShotHit hit =
-            traceShot(scene, state.world, settings.movement, eye, eye + direction * range, shooter);
+            traceShot(scene, state.world, settings, eye, eye + direction * range, shooter);
         if (hit.target.isValid()) {
             Damage damage;
             damage.amount = weapon.damage;
@@ -194,7 +195,7 @@ void fire(const CollisionScene& scene, const GameSettings& settings, EntityId sh
 
 } // namespace
 
-ShotHit traceShot(const CollisionScene& scene, const World& world, const MovementSettings& movement,
+ShotHit traceShot(const CollisionScene& scene, const World& world, const GameSettings& settings,
                   Vec3 start, Vec3 end, EntityId shooter) {
     const TraceResult solid = scene.traceBox(start, end, {});
     ShotHit hit;
@@ -210,8 +211,8 @@ ShotHit traceShot(const CollisionScene& scene, const World& world, const Movemen
         if (targets[i] == shooter || isDead(healths[i]) || transform == nullptr) {
             continue;
         }
-        const Aabb box{transform->position - movement.halfExtents,
-                       transform->position + movement.halfExtents};
+        const Vec3 half = movementOf(world, targets[i], settings).halfExtents;
+        const Aabb box{transform->position - half, transform->position + half};
         float fraction = 1.0f;
         if (segmentEntersBox(start, delta, box, fraction) && fraction < hit.fraction) {
             hit = {fraction, start + delta * fraction, {}, targets[i], {}};
@@ -335,7 +336,7 @@ void runProjectiles(const CollisionScene& scene, const GameLevel& level,
         const float fall = settings.movement.gravity * weapon->projectileGravity * kTickSeconds;
         projectile.velocity.z -= fall * 0.5f;
         const Vec3 start = transform->position;
-        const ShotHit hit = traceShot(scene, world, settings.movement, start,
+        const ShotHit hit = traceShot(scene, world, settings, start,
                                       start + projectile.velocity * kTickSeconds, projectile.owner);
         transform->position = hit.position;
         if (hit.target.isValid() || (hit.fraction < 1.0f && weapon->bounce <= 0.0f)) {

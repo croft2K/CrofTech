@@ -50,6 +50,47 @@ constexpr SinCos sinCos(std::int16_t angle) noexcept {
     return sinCos(static_cast<std::uint16_t>(angle));
 }
 
+// The yaw of a direction on the ground plane (0 is +x, a quarter turn +y): atan2 built from
+// + - * / only, like sinCos, so every platform agrees. Within an angle unit; (0, 0) gives 0.
+constexpr std::uint16_t directionToAngle(float x, float y) noexcept {
+    const float ax = x < 0.0f ? -x : x;
+    const float ay = y < 0.0f ? -y : y;
+    if (ax == 0.0f && ay == 0.0f) {
+        return 0;
+    }
+    // atan on [0, 1] (a minimax polynomial, error under 1e-5 radians), then the octant.
+    const bool steep = ay > ax;
+    const float t = steep ? ax / ay : ay / ax;
+    const float t2 = t * t;
+    float radians =
+        t *
+        (0.99997726f +
+         t2 * (-0.33262347f +
+               t2 * (0.19354346f + t2 * (-0.11643287f + t2 * (0.05265332f - t2 * 0.01172120f)))));
+    if (steep) {
+        radians = kPi * 0.5f - radians;
+    }
+    float units = radians * (16384.0f / (kPi * 0.5f));
+    if (x < 0.0f) {
+        units = 32768.0f - units;
+    }
+    if (y < 0.0f) {
+        units = 65536.0f - units;
+    }
+    return static_cast<std::uint16_t>(static_cast<std::uint32_t>(units + 0.5f) & 0xFFFFu);
+}
+
+// The pitch that looks along a direction that goes this far across and this far up, held within
+// kMaxPitch.
+constexpr std::int16_t pitchToward(float across, float up) noexcept {
+    const std::uint16_t angle = directionToAngle(across < 0.0f ? -across : across, up);
+    const std::int32_t pitch =
+        angle >= 32768 ? static_cast<std::int32_t>(angle) - kAngleUnitsPerTurn : angle;
+    return static_cast<std::int16_t>(pitch < -kMaxPitch  ? -kMaxPitch
+                                     : pitch > kMaxPitch ? kMaxPitch
+                                                         : pitch);
+}
+
 // Conversions for presentation code (camera, editor). Not for use inside the simulation.
 constexpr float angleToRadians(std::int32_t units) noexcept {
     return static_cast<float>(units) * (2.0f * kPi / static_cast<float>(kAngleUnitsPerTurn));

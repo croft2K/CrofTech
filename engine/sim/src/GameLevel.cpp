@@ -1,8 +1,11 @@
 #include "croftech/sim/GameLevel.h"
 
+#include "croftech/core/Angle.h"
 #include "croftech/level/EntityClasses.h"
+#include "croftech/sim/Enemies.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <format>
 #include <optional>
@@ -12,16 +15,17 @@ namespace ct {
 namespace {
 
 constexpr std::string_view kEventNames[] = {
-    "on_enter",       "on_exit",        "on_trigger",   "on_reached",       "on_timer",
-    "on_leave_start", "on_reached_end", "on_leave_end", "on_reached_start", "on_pickup",
+    "on_enter",         "on_exit",        "on_trigger",     "on_reached",
+    "on_timer",         "on_leave_start", "on_reached_end", "on_leave_end",
+    "on_reached_start", "on_pickup",      "on_alert",       "on_death",
 };
-static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnPickup) + 1);
+static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnDeath) + 1);
 
 constexpr std::string_view kInputNames[] = {
     "enable", "disable", "toggle",      "trigger",       "add",    "reset",
-    "start",  "stop",    "move_to_end", "move_to_start", "resume",
+    "start",  "stop",    "move_to_end", "move_to_start", "resume", "alert",
 };
-static_assert(std::size(kInputNames) == static_cast<std::size_t>(LogicInput::Resume) + 1);
+static_assert(std::size(kInputNames) == static_cast<std::size_t>(LogicInput::Alert) + 1);
 
 template <typename Enum, std::size_t N>
 std::optional<Enum> findByName(const std::string_view (&names)[N], std::string_view name) {
@@ -59,6 +63,9 @@ LogicClass logicClassOf(std::string_view className) {
     }
     if (className == kPickupClass) {
         return LogicClass::Pickup;
+    }
+    if (className == kEnemyClass) {
+        return LogicClass::Enemy;
     }
     return LogicClass::None;
 }
@@ -213,7 +220,7 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         }
     }
     for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
-        readEntity(level, i, settings.weapons);
+        readEntity(level, i, settings);
         if (hasModel(m_entities[i].logicClass)) {
             if (owned[i].empty()) {
                 m_warnings.push_back(std::format("{} has no brushes", describe(level, i)));
@@ -224,14 +231,24 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         }
     }
     resolveOutputs(level);
-    spawnLogic();
+    spawnLogic(settings);
     findKillHeight(level);
+    // While the level loads, rather than on an enemy's first thought.
+    for (const Entity& entity : m_entities) {
+        if (entity.logicClass == LogicClass::Enemy && entity.enemyType < settings.enemies.size()) {
+            navMesh(navAgent(settings.enemies[entity.enemyType].movement));
+        }
+    }
 }
 
-const NavMesh& GameLevel::navMesh() const {
-    std::call_once(m_navBuilt,
-                   [this] { m_navMesh = std::make_unique<NavMesh>(m_navInput, m_navAgent); });
-    return *m_navMesh;
+const NavMesh& GameLevel::navMesh(const NavAgent& agent) const {
+    const std::scoped_lock lock(m_navMutex);
+    for (const std::unique_ptr<NavMesh>& mesh : m_navMeshes) {
+        if (mesh->agent() == agent) {
+            return *mesh;
+        }
+    }
+    return *m_navMeshes.emplace_back(std::make_unique<NavMesh>(m_navInput, agent));
 }
 
 void GameLevel::findKillHeight(const Level& level) {
@@ -258,8 +275,8 @@ void GameLevel::findKillHeight(const Level& level) {
     m_killHeight = lowest - kOutOfWorldDepth;
 }
 
-void GameLevel::readEntity(const Level& level, std::uint32_t index,
-                           std::span<const WeaponSettings> weapons) {
+void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSettings& settings) {
+    const std::span<const WeaponSettings> weapons = settings.weapons;
     const LevelEntity& levelEntity = level.entities[index];
     Entity& entity = m_entities[index];
     entity.logicClass = logicClassOf(levelEntity.className);
@@ -339,6 +356,31 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index,
         } else if (needsWeapon && entity.weapon == kNoWeapon) {
             m_warnings.push_back(
                 std::format("{}: the game has no weapon '{}'", describe(level, index), weapon));
+        }
+        break;
+    }
+    case LogicClass::Enemy: {
+        entity.position = vectorProperty(levelEntity, *entityClass, "origin");
+        const double degrees = angleProperty(levelEntity, *entityClass, "yaw");
+        entity.yaw = static_cast<std::uint16_t>(
+            std::llround(degrees / 360.0 * static_cast<double>(kAngleUnitsPerTurn)) & 0xFFFF);
+        const std::string_view type = textProperty(levelEntity, *entityClass, "type");
+        if (settings.enemies.empty()) {
+            m_warnings.push_back(std::format("{}: the game has no enemies (enemies in game.cfg)",
+                                             describe(level, index)));
+            break;
+        }
+        if (type.empty()) {
+            entity.enemyType = 0;
+        }
+        for (std::uint32_t i = 0; i < settings.enemies.size(); ++i) {
+            if (settings.enemies[i].name == type) {
+                entity.enemyType = i;
+            }
+        }
+        if (entity.enemyType == kNoEnemyType) {
+            m_warnings.push_back(
+                std::format("{}: the game has no enemy '{}'", describe(level, index), type));
         }
         break;
     }
@@ -423,7 +465,7 @@ void GameLevel::resolveOutputs(const Level& level) {
     }
 }
 
-void GameLevel::spawnLogic() {
+void GameLevel::spawnLogic(const GameSettings& settings) {
     m_start = std::make_unique<State>();
     World& world = m_start->world;
     std::uint32_t spawned = 0;
@@ -475,6 +517,12 @@ void GameLevel::spawnLogic() {
         }
         case LogicClass::Pickup:
             world.pickups.add(entity.id, {enabled, 0, {}});
+            break;
+        case LogicClass::Enemy:
+            if (entity.enemyType < settings.enemies.size()) {
+                makeEnemy(world, entity.id, settings, entity.enemyType, entity.position,
+                          entity.yaw);
+            }
             break;
         case LogicClass::None:
             break;

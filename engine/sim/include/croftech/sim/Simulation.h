@@ -6,11 +6,13 @@
 #include "croftech/sim/World.h"
 
 #include <cstdint>
+#include <memory>
 
 namespace ct {
 
 class CollisionScene;
 class GameLevel;
+class NavQueries;
 
 // The game simulation. step() is a pure function of the previous state, the inputs and the static
 // level: no clock, no I/O, no globals. The same code runs on the server, in client prediction and
@@ -19,6 +21,9 @@ class Simulation {
 public:
     // The level must outlive the simulation.
     Simulation(const GameLevel& level, const GameSettings& settings);
+    ~Simulation();
+    Simulation(const Simulation&) = delete;
+    Simulation& operator=(const Simulation&) = delete;
 
     // Settings may only change between ticks.
     void setSettings(const GameSettings& settings) { m_settings = settings; }
@@ -36,6 +41,8 @@ private:
 
     const GameLevel* m_level;
     GameSettings m_settings;
+    // Working memory for enemies' path searches, which leaves no trace in the results.
+    std::unique_ptr<NavQueries> m_navQueries;
 };
 
 // Spawns a player standing on the spawn point with the starting health, armour and weapons (raised

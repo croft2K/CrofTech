@@ -28,6 +28,7 @@ enum class LogicClass : std::uint8_t {
     Timer,
     Mover,
     Pickup,
+    Enemy,
 };
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
@@ -43,6 +44,8 @@ enum class LogicEvent : std::uint8_t {
     OnLeaveEnd,
     OnReachedStart,
     OnPickup,
+    OnAlert,
+    OnDeath,
 };
 
 enum class LogicInput : std::uint8_t {
@@ -57,6 +60,7 @@ enum class LogicInput : std::uint8_t {
     MoveToEnd,
     MoveToStart,
     Resume,
+    Alert,
 };
 
 // What sets a mover going besides its inputs (the mover class's "activate").
@@ -66,6 +70,7 @@ enum class MoverActivation : std::uint8_t { Input, Touch, Stand };
 enum class PickupItem : std::uint8_t { Health, Armour, Ammo, Weapon };
 
 inline constexpr std::uint32_t kNoWeapon = 0xFFFFFFFFu;
+inline constexpr std::uint32_t kNoEnemyType = 0xFFFFFFFFu;
 
 // What health and armour pickups give when their amount is 0.
 inline constexpr std::int32_t kUsualPickupHealth = 25;
@@ -138,13 +143,17 @@ public:
         bool startMoving = false;
         bool startAtEnd = false;
 
-        // Pickups.
-        Vec3 position; // the middle of the box that takes it
+        // Pickups and enemies.
+        Vec3 position; // the middle of the box that takes a pickup; an enemy's feet
         PickupItem item = PickupItem::Health;
         std::int32_t amount = 0;          // 0 is the usual for the item
         std::int32_t limit = 0;           // 0 is the rules' maximum
         std::uint32_t weapon = kNoWeapon; // GameSettings::weapons index
         std::int32_t respawnTicks = -1;   // -1 never comes back
+
+        // Enemies.
+        std::uint32_t enemyType = kNoEnemyType; // GameSettings::enemies index
+        std::uint16_t yaw = 0;
 
         // Where a mover's brushes are when it has travelled the distance: exactly its move at
         // the end.
@@ -176,14 +185,17 @@ public:
     // What was wrong with the level's logic (unknown inputs, targets that don't exist, values out
     // of range). Each was skipped or clamped; the level still plays.
     std::span<const std::string> warnings() const { return m_warnings; }
-    // Built on the first call, from any thread; its own warnings are in NavMesh::warnings.
-    const NavMesh& navMesh() const;
+    // The navigation mesh for agents the player's size, and for agents of any other size. Each is
+    // built on the first call that asks for it, from any thread, except that the meshes for the
+    // kinds of enemy placed in the level are built with the level. Their own warnings are in
+    // NavMesh::warnings.
+    const NavMesh& navMesh() const { return navMesh(m_navAgent); }
+    const NavMesh& navMesh(const NavAgent& agent) const;
 
 private:
-    void readEntity(const Level& level, std::uint32_t index,
-                    std::span<const WeaponSettings> weapons);
+    void readEntity(const Level& level, std::uint32_t index, const GameSettings& settings);
     void resolveOutputs(const Level& level);
-    void spawnLogic();
+    void spawnLogic(const GameSettings& settings);
     void findKillHeight(const Level& level);
 
     CollisionWorld m_collision;
@@ -197,8 +209,8 @@ private:
     std::vector<std::string> m_warnings;
     NavInput m_navInput;
     NavAgent m_navAgent;
-    mutable std::once_flag m_navBuilt;
-    mutable std::unique_ptr<NavMesh> m_navMesh;
+    mutable std::mutex m_navMutex;
+    mutable std::vector<std::unique_ptr<NavMesh>> m_navMeshes;
 };
 
 } // namespace ct

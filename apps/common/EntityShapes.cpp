@@ -2,6 +2,7 @@
 
 #include "croftech/core/Angle.h"
 #include "croftech/level/EntityClasses.h"
+#include "croftech/sim/Enemies.h"
 #include "croftech/sim/Health.h"
 
 #include <algorithm>
@@ -33,6 +34,14 @@ constexpr float kPickupBobPerSecond = 2.2f;
 constexpr Vec3 kViewWeaponBarrelColor{0.12f, 0.12f, 0.13f};
 
 // Player colours by input slot, linear RGB.
+// Dark, so enemies stand apart from players' bright colours.
+constexpr std::array<Vec3, 4> kEnemyColors{{
+    {0.35f, 0.08f, 0.06f},
+    {0.12f, 0.16f, 0.10f},
+    {0.22f, 0.12f, 0.28f},
+    {0.30f, 0.24f, 0.10f},
+}};
+
 constexpr std::array<Vec3, 8> kPlayerColors{{
     {0.80f, 0.25f, 0.15f},
     {0.15f, 0.40f, 0.85f},
@@ -130,6 +139,52 @@ void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
         const Vec3 visor{half.x * 0.25f, half.y * 0.7f, 0.08f};
         addBox(out, feet + Vec3{0.0f, 0.0f, movement.eyeHeight} + forward * (half.x + visor.x),
                visor, yaw, {0.05f, 0.05f, 0.06f});
+    }
+}
+
+void addEnemies(std::vector<WorldVertex>& out, const LocalGame& game,
+                LocalGame::Clock::time_point now) {
+    const State* state = game.latestState();
+    if (state == nullptr) {
+        return;
+    }
+    const World& world = state->world;
+    const std::span<const EntityId> enemies = world.enemies.entities();
+    for (std::size_t i = 0; i < enemies.size(); ++i) {
+        const EntityId id = enemies[i];
+        const Enemy& enemy = world.enemies.components()[i];
+        const std::optional<Transform> transform = game.transform(id, now);
+        if (!transform) {
+            continue;
+        }
+        const MovementSettings& movement = movementOf(world, id, game.settings());
+        const Vec3 color = kEnemyColors[enemy.type % kEnemyColors.size()];
+        const float yaw = angleToRadians(transform->yaw);
+        const Vec3 half = movement.halfExtents;
+        const Vec3 feet = transform->position - Vec3{0.0f, 0.0f, half.z};
+        const Vec3 forward{std::cos(yaw), std::sin(yaw), 0.0f};
+        const Health* health = world.healths.get(id);
+        if (health != nullptr && isDead(*health)) {
+            const Vec3 lying{half.z, half.y, half.x * 0.6f};
+            addBox(out, feet + forward * half.z + Vec3{0.0f, 0.0f, lying.z}, lying, yaw,
+                   color * 0.5f);
+            continue;
+        }
+        addBox(out, transform->position, half, yaw, color);
+        const Vec3 right{std::sin(yaw), -std::cos(yaw), 0.0f};
+        const Vec3 eye{0.05f, half.y * 0.15f, 0.05f};
+        const Vec3 eyes = feet + Vec3{0.0f, 0.0f, movement.eyeHeight} + forward * (half.x + eye.x);
+        for (const float side : {-1.0f, 1.0f}) {
+            addBox(out, eyes + right * (side * half.y * 0.4f), eye, yaw, {0.95f, 0.85f, 0.4f});
+        }
+        if (enemyState(enemy) == EnemyState::Attack) {
+            // An arm raised above its head, as the swing winds up.
+            const Vec3 arm{0.12f, 0.12f, half.z * 0.5f};
+            addBox(out,
+                   transform->position + right * (half.y + arm.y) +
+                       Vec3{0.0f, 0.0f, half.z + arm.z * 0.5f},
+                   arm, yaw, color * 1.3f);
+        }
     }
 }
 

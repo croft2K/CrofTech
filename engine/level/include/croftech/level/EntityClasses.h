@@ -26,7 +26,11 @@ enum class PropertyType : std::uint8_t {
     Angle,  // degrees
     Choice, // one of a list of words
     Weapon, // the name of one of the game's weapons (its game.cfg lists them), or empty
+    Enemy,  // the name of one of the game's kinds of enemy (its game.cfg lists them), or empty
 };
+
+// Enemies placed in a level, standing where their origin is.
+inline constexpr std::string_view kEnemyClass = "enemy";
 
 // Items players pick up by walking into them. The origin is where one rests; it is taken by
 // touching this box above it.
@@ -84,6 +88,9 @@ bool checkEntityClassProperties(const LevelEntity& entity, const EntityClassInfo
 // don't parse give the type's zero; checkEntityClassProperties first to report them.
 float numberProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                      std::string_view key);
+// Degrees.
+float angleProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
+                    std::string_view key);
 std::uint32_t countProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                             std::string_view key);
 bool flagProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
@@ -93,6 +100,7 @@ Vec3 vectorProperty(const LevelEntity& entity, const EntityClassInfo& entityClas
 // The index of the value in the property's choices.
 std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                            std::string_view key);
+// Text, names, weapons and enemies.
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key);
 

@@ -143,24 +143,24 @@ TEST_CASE("a shot hits the nearest living target's box, never the shooter's") {
     const ct::Vec3 start{0.0f, 0.0f, 1.0f};
     const ct::Vec3 end{20.0f, 0.0f, 1.0f};
 
-    ct::ShotHit hit = ct::traceShot(scene, sim.state().world, sim.movement(), start, end, shooter);
+    ct::ShotHit hit = ct::traceShot(scene, sim.state().world, sim.settings(), start, end, shooter);
     CHECK(hit.target == nearer);
     // The near face of its box: 5 m less half the 0.8 m width.
     CHECK(hit.position.x == doctest::Approx(4.6f));
     CHECK(hit.fraction == doctest::Approx(4.6f / 20.0f));
 
     ct::kill(sim.state(), nearer, ct::DamageKind::Generic);
-    hit = ct::traceShot(scene, sim.state().world, sim.movement(), start, end, shooter);
+    hit = ct::traceShot(scene, sim.state().world, sim.settings(), start, end, shooter);
     CHECK(hit.target == further);
 
     // Passing over everyone's heads, it reaches the end.
-    hit = ct::traceShot(scene, sim.state().world, sim.movement(), {0.0f, 0.0f, 3.0f},
+    hit = ct::traceShot(scene, sim.state().world, sim.settings(), {0.0f, 0.0f, 3.0f},
                         {20.0f, 0.0f, 3.0f}, shooter);
     CHECK_FALSE(hit.target.isValid());
     CHECK(hit.fraction == 1.0f);
 
     // Straight down, it stops at the floor, facing up.
-    hit = ct::traceShot(scene, sim.state().world, sim.movement(), {-3.0f, 0.0f, 1.0f},
+    hit = ct::traceShot(scene, sim.state().world, sim.settings(), {-3.0f, 0.0f, 1.0f},
                         {-3.0f, 0.0f, -5.0f}, shooter);
     CHECK_FALSE(hit.target.isValid());
     CHECK(hit.position.z == doctest::Approx(0.0f).epsilon(0.01));

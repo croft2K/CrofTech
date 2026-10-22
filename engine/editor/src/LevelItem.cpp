@@ -103,7 +103,8 @@ std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExten
     if (!origin) {
         return std::nullopt;
     }
-    if (entity.className == kPlayerSpawnClass) {
+    // Enemies are drawn the player's size until markers know each kind's.
+    if (entity.className == kPlayerSpawnClass || entity.className == kEnemyClass) {
         const Vec3 half = playerHalfExtents;
         return Aabb{*origin - Vec3{half.x, half.y, 0.0f},
                     *origin + Vec3{half.x, half.y, half.z * 2.0f}};

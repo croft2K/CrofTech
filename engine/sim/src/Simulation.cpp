@@ -1,6 +1,7 @@
 #include "croftech/sim/Simulation.h"
 
 #include "LevelLogic.h"
+#include "NavQueries.h"
 
 #include "croftech/core/Assert.h"
 #include "croftech/core/Hash.h"
@@ -37,7 +38,9 @@ void placePlayer(World& world, const GameSettings& settings, const SpawnPoint& s
 } // namespace
 
 Simulation::Simulation(const GameLevel& level, const GameSettings& settings)
-    : m_level(&level), m_settings(settings) {}
+    : m_level(&level), m_settings(settings), m_navQueries(std::make_unique<NavQueries>()) {}
+
+Simulation::~Simulation() = default;
 
 void Simulation::step(const State& prev, const InputSet& inputs, State& next) const {
     CT_PROFILE_ZONE();
@@ -50,12 +53,13 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     LevelLogic logic(*m_level, next);
     logic.deliverPendingInputs();
     logic.runTimers();
-    logic.runMovers(m_settings.movement);
+    logic.runMovers(m_settings);
     const CollisionScene scene(*m_level, world);
     movePlayers(scene, inputs, next);
+    logic.runEnemies(scene, m_settings, *m_navQueries);
     runProjectiles(scene, *m_level, m_settings, next);
     runWeapons(scene, m_settings, inputs, next);
-    logic.activateMovers(m_settings.movement);
+    logic.activateMovers(m_settings);
     logic.updateTriggers(m_settings.movement);
     logic.runPickups(m_settings);
     logic.runHurtVolumes(m_settings);

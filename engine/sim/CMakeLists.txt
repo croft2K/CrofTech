@@ -4,6 +4,8 @@ add_library(ct_sim STATIC
     include/croftech/sim/ComponentPool.h
     include/croftech/sim/Components.h
     include/croftech/sim/Damage.h
+    include/croftech/sim/Enemies.h
+    include/croftech/sim/Enemy.h
     include/croftech/sim/EntityId.h
     include/croftech/sim/Firing.h
     include/croftech/sim/GameLevel.h
@@ -22,6 +24,7 @@ add_library(ct_sim STATIC
     src/CollisionScene.cpp
     src/CollisionWorld.cpp
     src/Damage.cpp
+    src/Enemies.cpp
     src/Firing.cpp
     src/GameLevel.cpp
     src/GameSettings.cpp
@@ -29,6 +32,7 @@ add_library(ct_sim STATIC
     src/LevelLogic.h
     src/MovementConfig.cpp
     src/Movers.cpp
+    src/NavQueries.h
     src/PlayerMovement.cpp
     src/SaveGame.cpp
     src/Simulation.cpp

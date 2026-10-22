@@ -15,13 +15,14 @@ enum class DamageKind : std::uint32_t {
     Hazard,     // a hurt volume: lava, slime, a kill pit
     OutOfWorld, // fell below the level
     Weapon,     // shot by the attacker
+    Melee,      // struck by the attacker, an enemy
 };
 
 enum HealthFlags : std::uint32_t {
     kHealthDead = 1u << 0,
 };
 
-// Anything that can be hurt and killed: players now, enemies and breakables later. Damage only
+// Anything that can be hurt and killed: players and enemies, and breakables later. Damage only
 // ever changes it through applyDamage (sim/Damage.h).
 struct Health {
     std::int32_t health = 0;
@@ -43,9 +44,9 @@ struct Schema<Health> {
         CT_FIELD(Health, flags).withFlagNames(kFlagNames),
         CT_FIELD(Health, hurtTick).withDescription("Tick it last took damage; 0 is never"),
         CT_FIELD(Health, hurtKind)
-            .withRange(0, 3)
-            .withDescription(
-                "What hurt it last: 0 generic, 1 hazard, 2 fell out of the world, 3 a weapon"),
+            .withRange(0, 4)
+            .withDescription("What hurt it last: 0 generic, 1 hazard, 2 fell out of the world, "
+                             "3 a weapon, 4 a blow"),
         CT_FIELD(Health, diedTick).withDescription("Tick it died, while dead"),
         CT_FIELD(Health, hazardTick).withDescription("Hurt volumes leave it alone until this tick"),
         CT_FIELD(Health, attacker).withDescription("Who hurt it last"),

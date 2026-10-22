@@ -109,3 +109,38 @@ TEST_CASE("the shipped weapon files set only known settings") {
         CHECK(ct::gameSettingsFromCVars(console, weapons).weapons.at(0).given);
     }
 }
+
+TEST_CASE("enemy files set enemy.<name>.* variables, and each kind moves at its own size") {
+    const std::vector<std::string> weapons;
+    const std::vector<std::string> enemies{"grunt"};
+    const std::vector<ct::GameConfigFile> files = ct::gameConfigFiles(weapons, enemies);
+    REQUIRE(files.size() == 3);
+    CHECK(files[2].path == "enemies/grunt.cfg");
+    CHECK(files[2].prefix == "enemy.grunt.");
+    ct::Console console;
+    ct::registerGameCVars(console, weapons, enemies);
+    console.execute("enemy.grunt.width 1.2; enemy.grunt.height 2.4; enemy.grunt.speed 3");
+    const ct::GameSettings settings = ct::gameSettingsFromCVars(console, weapons, enemies);
+    REQUIRE(settings.enemies.size() == 1);
+    const ct::EnemySettings& grunt = settings.enemies[0];
+    CHECK(grunt.name == "grunt");
+    CHECK(grunt.movement.halfExtents.x == 0.6f);
+    CHECK(grunt.movement.halfExtents.z == 1.2f);
+    CHECK(grunt.movement.maxGroundSpeed == 3.0f);
+    // The rest of its movement is the game's.
+    CHECK(grunt.movement.gravity == settings.movement.gravity);
+}
+
+TEST_CASE("the shipped enemy files set only known settings") {
+    for (const std::string& enemy : {std::string("charger")}) {
+        CAPTURE(enemy);
+        const auto text =
+            ct::readTextFile(std::string(CROFTECH_CONTENT_DIR "/enemies/") + enemy + ".cfg");
+        REQUIRE(text.has_value());
+        ct::Console console;
+        const std::vector<std::string> enemies{enemy};
+        ct::registerGameCVars(console, {}, enemies);
+        CHECK(console.applyConfig(ct::enemyCVarPrefix(enemy), oneLayer(*text)).empty());
+        CHECK(ct::gameSettingsFromCVars(console, {}, enemies).enemies.at(0).meleeDamage > 0);
+    }
+}

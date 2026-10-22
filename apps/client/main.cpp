@@ -250,10 +250,10 @@ int main(int argc, char** argv) {
     ct::logInfo("Game: {}", game->title);
 
     ct::Console console;
-    ct::registerGameCVars(console, game->weapons);
+    ct::registerGameCVars(console, game->weapons, game->enemies);
     const ClientCVars client = registerClientCVars(console);
     std::vector<ConfigFile> configFiles;
-    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game->weapons)) {
+    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game->weapons, game->enemies)) {
         configFiles.push_back({ct::LayeredConfig(content, file.path), file.prefix, file.path});
     }
     configFiles.push_back(
@@ -387,7 +387,7 @@ int main(int argc, char** argv) {
     // The inspector reads a copy, so the simulation thread is never held up by drawing.
     const auto inspectedState = std::make_unique<ct::State>();
 
-    ct::GameSettings settings = ct::gameSettingsFromCVars(console, game->weapons);
+    ct::GameSettings settings = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
     std::uint64_t seenChanges = console.changeCount();
 
     ct::PlayerLook look;
@@ -529,7 +529,7 @@ int main(int argc, char** argv) {
         }
         if (console.changeCount() != seenChanges) {
             seenChanges = console.changeCount();
-            settings = ct::gameSettingsFromCVars(console, game->weapons);
+            settings = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
             localGame->setSettings(settings);
             localGame->setConditions(client.linkConditions());
         }
@@ -608,6 +608,7 @@ int main(int argc, char** argv) {
         shapes.clear();
         effects.clear();
         ct::addPlayers(shapes, *localGame, now, thirdPerson);
+        ct::addEnemies(shapes, *localGame, now);
         ct::addProjectiles(shapes, *localGame, now);
         ct::addPickups(shapes, *localGame, now);
         if (!thirdPerson) {
