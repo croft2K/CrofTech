@@ -45,7 +45,10 @@ pref path (`%APPDATA%/CrofTech/<game>/saves`), never into content. Loading repla
 state (`Server::restore`), and snapshots carry a timeline number so the client follows it back in
 time. Players have health and armour (the HUD in `apps/common/GameHud` is shared with
 play-in-editor); a dead player respawns at the spawn point furthest from other players when fire
-is pressed after `rules.respawn_delay`.
+is pressed after `rules.respawn_delay`. Players carry weapons (`sim/Weapons.h`, fired by
+`runWeapons` in `sim/Firing.h`): each is a file, `weapons/<name>.cfg` (variables
+`weapon.<name>.<setting>`), and a game lists its weapons in `game.cfg` in number-key order. Number
+keys and the mouse wheel choose one (`WeaponSelect` in `apps/common/PlayerInput`).
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -93,7 +96,7 @@ content layers; a name with an extension is a path. Shipped games will later coo
 assets into packed binary files; the text file stays the source.
 
 CrofTech is an engine; games are built on it. Each game lives in `games/<name>/` with a `game.cfg`
-(title, start_map) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
+(title, start_map, weapons) and a `content/` folder. Content is layered: engine `content/` first, then the game's.
 Config files merge setting by setting (a game lists only what it changes); other files are taken
 whole from the highest layer that has them (`ct::ContentPaths`, `ct::LayeredConfig`). Development
 builds read content from the source tree and reload config whenever it is saved. Debug builds
@@ -160,21 +163,24 @@ Every target calls `ct_apply_defaults(<target>)`; test executables also call `ct
 - Fixed 128 Hz tick. `State next = step(const State& prev, const InputSet& inputs, TickIndex tick)`.
   No wall-clock time, globals, I/O, rendering or audio inside a tick.
 - Same build + same platform + same inputs = bit-identical state. Fixed iteration order everywhere;
-  never iterate an unordered container in simulation code. RNG is seeded and stored in the state.
+  never iterate an unordered container in simulation code. Random numbers come from counters
+  kept in the state (`core/Random.h`), such as each player's `Weapons::random`.
 - Floats: no fast-math; FMA contraction is disabled build-wide (`-ffp-contract=off`). Do not
   re-enable it or add `/fp:fast`.
 - No `std::sin`/`std::cos`/`std::atan2` etc. in simulation code: their results differ between
   platforms, and the Linux server must match Windows clients. Use `ct::sinCos` (core/Angle.h) and
   `+ - * / sqrt` only. Angles in the simulation are 16-bit turn fractions, as in `UserCmd`.
-- Every component has a schema next to it (`Schema<T>`, one `CT_FIELD` per member, core/Schema.h)
+- Every component has a schema next to it (`Schema<T>`, one `CT_FIELD` per member, or one
+  `CT_FIELD_ELEMENT` per element of a `std::array` member, core/Schema.h)
   and a `static_assert(describesEveryByte(...))`, which fails if a field is missing from the schema
   or the struct has padding (states are hashed as raw bytes). The schema drives saves
   (`sim/StateSave.h`), the inspector and, later, replication; generic code never names fields.
   Type and field names are stable identifiers in save files: renaming one drops it from old saves.
   Register every new component pool in `forEachPool` (sim/World.h).
 - Units are metres and seconds, Z up. Everything a game tunes reaches the simulation as a
-  `GameSettings` (sim/GameSettings.h): `MovementSettings` from `config/movement.cfg` and
-  `RulesSettings` (health, armour, respawning) from `config/rules.cfg`.
+  `GameSettings` (sim/GameSettings.h): `MovementSettings` from `config/movement.cfg`,
+  `RulesSettings` (health, armour, respawning) from `config/rules.cfg`, and a `WeaponSettings` for
+  each weapon the game lists. `gameConfigFiles` names the files.
 - All damage goes through `applyDamage` (sim/Damage.h), so armour, knockback and death work the
   same for every source.
 - Components are trivially copyable plain structs with no pointers. Refer to other entities by

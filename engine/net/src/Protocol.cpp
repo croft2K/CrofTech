@@ -17,6 +17,9 @@ void writeCommand(ByteWriter& out, const UserCmd& command) {
     out.writeU8(static_cast<std::uint8_t>(command.forward));
     out.writeU8(static_cast<std::uint8_t>(command.side));
     out.writeU16(command.buttons);
+    out.writeU8(command.weapon);
+    out.writeU8(command.subtick);
+    out.writeU16(command.viewDelay);
 }
 
 // -128 never comes from a client's keys or stick, and would make movement asymmetric.
@@ -26,8 +29,12 @@ bool readCommand(ByteReader& in, UserCmd& command) {
     command.forward = static_cast<std::int8_t>(in.readU8());
     command.side = static_cast<std::int8_t>(in.readU8());
     command.buttons = in.readU16();
+    command.weapon = in.readU8();
+    command.subtick = in.readU8();
+    command.viewDelay = in.readU16();
     return in.ok() && std::abs(command.pitch) <= kMaxPitch && command.forward != -128 &&
-           command.side != -128 && (command.buttons & ~kKnownButtons) == 0;
+           command.side != -128 && (command.buttons & ~kKnownButtons) == 0 &&
+           command.weapon <= kMaxWeapons && command.subtick == 0 && command.viewDelay == 0;
 }
 
 } // namespace

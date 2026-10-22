@@ -39,6 +39,9 @@ public:
                 const std::optional<Camera>& from);
 
     void look(float countsX, float countsY);
+    // Number keys and the mouse wheel change weapons (WeaponSelect). Returns whether the event
+    // was one of those.
+    bool handleWeaponEvent(const SDL_Event& event, Clock::time_point now);
     // Once a frame. keys is the keyboard state, or null while the mouse is not captured.
     void update(const bool* keys, Clock::time_point now);
 
@@ -65,6 +68,7 @@ private:
     GameSettings m_settings;
     LocalGame m_game;
     PlayerLook m_look;
+    WeaponSelect m_weaponSelect;
     GameHud m_hud;
     GameEvents m_gameEvents;
     std::vector<GameEvent> m_events;

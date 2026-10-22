@@ -4,6 +4,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -135,4 +136,20 @@ TEST_CASE("byte readers fail instead of reading past the end") {
     ct::ByteReader truncated(longString);
     CHECK(truncated.readShortString().empty());
     CHECK_FALSE(truncated.ok());
+}
+
+TEST_CASE("CT_FIELD_ELEMENT lists each element of an array member") {
+    struct Carried {
+        std::uint32_t current;
+        std::array<std::int16_t, 2> ammo;
+    };
+    constexpr ct::FieldInfo kFields[] = {
+        CT_FIELD(Carried, current),
+        CT_FIELD_ELEMENT(Carried, ammo, 0),
+        CT_FIELD_ELEMENT(Carried, ammo, 1),
+    };
+    static_assert(ct::describesEveryByte({"carried", sizeof(Carried), kFields}));
+    CHECK(kFields[2].name == "ammo[1]");
+    CHECK(kFields[2].type == ct::FieldType::I16);
+    CHECK(kFields[2].offset == 6);
 }

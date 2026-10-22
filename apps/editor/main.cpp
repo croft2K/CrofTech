@@ -78,22 +78,18 @@ CommandLine parseCommandLine(int argc, char** argv) {
 }
 
 // The game's settings: the player size spawn markers show, and how play-in-editor plays.
-ct::GameSettings loadGameSettings(const ct::ContentPaths& content) {
+ct::GameSettings loadGameSettings(const ct::ContentPaths& content, const ct::GameManifest& game) {
     ct::Console console;
-    ct::registerGameCVars(console);
-    const std::pair<const char*, std::string_view> files[] = {
-        {"config/movement.cfg", ct::kMovementCVarPrefix},
-        {"config/rules.cfg", ct::kRulesCVarPrefix},
-    };
-    for (const auto& [file, prefix] : files) {
-        ct::LayeredConfig config(content, file);
+    ct::registerGameCVars(console, game.weapons);
+    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game.weapons)) {
+        ct::LayeredConfig config(content, file.path);
         if (const auto layers = config.reloadIfChanged()) {
-            for (const std::string& problem : console.applyConfig(std::string(prefix), *layers)) {
+            for (const std::string& problem : console.applyConfig(file.prefix, *layers)) {
                 ct::logWarning("{}", problem);
             }
         }
     }
-    return ct::gameSettingsFromCVars(console);
+    return ct::gameSettingsFromCVars(console, game.weapons);
 }
 
 ct::Camera startingCamera(const ct::Level& level) {
@@ -263,7 +259,7 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    const ct::GameSettings gameSettings = loadGameSettings(content);
+    const ct::GameSettings gameSettings = loadGameSettings(content, *game);
     ct::EditorSettings settings;
     settings.playerHalfExtents = gameSettings.movement.halfExtents;
     ct::LevelViewport viewport(startingCamera(*level));
@@ -364,6 +360,9 @@ int main(int argc, char** argv) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             devUi->processEvent(event);
+            if (play && playCaptured && play->handleWeaponEvent(event, Clock::now())) {
+                continue;
+            }
             switch (event.type) {
             case SDL_EVENT_QUIT:
                 quitRequested = true;

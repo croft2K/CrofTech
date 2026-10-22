@@ -55,10 +55,13 @@ struct GameManifest {
     std::string name;     // folder name under games/
     std::string title;    // shown to players
     std::string startMap; // level loaded when none is named on the command line
+    // In number-key order; each is the file weapons/<name>.cfg in the content.
+    std::vector<std::string> weapons;
     std::filesystem::path root;
 };
 
-// Reads games/<name>/game.cfg. Names are limited to lowercase letters, digits, '-' and '_'.
+// Reads games/<name>/game.cfg. Game and weapon names are limited to lowercase letters, digits,
+// '-' and '_'.
 std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesDirectory,
                                              std::string_view name, std::string& error);
 

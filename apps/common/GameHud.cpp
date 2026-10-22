@@ -20,6 +20,8 @@ const char* deathMessage(DamageKind cause) {
         return "Killed by a hazard";
     case DamageKind::OutOfWorld:
         return "You fell out of the world";
+    case DamageKind::Weapon:
+        return "You were shot";
     case DamageKind::Generic:
         break;
     }

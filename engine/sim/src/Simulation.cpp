@@ -7,6 +7,7 @@
 #include "croftech/core/Profile.h"
 #include "croftech/sim/CollisionScene.h"
 #include "croftech/sim/Damage.h"
+#include "croftech/sim/Firing.h"
 #include "croftech/sim/GameLevel.h"
 
 #include <algorithm>
@@ -17,8 +18,10 @@
 namespace ct {
 namespace {
 
-// Puts a player on the spawn point as if just arrived: standing still, unhurt.
-void placePlayer(World& world, const GameSettings& settings, const SpawnPoint& spawn, EntityId id) {
+// Puts a player on the spawn point as if just arrived: standing still, unhurt, with the weapons
+// given from spawn, raised from the given tick.
+void placePlayer(World& world, const GameSettings& settings, const SpawnPoint& spawn, EntityId id,
+                 TickIndex tick) {
     const Vec3 centre =
         spawn.feetPosition +
         Vec3{0.0f, 0.0f, settings.movement.halfExtents.z + CollisionWorld::kSurfaceEpsilon};
@@ -28,6 +31,7 @@ void placePlayer(World& world, const GameSettings& settings, const SpawnPoint& s
     health.health = settings.rules.startHealth;
     health.armour = settings.rules.startArmour;
     *world.healths.get(id) = health;
+    armPlayer(*world.weapons.get(id), settings, tick);
 }
 
 } // namespace
@@ -47,7 +51,9 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     logic.deliverPendingInputs();
     logic.runTimers();
     logic.runMovers(m_settings.movement);
-    movePlayers(CollisionScene(*m_level, world), inputs, next);
+    const CollisionScene scene(*m_level, world);
+    movePlayers(scene, inputs, next);
+    runWeapons(scene, m_settings, inputs, next);
     logic.activateMovers(m_settings.movement);
     logic.updateTriggers(m_settings.movement);
     logic.runHurtVolumes(m_settings);
@@ -75,7 +81,7 @@ void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs
             if ((pressed & (kButtonAttack | kButtonJump)) != 0 &&
                 canRespawn(*health, m_settings.rules, state.tick)) {
                 if (const SpawnPoint* spawn = chooseSpawnPoint(*m_level, world, id)) {
-                    placePlayer(world, m_settings, *spawn, id);
+                    placePlayer(world, m_settings, *spawn, id, state.tick);
                     // A jump that respawned doesn't also jump.
                     motion->flags = (cmd.buttons & kButtonJump) != 0 ? kPlayerJumpHeld : 0u;
                 }
@@ -94,8 +100,9 @@ void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs
     }
 }
 
-EntityId spawnPlayer(World& world, const GameSettings& settings, const SpawnPoint& spawn,
+EntityId spawnPlayer(State& state, const GameSettings& settings, const SpawnPoint& spawn,
                      std::uint32_t inputSlot) {
+    World& world = state.world;
     const EntityId id = world.entities.create();
     if (!id.isValid()) {
         return id;
@@ -104,7 +111,8 @@ EntityId spawnPlayer(World& world, const GameSettings& settings, const SpawnPoin
     world.playerMotions.add(id, {});
     world.playerControls.add(id, {inputSlot, 0});
     world.healths.add(id, {});
-    placePlayer(world, settings, spawn, id);
+    world.weapons.add(id, startingWeapons(settings, inputSlot, state.tick));
+    placePlayer(world, settings, spawn, id, state.tick);
     return id;
 }
 

@@ -138,6 +138,14 @@ constexpr bool describesEveryByte(const TypeSchema& schema) noexcept {
     ::ct::FieldInfo(#member, ::ct::FieldTypeOf<std::remove_cv_t<decltype(Type::member)>>::value,   \
                     static_cast<std::uint32_t>(offsetof(Type, member)))
 
+// One element of a std::array member, named "member[index]". List every element, in order.
+#define CT_FIELD_ELEMENT(Type, member, index)                                                      \
+    ::ct::FieldInfo(                                                                               \
+        #member "[" #index "]",                                                                    \
+        ::ct::FieldTypeOf<std::remove_cv_t<typename decltype(Type::member)::value_type>>::value,   \
+        static_cast<std::uint32_t>(offsetof(Type, member) +                                        \
+                                   (index) * sizeof(typename decltype(Type::member)::value_type)))
+
 // Checks a loaded value: floats must be finite, integers inside the field's range. Any entity
 // reference is valid: it may name an entity that has since gone, which the generation shows.
 bool isValidFieldValue(const FieldInfo& field, std::span<const std::byte> object);

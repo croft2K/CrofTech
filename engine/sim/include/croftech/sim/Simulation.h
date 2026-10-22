@@ -31,15 +31,16 @@ public:
 
 private:
     // Players move by their commands, or, once dead, lie still until fire respawns them.
+    // Weapons fire afterwards (runWeapons, sim/Firing.h).
     void movePlayers(const CollisionScene& scene, const InputSet& inputs, State& state) const;
 
     const GameLevel* m_level;
     GameSettings m_settings;
 };
 
-// Spawns a player standing on the spawn point with the starting health and armour, driven by the
-// given input slot.
-EntityId spawnPlayer(World& world, const GameSettings& settings, const SpawnPoint& spawn,
+// Spawns a player standing on the spawn point with the starting health, armour and weapons (raised
+// from the state's tick), driven by the given input slot.
+EntityId spawnPlayer(State& state, const GameSettings& settings, const SpawnPoint& spawn,
                      std::uint32_t inputSlot);
 
 // The spawn point furthest from every living player but the one given, so nobody appears next to

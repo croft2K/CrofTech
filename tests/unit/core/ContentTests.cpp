@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -77,7 +78,10 @@ TEST_CASE("layered config returns every layer lowest first, then only after chan
 
 TEST_CASE("game manifests load from games/<name>/game.cfg") {
     TempDirectory temp;
-    writeFile(temp.path() / "sandbox/game.cfg", "title  My Sandbox\nstart_map  arena\n");
+    writeFile(temp.path() / "sandbox/game.cfg",
+              "title  My Sandbox\nstart_map  arena\nweapons  pistol\tsuper-shotgun  rail_gun\n");
+    writeFile(temp.path() / "unarmed/game.cfg", "title  Unarmed\n");
+    writeFile(temp.path() / "badweapon/game.cfg", "weapons  pistol ../escape\n");
 
     std::string error;
     const auto game = ct::loadGameManifest(temp.path(), "sandbox", error);
@@ -85,6 +89,10 @@ TEST_CASE("game manifests load from games/<name>/game.cfg") {
     CHECK(game->title == "My Sandbox");
     CHECK(game->startMap == "arena");
     CHECK(game->root == temp.path() / "sandbox");
+    CHECK(game->weapons == std::vector<std::string>{"pistol", "super-shotgun", "rail_gun"});
+    CHECK(ct::loadGameManifest(temp.path(), "unarmed", error)->weapons.empty());
+    CHECK_FALSE(ct::loadGameManifest(temp.path(), "badweapon", error).has_value());
+    CHECK(error.find("../escape") != std::string::npos);
 
     CHECK_FALSE(ct::loadGameManifest(temp.path(), "missing", error).has_value());
     CHECK_FALSE(ct::loadGameManifest(temp.path(), "../escape", error).has_value());
@@ -103,4 +111,9 @@ TEST_CASE("the sandbox game exists and its start map is in its content") {
     CAPTURE(game->startMap);
     CHECK((content.find("levels/" + game->startMap + ".level") ||
            content.find("levels/" + game->startMap + ".map")));
+    CHECK_FALSE(game->weapons.empty());
+    for (const std::string& weapon : game->weapons) {
+        CAPTURE(weapon);
+        CHECK(content.find("weapons/" + weapon + ".cfg"));
+    }
 }

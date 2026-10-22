@@ -25,7 +25,7 @@ std::unique_ptr<ct::State> makeBusyState() {
     auto state = std::make_unique<ct::State>(sim.state());
     for (std::uint32_t slot = 0; slot < 3; ++slot) {
         const float x = static_cast<float>(slot) * 2.0f;
-        ct::spawnPlayer(state->world, sim.settings(), {{x, 0.0f, 0.0f}, 0}, slot);
+        ct::spawnPlayer(*state, sim.settings(), {{x, 0.0f, 0.0f}, 0}, slot);
     }
     state->world.destroy(state->world.playerControls.entities()[1]);
 

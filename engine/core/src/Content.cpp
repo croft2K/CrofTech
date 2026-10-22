@@ -66,10 +66,12 @@ std::optional<std::vector<LayeredConfig::Layer>> LayeredConfig::reloadIfChanged(
 
 std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesDirectory,
                                              std::string_view name, std::string& error) {
-    const bool validName = !name.empty() && std::all_of(name.begin(), name.end(), [](char c) {
-        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
-    });
-    if (!validName) {
+    const auto validName = [](std::string_view text) {
+        return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+        });
+    };
+    if (!validName(name)) {
         error = std::format("invalid game name '{}'", name);
         return std::nullopt;
     }
@@ -89,6 +91,24 @@ std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesD
             manifest.title = entry.value;
         } else if (entry.key == "start_map") {
             manifest.startMap = entry.value;
+        } else if (entry.key == "weapons") {
+            manifest.weapons.clear();
+            std::size_t start = 0;
+            while (start < entry.value.size()) {
+                const std::size_t end =
+                    std::min(entry.value.find_first_of(" 	", start), entry.value.size());
+                const std::string_view weapon =
+                    std::string_view(entry.value).substr(start, end - start);
+                if (!weapon.empty()) {
+                    if (!validName(weapon)) {
+                        error = std::format("game.cfg: line {}: invalid weapon name '{}'",
+                                            entry.line, weapon);
+                        return std::nullopt;
+                    }
+                    manifest.weapons.emplace_back(weapon);
+                }
+                start = end + 1;
+            }
         }
     }
     return manifest;

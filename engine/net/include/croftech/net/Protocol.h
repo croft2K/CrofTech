@@ -19,7 +19,7 @@ namespace ct {
 //
 // Snapshots carry the whole simulation state (writeState) for now. M6 replaces them with
 // delta-compressed snapshots small enough for UDP, which is when kMaxPacketBytes comes down.
-inline constexpr std::uint16_t kProtocolVersion = 2;
+inline constexpr std::uint16_t kProtocolVersion = 3;
 inline constexpr std::size_t kMaxPacketBytes = std::size_t{1} << 20;
 
 enum class MessageType : std::uint8_t { Hello = 1, Input = 2, Goodbye = 3, Snapshot = 4 };

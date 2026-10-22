@@ -2,9 +2,14 @@
 
 #include "croftech/core/Console.h"
 #include "croftech/sim/PlayerMovement.h"
+#include "croftech/sim/UserCmd.h"
+#include "croftech/sim/Weapons.h"
 
 #include <cstdint>
+#include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace ct {
 
@@ -17,17 +22,49 @@ struct RulesSettings {
     float respawnDelay = 1.0f; // seconds after dying before fire respawns
 };
 
+// One weapon. Each is a file, weapons/<name>.cfg, whose lines are the variables
+// "weapon.<name>.<key>"; a game lists its weapons, in number-key order, in its game.cfg.
+struct WeaponSettings {
+    std::int32_t damage = 10;     // each pellet that hits
+    std::int32_t pellets = 1;     // traces per shot
+    float spread = 0.0f;          // degrees a pellet may stray from the aim
+    float range = 200.0f;         // m
+    float fireInterval = 0.5f;    // seconds between shots while fire is held
+    float raiseTime = 0.25f;      // seconds after switching to it before it fires
+    float knockback = 0.0f;       // m/s each pellet that hits adds to the target, along the shot
+    std::int32_t ammoPerShot = 1; // 0 never runs out
+    std::int32_t startAmmo = 0;   // carried at spawn
+    std::int32_t maxAmmo = 100;
+    bool given = false; // carried from spawn
+};
+
 // Everything a game tunes that the simulation reads. It may only change between ticks.
 struct GameSettings {
     MovementSettings movement;
     RulesSettings rules;
+    std::vector<WeaponSettings> weapons; // at most kMaxWeapons, in number-key order
 };
 
 inline constexpr std::string_view kRulesCVarPrefix = "rules.";
 
-// Adds the movement and rules variables with the built-in defaults.
-void registerGameCVars(Console& console);
+// "weapon.<name>.": the variables a weapon's file sets.
+std::string weaponCVarPrefix(std::string_view weapon);
 
-GameSettings gameSettingsFromCVars(const Console& console);
+// A file of game settings, relative to the content folders, and the variables it sets.
+struct GameConfigFile {
+    std::string path;
+    std::string prefix;
+};
+
+// The files a game's settings come from: movement, rules and each weapon's file. Weapons past
+// kMaxWeapons are left out here and below.
+std::vector<GameConfigFile> gameConfigFiles(std::span<const std::string> weapons);
+
+// Adds the movement, rules and weapon variables with the built-in defaults.
+void registerGameCVars(Console& console, std::span<const std::string> weapons = {});
+
+// Weapons as for registerGameCVars.
+GameSettings gameSettingsFromCVars(const Console& console,
+                                   std::span<const std::string> weapons = {});
 
 } // namespace ct

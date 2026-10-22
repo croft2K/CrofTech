@@ -6,6 +6,7 @@ add_executable(ct_unit_tests
     unit/core/ContentTests.cpp
     unit/core/CVarTests.cpp
     unit/core/HashTests.cpp
+    unit/core/RandomTests.cpp
     unit/core/SchemaTests.cpp
     unit/editor/BrushEditingTests.cpp
     unit/editor/BrushEntityTests.cpp
@@ -55,6 +56,7 @@ add_executable(ct_sim_tests
     sim/ServerTests.cpp
     sim/SimHarness.h
     sim/SlidingTests.cpp
+    sim/WeaponTests.cpp
     sim/StepSmoothingTests.cpp
     sim/TestLevels.cpp
     sim/TestLevels.h

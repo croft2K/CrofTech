@@ -38,8 +38,9 @@ struct Session {
     Clock::time_point now{};
 
     explicit Session(ct::LinkConditions conditions = {},
-                     const ct::Level& level = ct::test::floorLevel())
-        : link(conditions, 5), server(level, {}), client(link.clientEnd()) {
+                     const ct::Level& level = ct::test::floorLevel(),
+                     const ct::GameSettings& settings = {})
+        : link(conditions, 5), server(level, settings), client(link.clientEnd()) {
         server.addConnection(link.serverEnd());
     }
 
@@ -217,6 +218,39 @@ TEST_CASE("players restored from saves made before health get the starting healt
     const ct::Health* health = session.server.state().world.healths.get(session.client.player());
     REQUIRE(health != nullptr);
     CHECK(health->health == ct::RulesSettings{}.startHealth);
+}
+
+TEST_CASE("a weapon choice counts even when a newer input arrives before the tick") {
+    ct::GameSettings settings;
+    ct::WeaponSettings weapon;
+    weapon.given = true;
+    weapon.ammoPerShot = 0;
+    settings.weapons = {weapon, weapon};
+    Session session({}, ct::test::floorLevel(), settings);
+    session.run({}, 2);
+    ct::UserCmd choose;
+    choose.weapon = 2;
+    session.client.sendInput(choose, session.now);
+    session.client.sendInput({}, session.now);
+    session.run({}, 1);
+    const ct::Weapons* weapons = session.server.state().world.weapons.get(session.client.player());
+    REQUIRE(weapons != nullptr);
+    CHECK(weapons->current == 1);
+}
+
+TEST_CASE("players restored from saves made before weapons are armed as at spawn") {
+    ct::GameSettings settings;
+    settings.weapons.resize(1);
+    settings.weapons[0].given = true;
+    settings.weapons[0].startAmmo = 7;
+    Session session({}, ct::test::floorLevel(), settings);
+    session.run({}, 2);
+    const auto saved = std::make_unique<ct::State>(session.server.state());
+    saved->world.weapons.remove(session.client.player());
+    session.server.restore(*saved);
+    const ct::Weapons* weapons = session.server.state().world.weapons.get(session.client.player());
+    REQUIRE(weapons != nullptr);
+    CHECK(weapons->ammo[0] == 7);
 }
 
 TEST_CASE("a second player joins at the spawn point furthest from the first") {

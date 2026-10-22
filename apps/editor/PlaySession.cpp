@@ -56,8 +56,15 @@ void PlaySession::look(float countsX, float countsY) {
     m_look.turn(countsX, countsY, kSensitivity);
 }
 
+bool PlaySession::handleWeaponEvent(const SDL_Event& event, Clock::time_point now) {
+    return m_weaponSelect.handleEvent(event, m_game.latestState(), m_game.player(), m_settings,
+                                      now);
+}
+
 void PlaySession::update(const bool* keys, Clock::time_point now) {
-    m_game.update(makeUserCmd(m_look, keys), now);
+    UserCmd cmd = makeUserCmd(m_look, keys);
+    m_weaponSelect.apply(cmd, now);
+    m_game.update(cmd, now);
     if (std::optional<std::vector<std::byte>> checkpoint = m_game.takeCheckpoint()) {
         m_lastSave = std::move(*checkpoint);
         tell("Checkpoint", now);

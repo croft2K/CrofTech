@@ -3,6 +3,7 @@
 #include "croftech/core/Assert.h"
 #include "croftech/core/Profile.h"
 #include "croftech/net/Protocol.h"
+#include "croftech/sim/Firing.h"
 #include "croftech/sim/StateSave.h"
 
 #include <algorithm>
@@ -21,7 +22,7 @@ Server::Server(const Level& level, const GameSettings& settings, std::optional<S
 EntityId Server::spawn(std::uint32_t slot) {
     const SpawnPoint* spawn = chooseSpawnPoint(m_level, m_current->world);
     CT_ASSERT(spawn != nullptr);
-    return spawnPlayer(m_current->world, m_simulation.settings(), *spawn, slot);
+    return spawnPlayer(*m_current, m_simulation.settings(), *spawn, slot);
 }
 
 void Server::addConnection(Transport& transport) {
@@ -80,6 +81,9 @@ void Server::handlePacket(Connection& connection, std::span<const std::byte> pac
                 connection.command = m.command;
                 connection.pressed =
                     static_cast<std::uint16_t>(connection.pressed | m.command.buttons);
+                if (m.command.weapon != 0) {
+                    connection.weapon = m.command.weapon;
+                }
             } else {
                 leave(connection);
             }
@@ -107,6 +111,7 @@ void Server::join(Connection& connection) {
     connection.anyInput = false;
     connection.command = {};
     connection.pressed = 0;
+    connection.weapon = 0;
 }
 
 void Server::leave(Connection& connection) {
@@ -125,7 +130,8 @@ void Server::restore(const State& state) {
     World& world = m_current->world;
 
     // One whole player per slot stays; any others (a second for a slot, a slot out of range, a
-    // player missing components) are removed. Saves from before players had health get it.
+    // player missing components) are removed. Saves from before players had health or weapons
+    // get them.
     std::array<bool, kMaxPlayers> kept{};
     std::array<EntityId, kMaxEntities> unwanted{};
     std::size_t unwantedCount = 0;
@@ -141,6 +147,10 @@ void Server::restore(const State& state) {
                 health.health = m_simulation.settings().rules.startHealth;
                 health.armour = m_simulation.settings().rules.startArmour;
                 world.healths.add(id, health);
+            }
+            if (!world.weapons.has(id)) {
+                world.weapons.add(id,
+                                  startingWeapons(m_simulation.settings(), slot, m_current->tick));
             }
         } else {
             unwanted[unwantedCount++] = id;
@@ -178,7 +188,9 @@ void Server::tick(Transport::Clock::time_point now) {
         if (connection.slot) {
             UserCmd command = connection.command;
             command.buttons = static_cast<std::uint16_t>(command.buttons | connection.pressed);
+            command.weapon = connection.weapon;
             connection.pressed = 0;
+            connection.weapon = 0;
             inputs.commands[*connection.slot] = command;
         }
     }

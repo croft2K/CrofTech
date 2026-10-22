@@ -17,14 +17,17 @@ public:
 
     explicit SimHarness(const Level& level, MovementSettings movement = {},
                         RulesSettings rules = {})
-        : m_level(level), m_simulation(m_level, GameSettings{movement, rules}),
+        : SimHarness(level, GameSettings{movement, rules, {}}) {}
+
+    SimHarness(const Level& level, const GameSettings& settings)
+        : m_level(level), m_simulation(m_level, settings),
           m_current(std::make_unique<State>(m_level.startState())),
           m_next(std::make_unique<State>()) {}
 
     // The first player spawned is the one transform() and motion() describe.
     EntityId spawn(Vec3 feetPosition, std::uint16_t yaw = 0, std::uint32_t inputSlot = 0) {
         const EntityId id =
-            spawnPlayer(m_current->world, m_simulation.settings(), {feetPosition, yaw}, inputSlot);
+            spawnPlayer(*m_current, m_simulation.settings(), {feetPosition, yaw}, inputSlot);
         if (!m_player.isValid()) {
             m_player = id;
         }
@@ -59,6 +62,8 @@ public:
     const PlayerMotion& motion() const { return *m_current->world.playerMotions.get(m_player); }
     const Health& health() const { return *m_current->world.healths.get(m_player); }
     Health& health() { return *m_current->world.healths.get(m_player); }
+    const Weapons& weapons() const { return *m_current->world.weapons.get(m_player); }
+    Weapons& weapons() { return *m_current->world.weapons.get(m_player); }
     bool onGround() const { return (motion().flags & kPlayerOnGround) != 0; }
     float feetZ() const { return transform().position.z - movement().halfExtents.z; }
     const GameSettings& settings() const { return m_simulation.settings(); }

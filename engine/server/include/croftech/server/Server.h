@@ -65,6 +65,7 @@ private:
         bool anyInput = false;
         UserCmd command;           // the newest
         std::uint16_t pressed = 0; // buttons seen since the last tick, so taps aren't missed
+        std::uint8_t weapon = 0;   // the last weapon asked for since the last tick, likewise
     };
 
     void handlePacket(Connection& connection, std::span<const std::byte> packet);

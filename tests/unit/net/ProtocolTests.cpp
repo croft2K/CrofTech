@@ -36,7 +36,7 @@ TEST_CASE("client messages read back as written") {
 
     ct::InputMessage input;
     input.sequence = 123456;
-    input.command = {40000, -1200, 127, -127, ct::kButtonJump};
+    input.command = {40000, -1200, 127, -127, ct::kButtonJump, 3};
     const auto read = ct::readClientMessage(bytesOf(input));
     REQUIRE(read.has_value());
     const auto& back = std::get<ct::InputMessage>(*read);
@@ -46,6 +46,7 @@ TEST_CASE("client messages read back as written") {
     CHECK(back.command.forward == 127);
     CHECK(back.command.side == -127);
     CHECK(back.command.buttons == ct::kButtonJump);
+    CHECK(back.command.weapon == 3);
 
     CHECK(std::holds_alternative<ct::GoodbyeMessage>(
         *ct::readClientMessage(bytesOf(ct::GoodbyeMessage{}))));
@@ -72,13 +73,17 @@ TEST_CASE("malformed client messages are rejected") {
     CHECK(rejects({0, 0, -128, 0, 0}));
     CHECK(rejects({0, 0, 0, -128, 0}));
     CHECK(rejects({0, 0, 0, 0, 0x8000}));
-    CHECK_FALSE(rejects({0, -ct::kMaxPitch, -127, 127, ct::kButtonCrouch}));
+    CHECK(rejects({0, 0, 0, 0, 0, ct::kMaxWeapons + 1}));
+    // The sub-tick fields are reserved until M7 gives them meaning.
+    CHECK(rejects({0, 0, 0, 0, 0, 0, 1}));
+    CHECK(rejects({0, 0, 0, 0, 0, 0, 0, 1}));
+    CHECK_FALSE(rejects({0, -ct::kMaxPitch, -127, 127, ct::kButtonCrouch, ct::kMaxWeapons}));
 }
 
 TEST_CASE("snapshots carry the state and the player") {
     auto state = std::make_unique<ct::State>();
     state->tick = 77;
-    const ct::EntityId player = ct::spawnPlayer(state->world, {}, {{1.0f, 2.0f, 3.0f}, 0}, 0);
+    const ct::EntityId player = ct::spawnPlayer(*state, {}, {{1.0f, 2.0f, 3.0f}, 0}, 0);
     ct::ByteWriter writer;
     ct::writeSnapshot(writer, 3, 41, player, *state);
 

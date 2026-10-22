@@ -1,0 +1,48 @@
+#pragma once
+
+#include "croftech/core/Math.h"
+#include "croftech/sim/EntityId.h"
+#include "croftech/sim/GameSettings.h"
+#include "croftech/sim/UserCmd.h"
+#include "croftech/sim/World.h"
+
+#include <cstdint>
+
+namespace ct {
+
+class CollisionScene;
+
+// Where a shot from start towards end stops: at the first box of a living player (or, later,
+// enemy) it passes into, other than the shooter's, or at the world or a mover.
+struct ShotHit {
+    float fraction = 1.0f; // of the way from start to end
+    Vec3 position;
+    Vec3 normal;     // of the surface hit; zero for a target, or when nothing was hit
+    EntityId target; // the one hit, if any; shots damage only targets
+    EntityId mover;  // the mover hit, if the shot stopped at one
+};
+
+ShotHit traceShot(const CollisionScene& scene, const World& world, const MovementSettings& movement,
+                  Vec3 start, Vec3 end, EntityId shooter);
+
+// The way a transform looks: yaw 0 is +X, and a negative pitch looks up.
+Vec3 viewForward(const Transform& transform);
+
+// The direction a pellet flies: up to spread degrees from where the transform looks, spread evenly
+// over the circle that makes, drawn from the random counter.
+Vec3 pelletDirection(const Transform& transform, float spread, std::uint32_t& random);
+
+// Arms a player as at spawn: the weapons given from spawn with their starting ammo, and the first
+// of them in hand, being raised from the given tick. The random counter carries on.
+void armPlayer(Weapons& weapons, const GameSettings& settings, TickIndex tick);
+
+// A new player's weapons, armed from the given tick. Each input slot's shots draw from their own
+// stretch of random numbers.
+Weapons startingWeapons(const GameSettings& settings, std::uint32_t inputSlot, TickIndex tick);
+
+// Switches and fires every living player's weapons by their commands. Runs after movement, so
+// shots leave from where players are at the end of the tick.
+void runWeapons(const CollisionScene& scene, const GameSettings& settings, const InputSet& inputs,
+                State& state);
+
+} // namespace ct

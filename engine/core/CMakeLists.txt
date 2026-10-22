@@ -13,6 +13,7 @@ add_library(ct_core STATIC
     include/croftech/core/Math.h
     include/croftech/core/Matrix.h
     include/croftech/core/Profile.h
+    include/croftech/core/Random.h
     include/croftech/core/Schema.h
     src/Assert.cpp
     src/ByteStream.cpp

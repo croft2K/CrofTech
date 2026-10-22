@@ -5,6 +5,7 @@
 #include "croftech/sim/EntityId.h"
 #include "croftech/sim/Health.h"
 #include "croftech/sim/LogicComponents.h"
+#include "croftech/sim/Weapons.h"
 
 #include <cstdint>
 #include <span>
@@ -26,6 +27,7 @@ struct World {
     ComponentPool<PlayerMotion, kMaxEntities> playerMotions;
     ComponentPool<PlayerControl, kMaxEntities> playerControls;
     ComponentPool<Health, kMaxEntities> healths;
+    ComponentPool<Weapons, kMaxEntities> weapons;
     ComponentPool<LevelEntityRef, kMaxEntities> levelEntities;
     ComponentPool<Trigger, kMaxEntities> triggers;
     ComponentPool<Checkpoint, kMaxEntities> checkpoints;
@@ -47,6 +49,7 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.playerMotions);
     fn(world.playerControls);
     fn(world.healths);
+    fn(world.weapons);
     fn(world.levelEntities);
     fn(world.triggers);
     fn(world.checkpoints);

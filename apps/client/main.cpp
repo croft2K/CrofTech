@@ -245,13 +245,12 @@ int main(int argc, char** argv) {
     ct::logInfo("Game: {}", game->title);
 
     ct::Console console;
-    ct::registerGameCVars(console);
+    ct::registerGameCVars(console, game->weapons);
     const ClientCVars client = registerClientCVars(console);
     std::vector<ConfigFile> configFiles;
-    configFiles.push_back({ct::LayeredConfig(content, "config/movement.cfg"),
-                           std::string(ct::kMovementCVarPrefix), "movement.cfg"});
-    configFiles.push_back({ct::LayeredConfig(content, "config/rules.cfg"),
-                           std::string(ct::kRulesCVarPrefix), "rules.cfg"});
+    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game->weapons)) {
+        configFiles.push_back({ct::LayeredConfig(content, file.path), file.prefix, file.path});
+    }
     configFiles.push_back(
         {ct::LayeredConfig(content, "config/client.cfg"), "client.", "client.cfg"});
     for (ConfigFile& file : configFiles) {
@@ -382,10 +381,11 @@ int main(int argc, char** argv) {
     // The inspector reads a copy, so the simulation thread is never held up by drawing.
     const auto inspectedState = std::make_unique<ct::State>();
 
-    ct::GameSettings settings = ct::gameSettingsFromCVars(console);
+    ct::GameSettings settings = ct::gameSettingsFromCVars(console, game->weapons);
     std::uint64_t seenChanges = console.changeCount();
 
     ct::PlayerLook look;
+    ct::WeaponSelect weaponSelect;
     ct::GameHud hud;
     ct::StepSmoothing stepSmoothing;
     std::uint32_t seenTimeline = 0;
@@ -459,6 +459,11 @@ int main(int argc, char** argv) {
                 continue;
             }
             devUi->processEvent(event);
+            if (mouseCaptured &&
+                weaponSelect.handleEvent(event, localGame->latestState(), localGame->player(),
+                                         settings, Clock::now())) {
+                continue;
+            }
             switch (event.type) {
             case SDL_EVENT_QUIT:
                 running = false;
@@ -501,9 +506,10 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        const ct::UserCmd cmd =
-            ct::makeUserCmd(look, mouseCaptured ? SDL_GetKeyboardState(nullptr) : nullptr);
         const Clock::time_point now = Clock::now();
+        ct::UserCmd cmd =
+            ct::makeUserCmd(look, mouseCaptured ? SDL_GetKeyboardState(nullptr) : nullptr);
+        weaponSelect.apply(cmd, now);
         localGame->update(cmd, now);
 
         if (now >= nextReload) {
@@ -514,7 +520,7 @@ int main(int argc, char** argv) {
         }
         if (console.changeCount() != seenChanges) {
             seenChanges = console.changeCount();
-            settings = ct::gameSettingsFromCVars(console);
+            settings = ct::gameSettingsFromCVars(console, game->weapons);
             localGame->setSettings(settings);
             localGame->setConditions(client.linkConditions());
         }
