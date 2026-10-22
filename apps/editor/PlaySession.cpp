@@ -75,6 +75,9 @@ void PlaySession::update(const bool* keys, Clock::time_point now) {
     if (const std::optional<Vec3> eye = m_game.eyePosition(now)) {
         m_eye = m_stepSmoothing.apply(m_game, *eye, kStepSmoothingSeconds, now);
     }
+    m_events.clear();
+    m_gameEvents.update(m_game.latestState(), m_game.timeline(), m_game.level(),
+                        m_settings.movement, m_events);
     if (const State* latest = m_game.latestState()) {
         if (const PlayerMotion* motion = latest->world.playerMotions.get(m_game.player())) {
             m_speed = std::sqrt(motion->velocity.x * motion->velocity.x +

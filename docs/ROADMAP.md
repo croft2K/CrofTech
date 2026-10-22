@@ -116,7 +116,11 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    wiring, and falling out of the world kills. Game rules (starting and maximum health, armour
    share, respawn delay) are a layered config file like movement. A first HUD, shared by the game
    and play-in-editor, shows health, armour, a damage flash and a death screen.
-2. **Seeing things: entity drawing, effects and sound.** The renderer draws simple shapes for
+2. **Seeing things: entity drawing, effects and sound.** *Done (2026-10-22): players drawn as
+   boxes (third person with `client.third_person`), an additive effect pipeline (respawn glow),
+   `engine/audio` (fuzzed WAV reader, mixer), and sounds for footsteps, jumps, landings, pain,
+   death, respawn, movers and checkpoints, from events the client works out from snapshots.* The
+   renderer draws simple shapes for
    simulated things (other players, enemies, items, projectiles) until M5 brings models. Effects
    (tracers, impacts, pain) are presentation: the client works them out from what changed between
    snapshots, and they are never rewound. A new audio module (SDL3 audio, a small mixer with 3D

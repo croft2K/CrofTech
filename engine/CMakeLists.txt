@@ -1,4 +1,5 @@
 add_subdirectory(core)
+add_subdirectory(audio)
 add_subdirectory(level)
 add_subdirectory(sim)
 add_subdirectory(platform)

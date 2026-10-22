@@ -29,6 +29,17 @@ float expandedDistance(const Plane& plane, Vec3 point, Vec3 halfExtents) {
 
 } // namespace
 
+Aabb CollisionWorld::bounds() const {
+    if (m_brushes.empty()) {
+        return {};
+    }
+    Aabb all = m_brushes.front().bounds;
+    for (const CollisionBrush& brush : m_brushes) {
+        all = {min(all.min, brush.bounds.min), max(all.max, brush.bounds.max)};
+    }
+    return all;
+}
+
 CollisionWorld::CollisionWorld(std::span<const Brush> brushes) {
     for (const Brush& brush : brushes) {
         Aabb bounds;

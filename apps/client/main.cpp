@@ -16,12 +16,16 @@
 // checkpoint saves too. Saves go in the user's folder for the game, never in its content. After
 // dying, fire respawns.
 
+#include "AudioOutput.h"
 #include "EntityShapes.h"
+#include "GameEffects.h"
 #include "GameHud.h"
+#include "GameSounds.h"
 #include "PlayerInput.h"
 #include "SaveFiles.h"
 #include "WorldMesh.h"
 
+#include "croftech/client/GameEvents.h"
 #include "croftech/client/LocalGame.h"
 #include "croftech/client/StepSmoothing.h"
 #include "croftech/core/Angle.h"
@@ -98,6 +102,7 @@ struct ClientCVars {
     const ct::CVar& showEntities;
     const ct::CVar& stepSmoothing;
     const ct::CVar& thirdPerson;
+    const ct::CVar& volume;
     const ct::CVar& fakeLatency;
     const ct::CVar& fakeJitter;
     const ct::CVar& fakeLoss;
@@ -123,6 +128,8 @@ ClientCVars registerClientCVars(ct::Console& console) {
             "seconds the view takes to follow a step up or down stairs; 0 follows at once")),
         console.add(ct::CVar::makeBool("client.third_person", false,
                                        "1 = follow the player from behind, to see it move")),
+        console.add(ct::CVar::makeFloat("client.volume", 0.8f, 0.0f, 1.0f,
+                                        "loudness of every sound, 0 to 1")),
         console.add(ct::CVar::makeFloat("net.fake_latency_ms", 0.0f, 0.0f, 1000.0f,
                                         "delay added to every packet, each way")),
         console.add(ct::CVar::makeFloat("net.fake_jitter_ms", 0.0f, 0.0f, 500.0f,
@@ -365,6 +372,12 @@ int main(int argc, char** argv) {
     }
     ct::ConsoleWindow consoleWindow(console);
     ct::StatsOverlay stats;
+    // Destroyed before SDL shuts down, sounds first.
+    auto audio = std::make_unique<ct::AudioOutput>();
+    auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
+    ct::GameEvents gameEvents;
+    ct::GameEffects gameEffects;
+    std::vector<ct::GameEvent> events; // this frame's
     ct::EntityInspector entityInspector;
     // The inspector reads a copy, so the simulation thread is never held up by drawing.
     const auto inspectedState = std::make_unique<ct::State>();
@@ -383,6 +396,9 @@ int main(int argc, char** argv) {
     std::vector<ct::EffectVertex> effects;
     const auto enterLevel = [&](const PreparedLevel& prepared) {
         localGame.reset();
+        sounds->stopAll();
+        gameEvents.reset();
+        gameEffects.clear();
         const ct::WorldMesh mesh = ct::buildWorldMesh(prepared.level, ct::MeshPurpose::Playing);
         renderer->setWorldMesh(mesh.vertices, mesh.indices, mesh.parts);
         moverParts = mesh.partEntities;
@@ -561,15 +577,25 @@ int main(int argc, char** argv) {
         const ImDrawData* ui = devUi->endFrame();
 
         const bool thirdPerson = client.thirdPerson.asBool();
-        shapes.clear();
-        effects.clear();
-        ct::addPlayers(shapes, *localGame, now, thirdPerson);
-        renderer->setDynamicGeometry(shapes, effects);
-
         ct::Camera camera;
         camera.position = thirdPerson ? ct::thirdPersonPosition(localGame->level().collision(), eye,
                                                                 look.yaw, look.pitch)
                                       : eye;
+
+        events.clear();
+        gameEvents.update(localGame->latestState(), localGame->timeline(), localGame->level(),
+                          settings.movement, events);
+        gameEffects.add(events, now);
+        if (const ct::State* latest = localGame->latestState()) {
+            sounds->update(events, localGame->player(), localGame->level(), latest->world,
+                           camera.position, look.yaw, client.volume.asFloat());
+        }
+        shapes.clear();
+        effects.clear();
+        ct::addPlayers(shapes, *localGame, now, thirdPerson);
+        gameEffects.build(now, effects);
+        renderer->setDynamicGeometry(shapes, effects);
+
         camera.yawRadians = look.yaw;
         camera.pitchRadians = look.pitch;
         camera.horizontalFovRadians16x9 = client.fov.asFloat() * (ct::kPi / 180.0f);
@@ -584,6 +610,8 @@ int main(int argc, char** argv) {
     console.removeCommand("quit");
     console.removeCommand("map");
     localGame.reset();
+    sounds.reset();
+    audio.reset();
     renderer.reset(); // before the ImGui context it serves
     devUi.reset();
     SDL_DestroyWindow(window);

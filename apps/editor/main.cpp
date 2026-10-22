@@ -11,8 +11,11 @@
 // keys and Page Up/Down nudge the selection (or selected corners) one grid step, F frame selection,
 // [ and ] grid size, Esc cancel or deselect.
 
+#include "AudioOutput.h"
 #include "EditorPanels.h"
 #include "EntityShapes.h"
+#include "GameEffects.h"
+#include "GameSounds.h"
 #include "LevelViewport.h"
 #include "PlaySession.h"
 #include "WorldMesh.h"
@@ -303,6 +306,11 @@ int main(int argc, char** argv) {
     std::vector<std::uint32_t> moverParts; // in play, the level entity of each moving part
     std::vector<ct::Vec3> moverOffsets;
     std::vector<ct::WorldVertex> shapes; // what moves in play, rebuilt every frame
+    std::vector<ct::EffectVertex> effects;
+    // Destroyed before SDL shuts down, sounds first.
+    auto audio = std::make_unique<ct::AudioOutput>();
+    auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
+    ct::GameEffects gameEffects;
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
     int frameCount = 0;
@@ -403,6 +411,8 @@ int main(int argc, char** argv) {
         }
         if (stopPlay || (play && quitRequested)) {
             play.reset();
+            sounds->stopAll();
+            gameEffects.clear();
             capturePlayMouse(false);
         }
         const Clock::time_point now = Clock::now();
@@ -625,9 +635,18 @@ int main(int argc, char** argv) {
                 moverOffsets[i] = play->game().moverOffset(moverParts[i], now);
             }
             renderer->setWorldPartOffsets(moverOffsets);
+            const ct::Camera camera = play->camera();
+            gameEffects.add(play->events(), now);
+            if (const ct::State* latest = play->game().latestState()) {
+                // The game's default loudness (client.volume).
+                sounds->update(play->events(), play->game().player(), play->game().level(),
+                               latest->world, camera.position, camera.yawRadians, 0.8f);
+            }
             shapes.clear();
+            effects.clear();
             ct::addPlayers(shapes, play->game(), now, false);
-            renderer->setDynamicGeometry(shapes, {});
+            gameEffects.build(now, effects);
+            renderer->setDynamicGeometry(shapes, effects);
             renderer->drawFrame(play->camera(), ui, &rect);
         } else {
             renderer->setDynamicGeometry({}, {});
@@ -655,6 +674,8 @@ int main(int argc, char** argv) {
     }
 
     play.reset();
+    sounds.reset();
+    audio.reset();
     renderer.reset(); // before the ImGui context it serves
     devUi.reset();
     SDL_DestroyWindow(window);

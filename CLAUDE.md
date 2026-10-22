@@ -30,7 +30,12 @@ client, the key below Esc opens the developer console; `map <name>` there switch
 `client.step_smoothing` sets how long the view takes to follow a step up or down stairs
 (`client/StepSmoothing.h`; play-in-editor uses the default). Players are drawn as simple boxes
 (`apps/common/EntityShapes`, through `Renderer::setDynamicGeometry`, which also takes see-through
-effects) until M5 brings models; `client.third_person 1` follows your own from behind. The client
+effects) until M5 brings models; `client.third_person 1` follows your own from behind. Sounds
+and effects come from `GameEvents` (`client/GameEvents.h`), which the client works out from what
+changed between snapshots (a jump, a hit, a door setting off), so the server sends no events.
+`apps/common/GameSounds` plays `sounds/<name>.wav` through the content layers (the engine's are
+placeholders made by `scripts/make_placeholder_sounds.py`) on SDL audio (`AudioOutput`), at
+`client.volume`. The client
 and its game's server run in one process and talk only through packets over an in-memory link
 (`ct::LocalGame`); `net.fake_latency_ms`, `net.fake_jitter_ms` and `net.fake_loss_percent` make
 that link behave like a poor network. F5 saves and F9 loads the newest save (`save [name]` and
@@ -112,13 +117,17 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
 
     engine/core      math, angles, hashing, asserts, logging, config files, console variables,
                      profiling
+    engine/audio     WAV reading (fuzzed) and the software mixer: voices placed in the world,
+                     panned and faded with distance; no device, so it is portable and tested
+                     (core)
     engine/level     level data: brushes, entities, brush geometry, level files, .map import
                      (core)
     engine/sim       ECS world, components, collision, movement, level logic and gameplay
                      (health and damage; later weapons, pickups, AI, encounters)   (core, level)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    client connection, LocalGame (server thread + client over an in-memory
-                     link); later prediction, interpolation          (net, server, sim)
+                     link), GameEvents worked out from snapshots, view smoothing; later
+                     prediction                                       (net, server, sim)
     engine/render    Vulkan renderer, incl. Dear ImGui drawing (Windows client only)  (core)
     engine/devui     Dear ImGui context, developer console, stats overlay, entity inspector
                      (core)

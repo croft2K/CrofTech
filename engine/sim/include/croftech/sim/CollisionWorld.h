@@ -32,6 +32,8 @@ public:
     // Whether the box (centre, half extents) is inside or touching any brush. With an inset it
     // must be inside by more than that: touching, or overlapping by rounding, doesn't count.
     bool overlapsBox(Vec3 centre, Vec3 halfExtents, float inset = 0.0f) const;
+    // The box around every brush; empty (zero size at the origin) if there are none.
+    Aabb bounds() const;
 
 private:
     struct CollisionBrush {

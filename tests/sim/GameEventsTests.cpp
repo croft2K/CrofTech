@@ -1,0 +1,120 @@
+#include "SimHarness.h"
+
+#include "croftech/client/GameEvents.h"
+#include "croftech/sim/Damage.h"
+
+#include <doctest/doctest.h>
+
+#include <algorithm>
+#include <vector>
+
+using ct::GameEventKind;
+using ct::test::floorBrush;
+using ct::test::SimHarness;
+
+namespace {
+
+// Runs ticks of the command, giving the events every state, and returns what they saw.
+std::vector<ct::GameEvent> watch(SimHarness& sim, ct::GameEvents& events, const ct::UserCmd& cmd,
+                                 int ticks, std::uint32_t timeline = 0) {
+    std::vector<ct::GameEvent> seen;
+    for (int i = 0; i < ticks; ++i) {
+        sim.run(cmd, 1);
+        events.update(&sim.state(), timeline, sim.level(), sim.movement(), seen);
+    }
+    return seen;
+}
+
+std::size_t count(const std::vector<ct::GameEvent>& events, GameEventKind kind) {
+    return static_cast<std::size_t>(std::count_if(
+        events.begin(), events.end(), [kind](const ct::GameEvent& e) { return e.kind == kind; }));
+}
+
+ct::UserCmd pressing(std::uint16_t buttons, std::int8_t forward = 0) {
+    ct::UserCmd cmd;
+    cmd.buttons = buttons;
+    cmd.forward = forward;
+    return cmd;
+}
+
+} // namespace
+
+TEST_CASE("walking makes footsteps every stride, and a jump a jump then a landing") {
+    SimHarness sim({floorBrush()});
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::GameEvents events;
+    const std::vector<ct::GameEvent> walked = watch(sim, events, pressing(0, 127), ct::kTickRate);
+    // About 7 m in a second, speeding up from a standstill.
+    CHECK(count(walked, GameEventKind::Footstep) == 3);
+    CHECK(count(walked, GameEventKind::Jump) == 0);
+
+    const std::vector<ct::GameEvent> jumped =
+        watch(sim, events, pressing(ct::kButtonJump), ct::kTickRate);
+    CHECK(count(jumped, GameEventKind::Jump) == 1);
+    REQUIRE(count(jumped, GameEventKind::Land) == 1);
+    const auto land = std::find_if(jumped.begin(), jumped.end(), [](const ct::GameEvent& e) {
+        return e.kind == GameEventKind::Land;
+    });
+    // A jump lands as fast as it took off.
+    CHECK(land->strength == doctest::Approx(sim.movement().jumpSpeed).epsilon(0.05));
+    CHECK(land->position.z == doctest::Approx(0.0f).epsilon(0.01));
+}
+
+TEST_CASE("hurt, death and respawn are seen in the states") {
+    SimHarness sim(ct::test::floorLevel());
+    const ct::EntityId player = sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::GameEvents events;
+    watch(sim, events, {}, 1);
+    ct::Damage damage;
+    damage.amount = 30;
+    ct::applyDamage(sim.state(), sim.settings().rules, player, damage);
+    std::vector<ct::GameEvent> seen = watch(sim, events, {}, 1);
+    REQUIRE(count(seen, GameEventKind::Hurt) == 1);
+    CHECK(seen.front().strength == 30.0f);
+    CHECK(seen.front().entity == player);
+
+    ct::kill(sim.state(), player, ct::DamageKind::Generic);
+    seen = watch(sim, events, {}, 2 * ct::kTickRate);
+    CHECK(count(seen, GameEventKind::Death) == 1);
+    CHECK(count(seen, GameEventKind::Hurt) == 0);
+    seen = watch(sim, events, pressing(ct::kButtonAttack), 4);
+    CHECK(count(seen, GameEventKind::Respawn) == 1);
+    CHECK(count(seen, GameEventKind::Footstep) == 0);
+}
+
+TEST_CASE("movers starting and stopping, and checkpoints reached, are events") {
+    ct::Brush door = ct::makeBoxBrush({3.0f, -1.0f, 0.0f}, {3.25f, 1.0f, 2.0f});
+    door.entity = 0;
+    ct::Brush volume = ct::makeBoxBrush({-1.0f, 3.0f, 0.0f}, {1.0f, 5.0f, 2.0f});
+    volume.entity = 1;
+    ct::Level level{{floorBrush(), door, volume},
+                    {{"mover", {{"move", "0 0 2"}, {"activate", "touch"}, {"wait", "0.5"}}},
+                     {"checkpoint", {}}}};
+    SimHarness sim(level);
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::GameEvents events;
+    std::vector<ct::GameEvent> seen = watch(sim, events, pressing(0, 127), ct::kTickRate / 2);
+    REQUIRE(count(seen, GameEventKind::MoverStart) == 1);
+    const auto start = std::find_if(seen.begin(), seen.end(), [](const ct::GameEvent& e) {
+        return e.kind == GameEventKind::MoverStart;
+    });
+    CHECK(start->levelEntity == 0);
+    CHECK(start->position.x == doctest::Approx(3.125f));
+    seen = watch(sim, events, {}, ct::kTickRate);
+    CHECK(count(seen, GameEventKind::MoverStop) >= 1);
+
+    sim.place({0.0f, 4.0f, 0.0f});
+    seen = watch(sim, events, {}, 2);
+    CHECK(count(seen, GameEventKind::CheckpointReached) == 1);
+}
+
+TEST_CASE("a new timeline starts afresh, with no events for the jump back") {
+    SimHarness sim({floorBrush()});
+    sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::GameEvents events;
+    watch(sim, events, pressing(0, 127), ct::kTickRate);
+    // A loaded save moves the player and puts them in the air; none of that is an event.
+    sim.place({-20.0f, 0.0f, 5.0f});
+    const std::vector<ct::GameEvent> seen = watch(sim, events, {}, 1, 1);
+    CHECK(seen.empty());
+}

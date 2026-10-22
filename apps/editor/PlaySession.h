@@ -3,6 +3,7 @@
 #include "GameHud.h"
 #include "PlayerInput.h"
 
+#include "croftech/client/GameEvents.h"
 #include "croftech/client/LocalGame.h"
 #include "croftech/client/StepSmoothing.h"
 #include "croftech/core/Camera.h"
@@ -46,6 +47,8 @@ public:
     // Horizontal speed, metres per second.
     float speed() const { return m_speed; }
     const GameHud& hud() const { return m_hud; }
+    // What happened in the game since the last update, for sounds and effects.
+    const std::vector<GameEvent>& events() const { return m_events; }
     const LocalGame& game() const { return m_game; }
 
     // Saves made during play are kept until it stops: quick saves, and checkpoints reached.
@@ -63,6 +66,8 @@ private:
     LocalGame m_game;
     PlayerLook m_look;
     GameHud m_hud;
+    GameEvents m_gameEvents;
+    std::vector<GameEvent> m_events;
     StepSmoothing m_stepSmoothing;
     std::uint32_t m_timeline = 0;
     std::vector<std::byte> m_lastSave;
