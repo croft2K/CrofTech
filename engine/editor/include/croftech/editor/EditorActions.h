@@ -74,11 +74,11 @@ bool duplicateSelection(EditorDocument& document, Vec3 offset);
 // them out of the world or the entity they were part of; an entity left with no brushes is
 // deleted. The new entity is in the group of the first of the brushes. A mover gets the preset's
 // move, or one up by the brushes' height. Selects the new entity with its brushes. False if no
-// brushes are selected or the level is full of entities.
+// brushes are selected, the level is full of entities or the preset is of a point class.
 bool createBrushEntity(EditorDocument& document, const EntityPreset& preset);
 
-// Adds an entity from the preset made of one box brush of the preset's size, standing centred on
-// the point, and selects it.
+// Adds an entity from the preset, made of one box brush of the preset's size standing centred on
+// the point, or, for a point class (pickups), placed at the point; and selects it.
 bool addPresetEntity(EditorDocument& document, const EntityPreset& preset, Vec3 point);
 
 // Makes the selected brushes world geometry again, in their entity's group; an entity left with no

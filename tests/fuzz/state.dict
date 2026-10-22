@@ -52,3 +52,6 @@
 "\x06weapon"
 "\x08fuseTick"
 "\x0cexplodedTick"
+"\x06pickup"
+"\x0brespawnTick"
+"\x07takenBy"

@@ -602,6 +602,7 @@ int main(int argc, char** argv) {
         effects.clear();
         ct::addPlayers(shapes, *localGame, now, thirdPerson);
         ct::addProjectiles(shapes, *localGame, now);
+        ct::addPickups(shapes, *localGame, now);
         if (!thirdPerson) {
             ct::addViewWeapon(shapes, *localGame, eye, look.yaw, look.pitch, now);
         }

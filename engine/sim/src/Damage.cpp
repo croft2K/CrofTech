@@ -61,6 +61,28 @@ void kill(State& state, EntityId target, DamageKind kind, EntityId attacker) {
     die(state, *health);
 }
 
+void drainOvercharge(State& state, const RulesSettings& rules) {
+    if (rules.overchargeDecay <= 0.0f) {
+        return;
+    }
+    const auto interval = static_cast<TickIndex>(std::max(
+        static_cast<float>(kTickRate) / std::min(rules.overchargeDecay, 1000.0f) + 0.5f, 1.0f));
+    if (state.tick % interval != 0) {
+        return;
+    }
+    for (Health& health : state.world.healths.components()) {
+        if (isDead(health)) {
+            continue;
+        }
+        if (health.health > rules.maxHealth) {
+            --health.health;
+        }
+        if (health.armour > rules.maxArmour) {
+            --health.armour;
+        }
+    }
+}
+
 bool canRespawn(const Health& health, const RulesSettings& rules, TickIndex tick) {
     const auto delay = static_cast<std::uint32_t>(
         std::clamp(rules.respawnDelay, 0.0f, 3600.0f) * static_cast<float>(kTickRate) + 0.5f);

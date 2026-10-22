@@ -34,6 +34,9 @@ public:
     void updateTriggers(const MovementSettings& movement);
     // Hurt volumes hurt what is inside them, each thing at most once per interval.
     void runHurtVolumes(const GameSettings& settings);
+    // Taken pickups come back when their time is up, and living players take the ones they touch
+    // and need, in input-slot order.
+    void runPickups(const GameSettings& settings);
 
 private:
     struct Queued {
@@ -50,6 +53,8 @@ private:
     void queue(const GameLevel::Output& output, EntityId activator);
     void deliverQueued();
     void apply(const Queued& input);
+    // What the pickup gives, if the player needs it; whether it was taken.
+    bool give(const GameLevel::Entity& pickup, const GameSettings& settings, EntityId player);
 
     // Movers (Movers.cpp).
     void applyMoverInput(std::uint32_t index, const GameLevel::Entity& entity, Mover& mover,

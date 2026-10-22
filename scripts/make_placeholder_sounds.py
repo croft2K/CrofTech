@@ -178,6 +178,35 @@ def weapon_switch():
     return mix(scaled(burst(0.03, 15.0, 0.9, 14), 0.6), gap + scaled(burst(0.04, 12.0, 0.7, 15), 0.7))
 
 
+def chime(notes, step):
+    out = []
+    for n, hz in enumerate(notes):
+        out = mix(out or [0.0], [0.0] * frames(step * n) + bell(hz, 0.35))
+    return out
+
+
+def pickup_health():
+    return scaled(chime([520, 660, 780], 0.06), 0.7)
+
+
+def pickup_armour():
+    return mix(scaled(sweep(300, 600, 0.25, 3.0, (1.0, 0.5, 0.3)), 0.6),
+               scaled(burst(0.08, 10.0, 0.3, 16), 0.3))
+
+
+def pickup_ammo():
+    gap = [0.0] * frames(0.05)
+    return mix(scaled(burst(0.04, 14.0, 0.6, 17), 0.7), gap + scaled(burst(0.05, 12.0, 0.5, 18), 0.6))
+
+
+def pickup_weapon():
+    return mix(scaled(burst(0.06, 12.0, 0.7, 19), 0.7), scaled(chime([440, 660], 0.08), 0.5))
+
+
+def pickup_respawn():
+    return scaled(sweep(700, 1100, 0.3, 4.0, (1.0, 0.3)), 0.5)
+
+
 for name, make in [('footstep', footstep), ('jump', jump), ('land', land), ('pain', pain),
                    ('death', death), ('respawn', respawn), ('checkpoint', checkpoint),
                    ('mover_start', mover_start), ('mover_stop', mover_stop),
@@ -185,6 +214,8 @@ for name, make in [('footstep', footstep), ('jump', jump), ('land', land), ('pai
                    ('machinegun_fire', machinegun_fire), ('shotgun_fire', shotgun_fire),
                    ('grenade_launcher_fire', grenade_launcher_fire),
                    ('rocket_launcher_fire', rocket_launcher_fire), ('impact', impact), ('hit', hit),
-                   ('weapon_switch', weapon_switch)]:
+                   ('weapon_switch', weapon_switch), ('pickup_health', pickup_health),
+                   ('pickup_armour', pickup_armour), ('pickup_ammo', pickup_ammo),
+                   ('pickup_weapon', pickup_weapon), ('pickup_respawn', pickup_respawn)]:
     write(name, make())
     print(f'wrote {name}.wav')

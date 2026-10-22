@@ -115,6 +115,10 @@ bool anyBrushSelected(const EditorDocument& document) {
 // class with its defaults, for building one up from scratch.
 void brushEntityMenuItems(EditorDocument& document) {
     for (const EntityPreset& preset : entityPresets()) {
+        const EntityClassInfo* entityClass = findEntityClass(preset.className);
+        if (entityClass == nullptr || entityClass->shape != EntityShape::Brush) {
+            continue;
+        }
         if (ImGui::MenuItem(std::string(preset.name).c_str())) {
             createBrushEntity(document, preset);
         }
@@ -1093,6 +1097,19 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
                 bool on = propertyValue(entity, property) == "1";
                 if (ImGui::Checkbox("##value", &on)) {
                     setValue(key, on ? "1" : "0");
+                }
+            } else if (property.type == PropertyType::Weapon) {
+                const std::string current(propertyValue(entity, property));
+                if (ImGui::BeginCombo("##value", current.empty() ? "(none)" : current.c_str())) {
+                    if (ImGui::Selectable("(none)", current.empty())) {
+                        setValue(key, "");
+                    }
+                    for (const std::string& weapon : m_weaponNames) {
+                        if (ImGui::Selectable(weapon.c_str(), weapon == current)) {
+                            setValue(key, weapon);
+                        }
+                    }
+                    ImGui::EndCombo();
                 }
             } else if (property.type == PropertyType::Choice) {
                 const std::string current(propertyValue(entity, property));

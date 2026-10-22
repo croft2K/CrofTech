@@ -1,7 +1,9 @@
 #include "LevelLogic.h"
 
 #include "croftech/core/Profile.h"
+#include "croftech/level/EntityClasses.h"
 #include "croftech/sim/Damage.h"
+#include "croftech/sim/Firing.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -190,6 +192,88 @@ void LevelLogic::runHurtVolumes(const GameSettings& settings) {
     }
 }
 
+void LevelLogic::runPickups(const GameSettings& settings) {
+    CT_PROFILE_ZONE();
+    World& world = m_state.world;
+    const Vec3 half = settings.movement.halfExtents;
+    for (std::size_t i = 0; i < world.pickups.size(); ++i) {
+        Pickup& pickup = world.pickups.components()[i];
+        std::uint32_t index = 0;
+        const GameLevel::Entity* entity =
+            levelEntityOf(world.pickups.entities()[i], LogicClass::Pickup, index);
+        if (entity == nullptr) {
+            continue;
+        }
+        if ((pickup.flags & kPickupTaken) != 0 && pickup.respawnTick != 0 &&
+            m_state.tick >= pickup.respawnTick) {
+            pickup.flags &= ~kPickupTaken;
+            pickup.respawnTick = 0;
+        }
+        if (!isAvailable(pickup)) {
+            continue;
+        }
+        const Aabb box{entity->position - kPickupHalfExtents,
+                       entity->position + kPickupHalfExtents};
+        const std::span<const EntityId> players = world.playerControls.entities();
+        for (const EntityId player : players) {
+            const Transform* transform = world.transforms.get(player);
+            const Health* health = world.healths.get(player);
+            if (transform == nullptr || (health != nullptr && isDead(*health)) ||
+                !overlaps({transform->position - half, transform->position + half}, box) ||
+                !give(*entity, settings, player)) {
+                continue;
+            }
+            pickup.flags |= kPickupTaken;
+            pickup.takenBy = player;
+            pickup.respawnTick = entity->respawnTicks < 0
+                                     ? 0u
+                                     : m_state.tick + static_cast<TickIndex>(entity->respawnTicks);
+            fire(index, LogicEvent::OnPickup, player);
+            break;
+        }
+    }
+    deliverQueued();
+}
+
+bool LevelLogic::give(const GameLevel::Entity& pickup, const GameSettings& settings,
+                      EntityId player) {
+    World& world = m_state.world;
+    Health* health = world.healths.get(player);
+    Weapons* weapons = world.weapons.get(player);
+    // Tops a value up by the amount, to the cap; false if it is there already.
+    const auto topUp = [](std::int32_t& value, std::int32_t amount, std::int32_t cap) {
+        if (value >= cap) {
+            return false;
+        }
+        value = static_cast<std::int32_t>(
+            std::min<std::int64_t>(static_cast<std::int64_t>(value) + amount, cap));
+        return true;
+    };
+    const std::int32_t limit = pickup.limit;
+    switch (pickup.item) {
+    case PickupItem::Health:
+        return health != nullptr &&
+               topUp(health->health, pickup.amount > 0 ? pickup.amount : kUsualPickupHealth,
+                     limit > 0 ? limit : settings.rules.maxHealth);
+    case PickupItem::Armour:
+        return health != nullptr &&
+               topUp(health->armour, pickup.amount > 0 ? pickup.amount : kUsualPickupArmour,
+                     limit > 0 ? limit : settings.rules.maxArmour);
+    case PickupItem::Ammo:
+    case PickupItem::Weapon: {
+        if (weapons == nullptr || pickup.weapon >= settings.weapons.size()) {
+            return false;
+        }
+        const std::int32_t ammo =
+            pickup.amount > 0 ? pickup.amount : settings.weapons[pickup.weapon].pickupAmmo;
+        return pickup.item == PickupItem::Ammo
+                   ? giveAmmo(*weapons, settings, pickup.weapon, ammo)
+                   : giveWeapon(*weapons, settings, pickup.weapon, ammo, m_state.tick);
+    }
+    }
+    return false;
+}
+
 void LevelLogic::fire(std::uint32_t source, LogicEvent event, EntityId activator) {
     const GameLevel::Entity* entity = m_level.entity(source);
     if (entity == nullptr) {
@@ -321,6 +405,18 @@ void LevelLogic::apply(const Queued& input) {
     case LogicClass::Mover:
         if (Mover* mover = world.movers.get(id)) {
             applyMoverInput(input.target, *entity, *mover, input.input, input.activator);
+        }
+        return;
+    case LogicClass::Pickup:
+        if (Pickup* pickup = world.pickups.get(id)) {
+            const bool enable =
+                input.input == LogicInput::Enable ||
+                (input.input == LogicInput::Toggle && (pickup->flags & kLogicEnabled) == 0);
+            if (enable) {
+                pickup->flags |= kLogicEnabled;
+            } else if (input.input == LogicInput::Disable || input.input == LogicInput::Toggle) {
+                pickup->flags &= ~kLogicEnabled;
+            }
         }
         return;
     case LogicClass::None:

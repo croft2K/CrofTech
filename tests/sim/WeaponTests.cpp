@@ -342,6 +342,7 @@ ct::WeaponSettings grenade() {
 ct::GameSettings sturdy(std::vector<ct::WeaponSettings> weapons) {
     ct::GameSettings settings = armed(std::move(weapons));
     settings.rules.startHealth = 200;
+    settings.rules.maxHealth = 200; // so none of it drains away
     return settings;
 }
 

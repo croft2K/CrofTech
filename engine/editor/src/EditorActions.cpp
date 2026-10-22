@@ -582,11 +582,12 @@ bool addBrushes(EditorDocument& document, std::vector<Brush> brushes, const std:
 bool createBrushEntity(EditorDocument& document, const EntityPreset& preset) {
     const Level& level = document.level();
     const std::vector<std::size_t> brushes = selectedBrushes(document);
-    if (brushes.empty() || level.entities.size() >= kMaxLevelEntities) {
+    const EntityClassInfo* entityClass = findEntityClass(preset.className);
+    if (brushes.empty() || level.entities.size() >= kMaxLevelEntities ||
+        (entityClass != nullptr && entityClass->shape == EntityShape::Point)) {
         return false;
     }
     LevelEntity entity = makePresetEntity(preset);
-    const EntityClassInfo* entityClass = findEntityClass(preset.className);
     if (entityClass != nullptr && findPropertyInfo(*entityClass, "move") != nullptr) {
         Vec3 move = preset.move;
         if (preset.moveUpByHeight) {
@@ -632,6 +633,16 @@ bool addPresetEntity(EditorDocument& document, const EntityPreset& preset, Vec3 
     if (level.entities.size() >= kMaxLevelEntities || level.brushes.size() >= kMaxLevelBrushes) {
         return false;
     }
+    const EntityClassInfo* entityClass = findEntityClass(preset.className);
+    if (entityClass != nullptr && entityClass->shape == EntityShape::Point) {
+        LevelEntity entity = makePresetEntity(preset);
+        setProperty(entity, "origin", formatVec3(point));
+        const std::size_t index = level.entities.size();
+        document.execute(
+            makeInsertEntity(std::format("Create {}", preset.name), index, std::move(entity)));
+        document.select(LevelItem::entity(index));
+        return true;
+    }
     const Vec3 half{preset.size.x * 0.5f, preset.size.y * 0.5f, 0.0f};
     Brush brush = makeBoxBrush(point - half, point + half + Vec3{0.0f, 0.0f, preset.size.z});
     std::string problem;
@@ -639,7 +650,6 @@ bool addPresetEntity(EditorDocument& document, const EntityPreset& preset, Vec3 
         return false;
     }
     LevelEntity entity = makePresetEntity(preset);
-    const EntityClassInfo* entityClass = findEntityClass(preset.className);
     if (entityClass != nullptr && findPropertyInfo(*entityClass, "move") != nullptr) {
         setProperty(
             entity, "move",

@@ -2,6 +2,7 @@
 
 #include "croftech/level/Level.h"
 #include "croftech/sim/CollisionWorld.h"
+#include "croftech/sim/GameSettings.h"
 #include "croftech/sim/World.h"
 
 #include <cstdint>
@@ -24,6 +25,7 @@ enum class LogicClass : std::uint8_t {
     Counter,
     Timer,
     Mover,
+    Pickup,
 };
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
@@ -38,6 +40,7 @@ enum class LogicEvent : std::uint8_t {
     OnReachedEnd,
     OnLeaveEnd,
     OnReachedStart,
+    OnPickup,
 };
 
 enum class LogicInput : std::uint8_t {
@@ -56,6 +59,15 @@ enum class LogicInput : std::uint8_t {
 
 // What sets a mover going besides its inputs (the mover class's "activate").
 enum class MoverActivation : std::uint8_t { Input, Touch, Stand };
+
+// What a pickup gives (the pickup class's "item").
+enum class PickupItem : std::uint8_t { Health, Armour, Ammo, Weapon };
+
+inline constexpr std::uint32_t kNoWeapon = 0xFFFFFFFFu;
+
+// What health and armour pickups give when their amount is 0.
+inline constexpr std::int32_t kUsualPickupHealth = 25;
+inline constexpr std::int32_t kUsualPickupArmour = 50;
 
 std::string_view logicEventName(LogicEvent event);
 std::string_view logicInputName(LogicInput input);
@@ -115,6 +127,14 @@ public:
         bool startMoving = false;
         bool startAtEnd = false;
 
+        // Pickups.
+        Vec3 position; // the middle of the box that takes it
+        PickupItem item = PickupItem::Health;
+        std::int32_t amount = 0;          // 0 is the usual for the item
+        std::int32_t limit = 0;           // 0 is the rules' maximum
+        std::uint32_t weapon = kNoWeapon; // GameSettings::weapons index
+        std::int32_t respawnTicks = -1;   // -1 never comes back
+
         // Where a mover's brushes are when it has travelled the distance: exactly its move at
         // the end.
         Vec3 moverOffset(float distance) const {
@@ -122,7 +142,9 @@ public:
         }
     };
 
-    explicit GameLevel(const Level& level, std::optional<SpawnPoint> start = {});
+    // Pickups name weapons; they are found among the game's weapons by name.
+    explicit GameLevel(const Level& level, std::optional<SpawnPoint> start = {},
+                       std::span<const WeaponSettings> weapons = {});
     GameLevel(const GameLevel&) = delete;
     GameLevel& operator=(const GameLevel&) = delete;
 
@@ -144,7 +166,8 @@ public:
     std::span<const std::string> warnings() const { return m_warnings; }
 
 private:
-    void readEntity(const Level& level, std::uint32_t index);
+    void readEntity(const Level& level, std::uint32_t index,
+                    std::span<const WeaponSettings> weapons);
     void resolveOutputs(const Level& level);
     void spawnLogic();
     void findKillHeight(const Level& level);

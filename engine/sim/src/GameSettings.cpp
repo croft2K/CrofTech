@@ -36,6 +36,8 @@ constexpr WeaponInt kWeaponInts[] = {
     {"ammo_per_shot", &WeaponSettings::ammoPerShot, 0, kMaxAmmo, "0 never runs out"},
     {"start_ammo", &WeaponSettings::startAmmo, 0, kMaxAmmo, "ammo carried at spawn"},
     {"max_ammo", &WeaponSettings::maxAmmo, 0, kMaxAmmo, "most ammo it holds"},
+    {"pickup_ammo", &WeaponSettings::pickupAmmo, 0, kMaxAmmo,
+     "ammo in an ammo or weapon pickup that doesn't say how much"},
     {"splash_damage", &WeaponSettings::splashDamage, 0, kMaxHealthSetting,
      "at the centre of a projectile's explosion, less with distance"},
 };
@@ -92,6 +94,7 @@ void registerWeaponCVars(Console& console, std::string_view weapon) {
 WeaponSettings weaponFromCVars(const Console& console, std::string_view weapon) {
     const std::string prefix = weaponCVarPrefix(weapon);
     WeaponSettings settings;
+    settings.name = std::string(weapon);
     for (const WeaponInt& setting : kWeaponInts) {
         settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asInt();
     }
@@ -130,6 +133,12 @@ void registerGameCVars(Console& console, std::span<const std::string> weapons) {
                                 "share of each hit's damage armour takes while it lasts"));
     console.add(CVar::makeFloat(cvarName("respawn_delay"), defaults.respawnDelay, 0.0f, 60.0f,
                                 "seconds after dying before fire respawns"));
+    console.add(CVar::makeInt(cvarName("max_health"), defaults.maxHealth, 1, kMaxHealthSetting,
+                              "most health pickups give, unless one says otherwise"));
+    console.add(CVar::makeInt(cvarName("max_armour"), defaults.maxArmour, 0, kMaxHealthSetting,
+                              "most armour pickups give, unless one says otherwise"));
+    console.add(CVar::makeFloat(cvarName("overcharge_decay"), defaults.overchargeDecay, 0.0f,
+                                100.0f, "health and armour lost a second while above the maximum"));
     for (const std::string& weapon : usable(weapons)) {
         registerWeaponCVars(console, weapon);
     }
@@ -142,6 +151,9 @@ GameSettings gameSettingsFromCVars(const Console& console, std::span<const std::
     settings.rules.startArmour = findCVar(console, cvarName("start_armour")).asInt();
     settings.rules.armourShare = findCVar(console, cvarName("armour_share")).asFloat();
     settings.rules.respawnDelay = findCVar(console, cvarName("respawn_delay")).asFloat();
+    settings.rules.maxHealth = findCVar(console, cvarName("max_health")).asInt();
+    settings.rules.maxArmour = findCVar(console, cvarName("max_armour")).asInt();
+    settings.rules.overchargeDecay = findCVar(console, cvarName("overcharge_decay")).asFloat();
     for (const std::string& weapon : usable(weapons)) {
         settings.weapons.push_back(weaponFromCVars(console, weapon));
     }

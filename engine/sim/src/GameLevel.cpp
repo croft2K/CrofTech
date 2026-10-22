@@ -13,9 +13,9 @@ namespace {
 
 constexpr std::string_view kEventNames[] = {
     "on_enter",       "on_exit",        "on_trigger",   "on_reached",       "on_timer",
-    "on_leave_start", "on_reached_end", "on_leave_end", "on_reached_start",
+    "on_leave_start", "on_reached_end", "on_leave_end", "on_reached_start", "on_pickup",
 };
-static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnReachedStart) + 1);
+static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnPickup) + 1);
 
 constexpr std::string_view kInputNames[] = {
     "enable", "disable", "toggle",      "trigger",       "add",    "reset",
@@ -54,6 +54,9 @@ LogicClass logicClassOf(std::string_view className) {
     }
     if (className == "mover") {
         return LogicClass::Mover;
+    }
+    if (className == kPickupClass) {
+        return LogicClass::Pickup;
     }
     return LogicClass::None;
 }
@@ -121,7 +124,8 @@ std::string_view logicInputName(LogicInput input) {
     return kInputNames[static_cast<std::size_t>(input)];
 }
 
-GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start)
+GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
+                     std::span<const WeaponSettings> weapons)
     : m_collision(staticBrushes(level)), m_entities(level.entities.size()) {
     std::string error;
     if (start) {
@@ -140,7 +144,7 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start)
         }
     }
     for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
-        readEntity(level, i);
+        readEntity(level, i, weapons);
         if (hasModel(m_entities[i].logicClass)) {
             if (owned[i].empty()) {
                 m_warnings.push_back(std::format("{} has no brushes", describe(level, i)));
@@ -179,7 +183,8 @@ void GameLevel::findKillHeight(const Level& level) {
     m_killHeight = lowest - kOutOfWorldDepth;
 }
 
-void GameLevel::readEntity(const Level& level, std::uint32_t index) {
+void GameLevel::readEntity(const Level& level, std::uint32_t index,
+                           std::span<const WeaponSettings> weapons) {
     const LevelEntity& levelEntity = level.entities[index];
     Entity& entity = m_entities[index];
     entity.logicClass = logicClassOf(levelEntity.className);
@@ -231,6 +236,35 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index) {
         entity.loop = flagProperty(levelEntity, *entityClass, "loop");
         entity.startMoving = flagProperty(levelEntity, *entityClass, "start_moving");
         entity.startAtEnd = flagProperty(levelEntity, *entityClass, "start_at_end");
+        break;
+    }
+    case LogicClass::Pickup: {
+        entity.startEnabled = !flagProperty(levelEntity, *entityClass, "start_disabled");
+        entity.position = vectorProperty(levelEntity, *entityClass, "origin") +
+                          Vec3{0.0f, 0.0f, kPickupHalfExtents.z};
+        entity.item = static_cast<PickupItem>(choiceProperty(levelEntity, *entityClass, "item"));
+        entity.amount =
+            static_cast<std::int32_t>(clampedCount(levelEntity, *entityClass, "amount"));
+        entity.limit = static_cast<std::int32_t>(clampedCount(levelEntity, *entityClass, "limit"));
+        const float respawn = clampedNumber(levelEntity, *entityClass, "respawn");
+        entity.respawnTicks =
+            respawn < 0.0f ? -1 : static_cast<std::int32_t>(std::max(secondsToTicks(respawn), 1u));
+        const std::string_view weapon = textProperty(levelEntity, *entityClass, "weapon");
+        for (std::uint32_t i = 0; i < weapons.size() && i < kMaxWeapons; ++i) {
+            if (weapons[i].name == weapon) {
+                entity.weapon = i;
+            }
+        }
+        const bool needsWeapon =
+            entity.item == PickupItem::Ammo || entity.item == PickupItem::Weapon;
+        if (needsWeapon && weapon.empty()) {
+            m_warnings.push_back(std::format("{}: an {} pickup needs a weapon",
+                                             describe(level, index),
+                                             entity.item == PickupItem::Ammo ? "ammo" : "weapon"));
+        } else if (needsWeapon && entity.weapon == kNoWeapon) {
+            m_warnings.push_back(
+                std::format("{}: the game has no weapon '{}'", describe(level, index), weapon));
+        }
         break;
     }
     case LogicClass::None:
@@ -364,6 +398,9 @@ void GameLevel::spawnLogic() {
             world.movers.add(entity.id, mover);
             break;
         }
+        case LogicClass::Pickup:
+            world.pickups.add(entity.id, {enabled, 0, {}});
+            break;
         case LogicClass::None:
             break;
         }

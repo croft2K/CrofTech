@@ -54,7 +54,11 @@ on contact or when their fuse runs out, hurting and throwing what is near (rocke
 shows a crosshair (marked when your shot hurts someone), the weapons carried and the ammo in hand;
 a placeholder weapon is held in view (`addViewWeapon`). Shots make Fire and Impact game events:
 the client works out where hitscan pellets went from the shooter's random counter, as the server
-did, for tracers and sparks, and each weapon fires with `sounds/<weapon>_fire.wav`.
+did, for tracers and sparks, and each weapon fires with `sounds/<weapon>_fire.wav`. Pickups
+(the `pickup` class: health, armour, ammo or a weapon named from the game's list) are taken by
+walking into them when needed, come back after their respawn time (or never, for single
+player) and fire on_pickup; health and armour above `rules.max_health`/`max_armour` drain away.
+`--map weapons_test` is a small arena with all of them.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -82,7 +86,7 @@ in the entity's block). Groups (`Level::groups`) are named sets of world brushes
 the editor selects and moves as one; a brush of an entity is in its entity's group. Brushes can
 have names. Both only organise the level; play ignores them. TrenchBroom groups import as groups. Outputs wire entities together: when an event happens, an input is sent
 to every entity with the target name, after a delay. `level/EntityClasses.h` lists each class's
-properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform, Trigger, Checkpoint, Hurt, Kill);
+properties (types, defaults), events and inputs, and the ready-made presets (Door, Lift, Platform, Trigger, Checkpoint, Hurt, Kill, and the pickups Health, Mega health, Armour, Heavy armour, Ammo, Weapon);
 the editor's inspector and the game both read it. To play a level, the server builds a
 `GameLevel` (`sim/GameLevel.h`) from it once: world collision (volumes aren't solid), each logic
 entity's settings with its outputs resolved to target entities and inputs, and the state play

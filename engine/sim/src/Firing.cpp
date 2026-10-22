@@ -264,6 +264,37 @@ void armPlayer(Weapons& weapons, const GameSettings& settings, TickIndex tick) {
     }
 }
 
+bool giveAmmo(Weapons& weapons, const GameSettings& settings, std::uint32_t weapon,
+              std::int32_t amount) {
+    if (weapon >= settings.weapons.size() || weapon >= kMaxWeapons) {
+        return false;
+    }
+    const std::int32_t most = std::clamp(settings.weapons[weapon].maxAmmo, 0, kMaxAmmo);
+    const std::int32_t held = weapons.ammo[weapon];
+    if (held >= most) {
+        return false;
+    }
+    weapons.ammo[weapon] =
+        static_cast<std::int16_t>(std::clamp(held + std::clamp(amount, 0, kMaxAmmo), 0, most));
+    return true;
+}
+
+bool giveWeapon(Weapons& weapons, const GameSettings& settings, std::uint32_t weapon,
+                std::int32_t ammo, TickIndex tick) {
+    if (weapon >= settings.weapons.size() || weapon >= kMaxWeapons) {
+        return false;
+    }
+    if (carries(weapons, weapon)) {
+        return giveAmmo(weapons, settings, weapon, ammo);
+    }
+    weapons.owned |= 1u << weapon;
+    giveAmmo(weapons, settings, weapon, ammo);
+    if (weapon > weapons.current || !canUse(weapons, settings, weapons.current)) {
+        takeOut(weapons, settings, weapon, tick);
+    }
+    return true;
+}
+
 Weapons startingWeapons(const GameSettings& settings, std::uint32_t inputSlot, TickIndex tick) {
     Weapons weapons;
     weapons.random = inputSlot << 24;

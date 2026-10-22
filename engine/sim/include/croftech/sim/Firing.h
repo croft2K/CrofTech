@@ -40,6 +40,17 @@ Vec3 pelletDirection(const Transform& transform, float spread, std::uint32_t& ra
 // of them in hand, being raised from the given tick. The random counter carries on.
 void armPlayer(Weapons& weapons, const GameSettings& settings, TickIndex tick);
 
+// Adds ammo for the weapon, up to its max_ammo. Returns false, changing nothing, if it is full
+// (or the weapon isn't one of the game's), so a pickup can be left for someone who needs it.
+bool giveAmmo(Weapons& weapons, const GameSettings& settings, std::uint32_t weapon,
+              std::int32_t amount);
+
+// Gives the weapon with some ammo. One not carried before is taken out at once if it comes later
+// in the list (later weapons are stronger). Returns false if it was carried already with full
+// ammo.
+bool giveWeapon(Weapons& weapons, const GameSettings& settings, std::uint32_t weapon,
+                std::int32_t ammo, TickIndex tick);
+
 // A new player's weapons, armed from the given tick. Each input slot's shots draw from their own
 // stretch of random numbers.
 Weapons startingWeapons(const GameSettings& settings, std::uint32_t inputSlot, TickIndex tick);

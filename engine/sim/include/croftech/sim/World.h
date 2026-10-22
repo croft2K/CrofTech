@@ -38,6 +38,7 @@ struct World {
     ComponentPool<Counter, kMaxEntities> counters;
     ComponentPool<Timer, kMaxEntities> timers;
     ComponentPool<Mover, kMaxEntities> movers;
+    ComponentPool<Pickup, kMaxEntities> pickups;
     ComponentPool<PendingInput, kMaxEntities> pendingInputs;
 
     void destroy(EntityId id) noexcept;
@@ -61,6 +62,7 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.counters);
     fn(world.timers);
     fn(world.movers);
+    fn(world.pickups);
     fn(world.pendingInputs);
 }
 

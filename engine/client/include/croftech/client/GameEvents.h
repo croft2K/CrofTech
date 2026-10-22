@@ -26,10 +26,12 @@ enum class GameEventKind : std::uint8_t {
     MoverStart,
     MoverStop,
     CheckpointReached,
-    Explosion,    // a rocket or grenade going off; entity is the projectile
-    Fire,         // a shot, from the eye; weapon says which
-    Impact,       // where a hitscan pellet stopped; strength 1 if it hit someone, else 0
-    WeaponSwitch, // weapon says which is now in hand
+    Explosion,     // a rocket or grenade going off; entity is the projectile
+    Fire,          // a shot, from the eye; weapon says which
+    Impact,        // where a hitscan pellet stopped; strength 1 if it hit someone, else 0
+    WeaponSwitch,  // weapon says which is now in hand
+    Pickup,        // taken; entity is who took it, levelEntity the pickup
+    PickupRespawn, // back again; levelEntity is the pickup
 };
 
 struct GameEvent {
@@ -37,7 +39,7 @@ struct GameEvent {
     EntityId entity; // who or what it happened to; for shots, the shooter
     Vec3 position;
     float strength = 0.0f;
-    std::uint32_t levelEntity = 0; // movers and checkpoints
+    std::uint32_t levelEntity = 0; // movers, checkpoints and pickups
     std::uint32_t weapon = 0;      // shots and switches: GameSettings::weapons index
     Vec3 origin;                   // impacts: where the pellet came from
 };

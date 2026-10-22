@@ -20,7 +20,7 @@ public:
         : SimHarness(level, GameSettings{movement, rules, {}}) {}
 
     SimHarness(const Level& level, const GameSettings& settings)
-        : m_level(level), m_simulation(m_level, settings),
+        : m_level(level, {}, settings.weapons), m_simulation(m_level, settings),
           m_current(std::make_unique<State>(m_level.startState())),
           m_next(std::make_unique<State>()) {}
 

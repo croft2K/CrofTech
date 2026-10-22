@@ -293,6 +293,7 @@ int main(int argc, char** argv) {
     ct::Console console;
     ct::ConsoleWindow consoleWindow(console, ct::ConsoleStyle::Panel);
     ct::EditorPanels panels;
+    panels.setWeaponNames(game->weapons);
     bool running = true;
     bool quitRequested = false;
     bool flying = false;
@@ -647,6 +648,7 @@ int main(int argc, char** argv) {
             effects.clear();
             ct::addPlayers(shapes, play->game(), now, false);
             ct::addProjectiles(shapes, play->game(), now);
+            ct::addPickups(shapes, play->game(), now);
             ct::addViewWeapon(shapes, play->game(), camera.position, camera.yawRadians,
                               camera.pitchRadians, now);
             gameEffects.build(now, effects);

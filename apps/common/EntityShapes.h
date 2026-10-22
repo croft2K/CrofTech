@@ -33,6 +33,12 @@ void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
 void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,
                     LocalGame::Clock::time_point now);
 
+// Every pickup that can be taken in the newest snapshot, turning and bobbing above where it rests:
+// a cube for health (blue for one that goes over the maximum), a flat slab for armour (red for
+// heavy), a small box for ammo and a long one for a weapon.
+void addPickups(std::vector<WorldVertex>& out, const LocalGame& game,
+                LocalGame::Clock::time_point now);
+
 // The weapon in the player's hand, held low and to the right of a first-person view from eye,
 // looking along yaw and pitch (radians, pitch up positive). Each weapon is a box of its own length;
 // it kicks back when fired and comes up from below when taken out, timed from the newest snapshot.

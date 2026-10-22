@@ -1,6 +1,7 @@
 #include "croftech/editor/LevelItem.h"
 
 #include "croftech/level/BrushGeometry.h"
+#include "croftech/level/EntityClasses.h"
 
 #include <algorithm>
 
@@ -104,6 +105,12 @@ std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExten
     }
     if (entity.className == kPlayerSpawnClass) {
         const Vec3 half = playerHalfExtents;
+        return Aabb{*origin - Vec3{half.x, half.y, 0.0f},
+                    *origin + Vec3{half.x, half.y, half.z * 2.0f}};
+    }
+    if (entity.className == kPickupClass) {
+        // The box that takes it, resting on its origin.
+        const Vec3 half = kPickupHalfExtents;
         return Aabb{*origin - Vec3{half.x, half.y, 0.0f},
                     *origin + Vec3{half.x, half.y, half.z * 2.0f}};
     }

@@ -20,6 +20,10 @@ struct RulesSettings {
     std::int32_t startArmour = 0;
     float armourShare = 0.66f; // of each hit's damage that armour takes while it lasts
     float respawnDelay = 1.0f; // seconds after dying before fire respawns
+    // Most that pickups top health and armour up to, unless one says otherwise (mega health).
+    std::int32_t maxHealth = 100;
+    std::int32_t maxArmour = 100;
+    float overchargeDecay = 1.0f; // health and armour lost a second while above the maximum
 };
 
 // One weapon. Each is a file, weapons/<name>.cfg, whose lines are the variables
@@ -27,6 +31,7 @@ struct RulesSettings {
 // projectile speed its pellets are traced at once (hitscan); otherwise each is a projectile that
 // explodes, on hitting something or when its fuse runs out, hurting what is near.
 struct WeaponSettings {
+    std::string name;             // its file's name, as game.cfg lists it and pickups name it
     std::int32_t damage = 10;     // each pellet or projectile that hits
     std::int32_t pellets = 1;     // traces per shot
     float spread = 0.0f;          // degrees a pellet may stray from the aim
@@ -37,7 +42,8 @@ struct WeaponSettings {
     std::int32_t ammoPerShot = 1; // 0 never runs out
     std::int32_t startAmmo = 0;   // carried at spawn
     std::int32_t maxAmmo = 100;
-    bool given = false; // carried from spawn
+    std::int32_t pickupAmmo = 10; // in an ammo or weapon pickup that doesn't say
+    bool given = false;           // carried from spawn
 
     float projectileSpeed = 0.0f;   // m/s; 0 for hitscan
     float projectileGravity = 0.0f; // share of movement gravity that pulls it down

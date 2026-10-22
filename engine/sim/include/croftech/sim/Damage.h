@@ -27,6 +27,10 @@ bool applyDamage(State& state, const RulesSettings& rules, EntityId target, cons
 // Kills the target whatever its health and armour, as falling out of the world does.
 void kill(State& state, EntityId target, DamageKind kind, EntityId attacker = {});
 
+// Health and armour above the rules' maximum (from mega health and heavy armour) drain by one at
+// a time, overchargeDecay a second.
+void drainOvercharge(State& state, const RulesSettings& rules);
+
 // Whether a dead player has been dead long enough to respawn.
 bool canRespawn(const Health& health, const RulesSettings& rules, TickIndex tick);
 

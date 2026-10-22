@@ -53,6 +53,7 @@ add_executable(ct_sim_tests
     sim/LogicTests.cpp
     sim/MoverTests.cpp
     sim/MovementTests.cpp
+    sim/PickupTests.cpp
     sim/ServerTests.cpp
     sim/SimHarness.h
     sim/SlidingTests.cpp

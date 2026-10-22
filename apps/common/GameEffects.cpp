@@ -1,5 +1,7 @@
 #include "GameEffects.h"
 
+#include "croftech/level/EntityClasses.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -11,6 +13,7 @@ constexpr float kGlowRadius = 0.6f;
 constexpr float kGlowHeight = 2.4f;
 constexpr int kGlowSides = 8;
 constexpr Vec3 kGlowColor{0.35f, 0.75f, 1.0f};
+constexpr float kPickupGlowScale = 0.45f;
 
 constexpr float kFlashSeconds = 0.45f;
 constexpr float kFlashStartRadius = 0.4f;
@@ -45,15 +48,15 @@ float lifetime(GameEventKind kind) {
 }
 
 // A ring of panels that fades out and narrows, brightest at the bottom.
-void addGlow(Vec3 position, float age, std::vector<EffectVertex>& out) {
+void addGlow(Vec3 position, float age, float scale, std::vector<EffectVertex>& out) {
     const float fade = 1.0f - age;
-    const float radius = kGlowRadius * (1.0f - 0.5f * age);
+    const float radius = kGlowRadius * scale * (1.0f - 0.5f * age);
     for (int side = 0; side < kGlowSides; ++side) {
         const float a0 = static_cast<float>(side) * (2.0f * kPi / kGlowSides);
         const float a1 = static_cast<float>(side + 1) * (2.0f * kPi / kGlowSides);
         const Vec3 p0 = position + Vec3{std::cos(a0), std::sin(a0), 0.0f} * radius;
         const Vec3 p1 = position + Vec3{std::cos(a1), std::sin(a1), 0.0f} * radius;
-        const Vec3 up{0.0f, 0.0f, kGlowHeight};
+        const Vec3 up{0.0f, 0.0f, kGlowHeight * scale};
         const EffectVertex b0{p0, kGlowColor, 0.8f * fade};
         const EffectVertex b1{p1, kGlowColor, 0.8f * fade};
         const EffectVertex t0{p0 + up, kGlowColor, 0.0f};
@@ -118,6 +121,11 @@ void GameEffects::add(std::span<const GameEvent> events, Clock::time_point now) 
         case GameEventKind::Explosion:
             m_effects.push_back(effect);
             break;
+        case GameEventKind::PickupRespawn:
+            // From the floor it rests on.
+            effect.position.z -= kPickupHalfExtents.z;
+            m_effects.push_back(effect);
+            break;
         case GameEventKind::Impact:
             effect.hit = event.strength > 0.0f;
             m_effects.push_back(effect);
@@ -153,8 +161,11 @@ void GameEffects::build(Clock::time_point now, std::vector<EffectVertex>& out) {
         case GameEventKind::Fire:
             addTracer(effect.origin, effect.position, age, out);
             break;
+        case GameEventKind::PickupRespawn:
+            addGlow(effect.position, age, kPickupGlowScale, out);
+            break;
         default:
-            addGlow(effect.position, age, out);
+            addGlow(effect.position, age, 1.0f, out);
             break;
         }
     }

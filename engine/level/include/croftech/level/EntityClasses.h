@@ -25,7 +25,13 @@ enum class PropertyType : std::uint8_t {
     Vector, // three numbers: x y z, inside the world
     Angle,  // degrees
     Choice, // one of a list of words
+    Weapon, // the name of one of the game's weapons (its game.cfg lists them), or empty
 };
+
+// Items players pick up by walking into them. The origin is where one rests; it is taken by
+// touching this box above it.
+inline constexpr std::string_view kPickupClass = "pickup";
+inline constexpr Vec3 kPickupHalfExtents{0.35f, 0.35f, 0.35f};
 
 struct PropertyInfo {
     std::string_view key;
@@ -109,7 +115,7 @@ struct EntityPreset {
     std::span<const PresetProperty> properties;
     Vec3 move;           // where a mover goes...
     bool moveUpByHeight; // ...or up by its brushes' height, as a door does
-    Vec3 size;           // the box brush the Create menu makes
+    Vec3 size;           // the box brush the Create menu makes; none for point classes
 };
 
 std::span<const EntityPreset> entityPresets();

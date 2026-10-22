@@ -17,6 +17,7 @@ constexpr float kFireReach = 70.0f;
 constexpr float kImpactVolume = 0.35f;
 constexpr float kImpactReach = 25.0f;
 constexpr float kOwnFireVolume = 0.7f;
+constexpr float kPickupRespawnVolume = 0.6f;
 
 } // namespace
 
@@ -109,6 +110,16 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
                 placed.entity = {};
                 play("impact", placed, player, kImpactVolume, kImpactReach);
             }
+            break;
+        case GameEventKind::Pickup:
+            if (const GameLevel::Entity* pickup = level.entity(event.levelEntity)) {
+                constexpr std::string_view kPickupSounds[] = {"pickup_health", "pickup_armour",
+                                                              "pickup_ammo", "pickup_weapon"};
+                play(kPickupSounds[static_cast<std::size_t>(pickup->item)], event, player);
+            }
+            break;
+        case GameEventKind::PickupRespawn:
+            play("pickup_respawn", event, player, kPickupRespawnVolume);
             break;
         case GameEventKind::WeaponSwitch:
             if (event.entity == player) {

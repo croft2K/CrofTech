@@ -35,6 +35,8 @@ public:
     bool drawToolbar(LevelViewport& viewport, EditorSettings& settings, const ViewRect& view);
     void drawHierarchy(EditorDocument& document);
     void drawInspector(EditorDocument& document, const EditorSettings& settings);
+    // The game's weapons, which pickups choose from.
+    void setWeaponNames(std::vector<std::string> names) { m_weaponNames = std::move(names); }
 
 private:
     // Sides, steps, thickness and facing for the shape being drawn.
@@ -81,6 +83,7 @@ private:
     std::string m_newValue;
     EntityOutput m_newOutput;
     std::string m_problem;
+    std::vector<std::string> m_weaponNames;
 
     // The rows shown in the hierarchy, in order, for Shift-click ranges: this frame's so far and
     // last frame's, which every click sees in full.

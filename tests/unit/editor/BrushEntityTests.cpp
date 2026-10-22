@@ -148,6 +148,24 @@ TEST_CASE("presets make a ready-made entity from one new brush") {
     CHECK(document.level() == doorAndTrigger());
 }
 
+TEST_CASE("pickup presets are placed at the point, with no brush, and never made of brushes") {
+    ct::EditorDocument document(doorAndTrigger(), "test.level");
+    REQUIRE(ct::addPresetEntity(document, preset("Mega health"), {3.0f, 4.0f, 0.5f}));
+    const ct::Level& level = document.level();
+    REQUIRE(level.entities.size() == 4);
+    const ct::LevelEntity& mega = level.entities[3];
+    CHECK(mega.className == ct::kPickupClass);
+    CHECK(*ct::findProperty(mega, "origin") == "3 4 0.5");
+    CHECK(*ct::findProperty(mega, "limit") == "200");
+    CHECK(level.brushes.size() == 4);
+    CHECK(document.selection() == std::vector<LevelItem>{LevelItem::entity(3)});
+    CHECK(document.history().undoName() == "Create Mega health");
+
+    document.setSelection({LevelItem::brush(0)});
+    CHECK_FALSE(ct::createBrushEntity(document, preset("Armour")));
+    CHECK(document.level().entities.size() == 4);
+}
+
 TEST_CASE("brushes go back to the world, and their emptied entity is deleted") {
     const ct::Level level = doorAndTrigger();
     ct::EditorDocument document(level, "test.level");

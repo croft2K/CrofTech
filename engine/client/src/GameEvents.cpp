@@ -138,6 +138,28 @@ void GameEvents::compare(const State& state, const GameLevel& level, const GameS
         }
     }
 
+    for (std::size_t i = 0; i < now.pickups.size(); ++i) {
+        const EntityId id = now.pickups.entities()[i];
+        const Pickup& pickup = now.pickups.components()[i];
+        const Pickup* last = before.pickups.get(id);
+        const LevelEntityRef* ref = now.levelEntities.get(id);
+        const GameLevel::Entity* entity = ref != nullptr ? level.entity(ref->index) : nullptr;
+        if (last == nullptr || entity == nullptr) {
+            continue;
+        }
+        const bool takenNow = (pickup.flags & kPickupTaken) != 0;
+        const bool takenBefore = (last->flags & kPickupTaken) != 0;
+        if (takenNow && !takenBefore) {
+            GameEvent event = makeEvent(GameEventKind::Pickup, pickup.takenBy, entity->position);
+            event.levelEntity = ref->index;
+            out.push_back(event);
+        } else if (!takenNow && takenBefore) {
+            GameEvent event = makeEvent(GameEventKind::PickupRespawn, id, entity->position);
+            event.levelEntity = ref->index;
+            out.push_back(event);
+        }
+    }
+
     for (std::size_t i = 0; i < now.checkpoints.size(); ++i) {
         const EntityId id = now.checkpoints.entities()[i];
         const Checkpoint& checkpoint = now.checkpoints.components()[i];

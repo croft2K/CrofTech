@@ -191,3 +191,18 @@ TEST_CASE("the client finds the pellets that hit just where the server's shot pu
     REQUIRE(count(seen, GameEventKind::WeaponSwitch) == 1);
     CHECK(first(seen, GameEventKind::WeaponSwitch).weapon == 1);
 }
+
+TEST_CASE("taking a pickup and its coming back are events, credited to who took it") {
+    ct::Level level{{floorBrush()},
+                    {{"pickup", {{"origin", "2 0 0"}, {"item", "armour"}, {"respawn", "1"}}}}};
+    SimHarness sim(level);
+    const ct::EntityId player = sim.spawn({0.0f, 0.0f, 0.0f});
+    ct::GameEvents events;
+    std::vector<ct::GameEvent> seen = watch(sim, events, pressing(0, 127), ct::kTickRate / 2);
+    REQUIRE(count(seen, GameEventKind::Pickup) == 1);
+    CHECK(first(seen, GameEventKind::Pickup).entity == player);
+    CHECK(first(seen, GameEventKind::Pickup).levelEntity == 0);
+    CHECK(first(seen, GameEventKind::Pickup).position.x == doctest::Approx(2.0f));
+    seen = watch(sim, events, {}, ct::kTickRate);
+    CHECK(count(seen, GameEventKind::PickupRespawn) == 1);
+}

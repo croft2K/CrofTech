@@ -57,7 +57,9 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     runWeapons(scene, m_settings, inputs, next);
     logic.activateMovers(m_settings.movement);
     logic.updateTriggers(m_settings.movement);
+    logic.runPickups(m_settings);
     logic.runHurtVolumes(m_settings);
+    drainOvercharge(next, m_settings.rules);
 }
 
 void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs,

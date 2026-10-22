@@ -1,6 +1,7 @@
 #include "EntityShapes.h"
 
 #include "croftech/core/Angle.h"
+#include "croftech/level/EntityClasses.h"
 #include "croftech/sim/Health.h"
 
 #include <algorithm>
@@ -25,6 +26,10 @@ constexpr float kViewWeaponKick = 0.05f;
 constexpr float kViewWeaponKickSeconds = 0.12f;
 constexpr float kViewWeaponDrop = 0.22f;
 constexpr Vec3 kViewWeaponColor{0.30f, 0.31f, 0.33f};
+
+constexpr float kPickupSpinRadiansPerSecond = 1.6f;
+constexpr float kPickupBobMetres = 0.06f;
+constexpr float kPickupBobPerSecond = 2.2f;
 constexpr Vec3 kViewWeaponBarrelColor{0.12f, 0.12f, 0.13f};
 
 // Player colours by input slot, linear RGB.
@@ -147,6 +152,61 @@ void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,
             projectile.weapon < weapons.size() && weapons[projectile.weapon].bounce > 0.0f;
         addBox(out, transform->position, kProjectileHalfExtents, angleToRadians(transform->yaw),
                bounces ? kGrenadeColor : kRocketColor);
+    }
+}
+
+void addPickups(std::vector<WorldVertex>& out, const LocalGame& game,
+                LocalGame::Clock::time_point now) {
+    const State* state = game.latestState();
+    if (state == nullptr) {
+        return;
+    }
+    const World& world = state->world;
+    const RulesSettings& rules = game.settings().rules;
+    const float seconds = std::chrono::duration<float>(now.time_since_epoch()).count();
+    for (std::size_t i = 0; i < world.pickups.size(); ++i) {
+        const EntityId id = world.pickups.entities()[i];
+        const LevelEntityRef* ref = world.levelEntities.get(id);
+        const GameLevel::Entity* entity =
+            ref != nullptr ? game.level().entity(ref->index) : nullptr;
+        if (entity == nullptr || !isAvailable(world.pickups.components()[i])) {
+            continue;
+        }
+        // Each a little out of step with the others.
+        const float phase = static_cast<float>(ref->index) * 0.7f;
+        const float yaw = std::fmod(seconds * kPickupSpinRadiansPerSecond + phase, 2.0f * kPi);
+        const Vec3 centre =
+            entity->position +
+            Vec3{0.0f, 0.0f, kPickupBobMetres * std::sin(seconds * kPickupBobPerSecond + phase)};
+        switch (entity->item) {
+        case PickupItem::Health: {
+            const bool mega = entity->limit > rules.maxHealth;
+            addBox(out, centre, mega ? Vec3{0.24f, 0.24f, 0.24f} : Vec3{0.17f, 0.17f, 0.17f}, yaw,
+                   mega ? Vec3{0.25f, 0.45f, 0.95f} : Vec3{0.85f, 0.88f, 0.85f});
+            // A red cross on top.
+            const float top = mega ? 0.24f : 0.17f;
+            const Vec3 bar{top * 0.8f, top * 0.25f, 0.01f};
+            addBox(out, centre + Vec3{0.0f, 0.0f, top}, bar, yaw, {0.8f, 0.1f, 0.08f});
+            addBox(out, centre + Vec3{0.0f, 0.0f, top}, bar, yaw + kPi * 0.5f, {0.8f, 0.1f, 0.08f});
+            break;
+        }
+        case PickupItem::Armour: {
+            const bool heavy = entity->limit > rules.maxArmour;
+            addBox(out, centre, {0.26f, 0.2f, 0.09f}, yaw,
+                   heavy ? Vec3{0.85f, 0.25f, 0.15f} : Vec3{0.9f, 0.75f, 0.2f});
+            break;
+        }
+        case PickupItem::Ammo:
+            addBox(out, centre - Vec3{0.0f, 0.0f, 0.1f}, {0.14f, 0.1f, 0.1f}, yaw,
+                   {0.45f, 0.35f, 0.2f});
+            break;
+        case PickupItem::Weapon: {
+            const float size =
+                entity->weapon != kNoWeapon ? static_cast<float>(entity->weapon) : 0.0f;
+            addBox(out, centre, {0.16f + 0.04f * size, 0.04f, 0.06f}, yaw, kViewWeaponColor);
+            break;
+        }
+        }
     }
 }
 

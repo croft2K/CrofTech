@@ -19,6 +19,9 @@ void checkDefaults(const ct::RulesSettings& rules) {
     CHECK(rules.startArmour == defaults.startArmour);
     CHECK(rules.armourShare == doctest::Approx(defaults.armourShare));
     CHECK(rules.respawnDelay == doctest::Approx(defaults.respawnDelay));
+    CHECK(rules.maxHealth == defaults.maxHealth);
+    CHECK(rules.maxArmour == defaults.maxArmour);
+    CHECK(rules.overchargeDecay == doctest::Approx(defaults.overchargeDecay));
 }
 
 } // namespace
@@ -71,6 +74,7 @@ TEST_CASE("each weapon's file sets its own variables, in the order the game list
     CHECK(settings.weapons[1].pellets == 1);
     CHECK(settings.weapons[1].spread == doctest::Approx(2.5f));
     CHECK(settings.weapons[1].given);
+    CHECK(settings.weapons[1].name == "cannon");
     CHECK(console.find("weapon.pistol.fire_interval") != nullptr);
 }
 

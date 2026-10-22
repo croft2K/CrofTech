@@ -98,13 +98,31 @@ TEST_CASE("every preset makes a valid entity of a known class") {
         CAPTURE(preset.name);
         const ct::EntityClassInfo* entityClass = ct::findEntityClass(preset.className);
         REQUIRE(entityClass != nullptr);
-        CHECK(entityClass->shape == ct::EntityShape::Brush);
-        const ct::LevelEntity entity = ct::makePresetEntity(preset);
+        ct::LevelEntity entity = ct::makePresetEntity(preset);
+        if (entityClass->shape == ct::EntityShape::Point) {
+            // Placed where the editor puts it.
+            ct::setProperty(entity, "origin", "1 2 3");
+        }
         std::string problem;
         CHECK(ct::checkEntity(entity, problem));
         CHECK_MESSAGE(ct::checkEntityClassProperties(entity, *entityClass, problem), problem);
-        CHECK(preset.size.x > 0.0f);
-        CHECK(preset.size.y > 0.0f);
-        CHECK(preset.size.z > 0.0f);
+        if (entityClass->shape == ct::EntityShape::Brush) {
+            CHECK(preset.size.x > 0.0f);
+            CHECK(preset.size.y > 0.0f);
+            CHECK(preset.size.z > 0.0f);
+        }
     }
+}
+
+TEST_CASE("pickups name a weapon of the game by its file name") {
+    const ct::EntityClassInfo* pickup = ct::findEntityClass(ct::kPickupClass);
+    REQUIRE(pickup != nullptr);
+    const ct::PropertyInfo* weapon = ct::findPropertyInfo(*pickup, "weapon");
+    REQUIRE(weapon != nullptr);
+    CHECK(weapon->type == ct::PropertyType::Weapon);
+    std::string problem;
+    CHECK(ct::checkPropertyValue(*weapon, "rocket_launcher", problem));
+    CHECK(ct::checkPropertyValue(*weapon, "", problem));
+    CHECK_FALSE(ct::checkPropertyValue(*weapon, "Rocket Launcher", problem));
+    CHECK(problem.find("weapon") != std::string::npos);
 }

@@ -130,6 +130,36 @@ constexpr SignalInfo kMoverInputs[] = {
     {"resume", "Carry on the way it was going"},
 };
 
+constexpr std::string_view kPickupItems[] = {"health", "armour", "ammo", "weapon"};
+
+constexpr PropertyInfo kPickupProperties[] = {
+    {"origin", Vector, "", "Where it rests, metres"},
+    kName,
+    {"item", Choice, "health",
+     "What it gives: health, armour, ammo for its weapon, or its weapon (with some ammo)", 0.0f,
+     0.0f, kPickupItems},
+    {"amount", Count, "0",
+     "Health or armour it gives, or rounds of ammo; 0 is the usual: 25 health, 50 armour, or "
+     "the weapon's pickup_ammo",
+     0.0f, 10000.0f},
+    {"limit", Count, "0",
+     "Most health or armour it tops up to; 0 is the rules' maximum (rules.max_health, "
+     "rules.max_armour). Above the maximum, it drains away again",
+     0.0f, 100000.0f},
+    {"weapon", Weapon, "", "The weapon for ammo and weapon items"},
+    {"respawn", Number, "30", "Seconds after it is taken before it comes back; -1 never does",
+     -1.0f, 3600.0f},
+    kStartDisabled,
+};
+constexpr SignalInfo kPickupEvents[] = {
+    {"on_pickup", "A player took it"},
+};
+constexpr SignalInfo kPickupInputs[] = {
+    {"enable", "Show it, so it can be taken (once back, if it was taken)"},
+    {"disable", "Hide it, so it can't be taken"},
+    {"toggle", "Show it if hidden, hide it if shown"},
+};
+
 constexpr EntityClassInfo kClasses[] = {
     {kPlayerSpawnClass, "Where a player starts", EntityShape::Point, kSpawnProperties, {}, {}},
     {"trigger", "An invisible volume that fires events when players go in and out",
@@ -152,6 +182,8 @@ constexpr EntityClassInfo kClasses[] = {
      "Brushes that slide between where they are built and an end position: doors, lifts, "
      "platforms, crushers",
      EntityShape::Brush, kMoverProperties, kMoverEvents, kMoverInputs},
+    {kPickupClass, "An item players take by walking into it: health, armour, ammo, a weapon",
+     EntityShape::Point, kPickupProperties, kPickupEvents, kPickupInputs},
 };
 
 constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"}, {"wait", "3"}};
@@ -160,6 +192,15 @@ constexpr PresetProperty kPlatformPreset[] = {
     {"speed", "2"}, {"wait", "1"}, {"loop", "1"}, {"start_moving", "1"}};
 
 constexpr PresetProperty kKillPreset[] = {{"damage", "100000"}};
+
+constexpr PresetProperty kHealthPreset[] = {{"item", "health"}};
+constexpr PresetProperty kMegaHealthPreset[] = {
+    {"item", "health"}, {"amount", "100"}, {"limit", "200"}, {"respawn", "35"}};
+constexpr PresetProperty kArmourPreset[] = {{"item", "armour"}};
+constexpr PresetProperty kHeavyArmourPreset[] = {
+    {"item", "armour"}, {"amount", "100"}, {"limit", "200"}};
+constexpr PresetProperty kAmmoPreset[] = {{"item", "ammo"}, {"respawn", "40"}};
+constexpr PresetProperty kWeaponPreset[] = {{"item", "weapon"}, {"respawn", "5"}};
 
 constexpr EntityPreset kPresets[] = {
     {"Door",
@@ -211,6 +252,36 @@ constexpr EntityPreset kPresets[] = {
      {},
      false,
      {4.0f, 4.0f, 1.0f}},
+    {"Health", "Gives 25 health, up to the maximum", kPickupClass, kHealthPreset, {}, false, {}},
+    {"Mega health",
+     "Gives 100 health, up to twice the maximum; the extra drains away",
+     kPickupClass,
+     kMegaHealthPreset,
+     {},
+     false,
+     {}},
+    {"Armour", "Gives 50 armour, up to the maximum", kPickupClass, kArmourPreset, {}, false, {}},
+    {"Heavy armour",
+     "Gives 100 armour, up to twice the maximum; the extra drains away",
+     kPickupClass,
+     kHeavyArmourPreset,
+     {},
+     false,
+     {}},
+    {"Ammo",
+     "A box of ammo for the weapon it names (set weapon in the inspector)",
+     kPickupClass,
+     kAmmoPreset,
+     {},
+     false,
+     {}},
+    {"Weapon",
+     "The weapon it names, with some ammo (set weapon in the inspector)",
+     kPickupClass,
+     kWeaponPreset,
+     {},
+     false,
+     {}},
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,
@@ -318,6 +389,16 @@ bool checkPropertyValue(const PropertyInfo& property, std::string_view value,
             return false;
         }
         return true;
+    case Weapon:
+        if (!value.empty() && !std::all_of(value.begin(), value.end(), [](char c) {
+                return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            })) {
+            problem = std::format("{} must be a weapon's name: lowercase letters, digits, '-' or "
+                                  "'_'",
+                                  property.key);
+            return false;
+        }
+        return true;
     case Angle: {
         float degrees = 0.0f;
         if (!parseFloat(value, degrees) || std::fabs(degrees) > kMaxAngleDegrees) {
@@ -388,7 +469,8 @@ std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& ent
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key) {
     const PropertyInfo* property = findPropertyInfo(entityClass, key);
-    CT_ASSERT(property != nullptr && (property->type == Text || property->type == Name));
+    CT_ASSERT(property != nullptr &&
+              (property->type == Text || property->type == Name || property->type == Weapon));
     return propertyValue(entity, *property);
 }
 

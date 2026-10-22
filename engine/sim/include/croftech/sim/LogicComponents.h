@@ -193,4 +193,32 @@ struct Schema<PendingInput> {
 };
 static_assert(describesEveryByte(Schema<PendingInput>::value));
 
+enum PickupFlags : std::uint32_t {
+    kPickupTaken = 1u << 1, // alongside kLogicEnabled
+};
+
+// An item lying in the level. Taken, it is gone until respawnTick (or for good); switched off, it
+// can't be seen or taken.
+struct Pickup {
+    std::uint32_t flags = 0;
+    std::uint32_t respawnTick = 0; // while taken; 0 never comes back
+    EntityId takenBy;              // who took it last
+};
+
+template <>
+struct Schema<Pickup> {
+    static constexpr std::array<std::string_view, 2> kFlagNames{"enabled", "taken"};
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Pickup, flags).withFlagNames(kFlagNames),
+        CT_FIELD(Pickup, respawnTick).withDescription("Comes back at this tick; 0 never"),
+        CT_FIELD(Pickup, takenBy).withDescription("Who took it last"),
+    };
+    static constexpr TypeSchema value{"pickup", sizeof(Pickup), kFields};
+};
+static_assert(describesEveryByte(Schema<Pickup>::value));
+
+inline bool isAvailable(const Pickup& pickup) {
+    return (pickup.flags & kLogicEnabled) != 0 && (pickup.flags & kPickupTaken) == 0;
+}
+
 } // namespace ct
