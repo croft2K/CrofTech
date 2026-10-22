@@ -619,8 +619,9 @@ void LevelViewport::fly(const FlyInput& input) {
     Camera& camera = pane.camera;
     camera.yawRadians =
         std::remainder(camera.yawRadians - input.lookX * kLookRadiansPerCount, 2.0f * kPi);
-    camera.pitchRadians =
-        std::clamp(camera.pitchRadians - input.lookY * kLookRadiansPerCount, -kMaxPitch, kMaxPitch);
+    camera.pitchRadians = std::clamp(
+        camera.pitchRadians - (input.invert ? -input.lookY : input.lookY) * kLookRadiansPerCount,
+        -kMaxPitch, kMaxPitch);
     const CameraBasis basis = cameraBasis(camera);
     Vec3 move;
     move += basis.forward * (static_cast<float>(input.forward) - static_cast<float>(input.back));

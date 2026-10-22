@@ -19,8 +19,8 @@ struct PlayerLook {
 
     // Turns by mouse counts; sensitivity as client.sensitivity (degrees = 0.022 x sensitivity per
     // count, as Quake's m_yaw, so sensitivities carry over). Pitch stops short of straight up and
-    // down.
-    void turn(float countsX, float countsY, float sensitivity);
+    // down. Inverted (client.invert_mouse), moving the mouse forward looks down.
+    void turn(float countsX, float countsY, float sensitivity, bool invert = false);
 
     // Looking the way a player in the state faces, as after loading a save.
     static PlayerLook facing(const Transform& transform);

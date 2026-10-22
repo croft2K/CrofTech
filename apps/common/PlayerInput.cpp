@@ -17,7 +17,10 @@ constexpr auto kChoiceSendTime = std::chrono::milliseconds(250);
 
 } // namespace
 
-void PlayerLook::turn(float countsX, float countsY, float sensitivity) {
+void PlayerLook::turn(float countsX, float countsY, float sensitivity, bool invert) {
+    if (invert) {
+        countsY = -countsY;
+    }
     const float radiansPerCount = kDegreesPerMouseCount * sensitivity * (kPi / 180.0f);
     const float maxPitch = angleToRadians(kMaxPitch);
     yaw = std::remainder(yaw - countsX * radiansPerCount, 2.0f * kPi);

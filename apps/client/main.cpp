@@ -98,6 +98,7 @@ CommandLine parseCommandLine(int argc, char** argv) {
 
 struct ClientCVars {
     const ct::CVar& sensitivity;
+    const ct::CVar& invertMouse;
     const ct::CVar& fov;
     const ct::CVar& showStats;
     const ct::CVar& showEntities;
@@ -118,6 +119,8 @@ ClientCVars registerClientCVars(ct::Console& console) {
     return {
         console.add(ct::CVar::makeFloat("client.sensitivity", 3.0f, 0.01f, 100.0f,
                                         "degrees turned per mouse count = 0.022 x sensitivity")),
+        console.add(ct::CVar::makeBool("client.invert_mouse", false,
+                                       "1 = moving the mouse forward looks down")),
         console.add(ct::CVar::makeFloat(
             "client.fov", 100.0f, 60.0f, 140.0f,
             "horizontal field of view in degrees at 16:9; wider screens see more")),
@@ -479,7 +482,8 @@ int main(int argc, char** argv) {
                 break;
             case SDL_EVENT_MOUSE_MOTION:
                 if (mouseCaptured) {
-                    look.turn(event.motion.xrel, event.motion.yrel, client.sensitivity.asFloat());
+                    look.turn(event.motion.xrel, event.motion.yrel, client.sensitivity.asFloat(),
+                              client.invertMouse.asBool());
                 }
                 break;
             case SDL_EVENT_KEY_DOWN:

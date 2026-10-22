@@ -343,6 +343,9 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
                               "plain sight");
         ImGui::MenuItem("Show all wires", nullptr, &settings.showAllWires);
         ImGui::SetItemTooltip("Draw every entity's outputs, not just the selected entities'");
+        ImGui::MenuItem("Invert mouse", nullptr, &settings.invertMouse);
+        ImGui::SetItemTooltip("Moving the mouse forward looks down, flying the 3D camera and in "
+                              "play (starts as invert_mouse in config/client.cfg)");
         ImGui::MenuItem("Show navigation mesh", nullptr, &settings.showNavMesh);
         ImGui::SetItemTooltip("Draw where enemies the player's size can walk, in 3D panes and in "
                               "play: ground green, doors orange, lifts violet with their rides, "

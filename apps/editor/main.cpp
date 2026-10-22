@@ -79,6 +79,19 @@ CommandLine parseCommandLine(int argc, char** argv) {
     return commandLine;
 }
 
+// client.invert_mouse from config/client.cfg, so the editor looks the way the game does.
+bool invertMouseSetting(const ct::ContentPaths& content) {
+    ct::Console console;
+    const ct::CVar& invert =
+        console.add(ct::CVar::makeBool("client.invert_mouse", false, "invert the mouse"));
+    ct::LayeredConfig config(content, "config/client.cfg");
+    if (const auto layers = config.reloadIfChanged()) {
+        // The client's other settings are unknown here, and that is fine.
+        console.applyConfig("client.", *layers);
+    }
+    return invert.asBool();
+}
+
 // The game's settings: the player size spawn markers show, and how play-in-editor plays.
 ct::GameSettings loadGameSettings(const ct::ContentPaths& content, const ct::GameManifest& game) {
     ct::Console console;
@@ -264,6 +277,7 @@ int main(int argc, char** argv) {
     const ct::GameSettings gameSettings = loadGameSettings(content, *game);
     ct::EditorSettings settings;
     settings.playerHalfExtents = gameSettings.movement.halfExtents;
+    settings.invertMouse = invertMouseSetting(content);
     ct::NavMeshView navMeshView(ct::navAgent(gameSettings.movement));
     ct::LevelViewport viewport(startingCamera(*level));
     ct::EditorDocument document(std::move(*level), *levelPath);
@@ -376,7 +390,7 @@ int main(int argc, char** argv) {
                 break;
             case SDL_EVENT_MOUSE_MOTION:
                 if (play && playCaptured) {
-                    play->look(event.motion.xrel, event.motion.yrel);
+                    play->look(event.motion.xrel, event.motion.yrel, settings.invertMouse);
                 } else if (flying) {
                     flyInput.lookX += event.motion.xrel;
                     flyInput.lookY += event.motion.yrel;
@@ -433,6 +447,7 @@ int main(int argc, char** argv) {
             flyInput.up = keys[SDL_SCANCODE_E];
             flyInput.down = keys[SDL_SCANCODE_Q];
             flyInput.fast = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
+            flyInput.invert = settings.invertMouse;
             viewport.fly(flyInput);
         }
         if (play) {

@@ -52,6 +52,9 @@ struct EditorSettings {
     bool showAllWires = false;
     // The navigation mesh enemies walk, drawn in 3D panes and in play.
     bool showNavMesh = false;
+    // Moving the mouse forward looks down, flying the 3D camera and in play; starts as
+    // client.invert_mouse in config/client.cfg.
+    bool invertMouse = false;
     // How the in-memory link behaves in play-in-editor.
     LinkConditions playConditions;
 
@@ -79,6 +82,7 @@ enum class ViewLayout { One, Four };
 struct FlyInput {
     float lookX = 0.0f; // mouse counts this frame
     float lookY = 0.0f;
+    bool invert = false; // moving the mouse forward looks down (orthographic panning is unchanged)
     bool forward = false;
     bool back = false;
     bool left = false;

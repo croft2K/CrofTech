@@ -52,8 +52,8 @@ PlaySession::PlaySession(const Level& level, const GameSettings& settings,
       m_look{from ? PlayerLook{from->yawRadians, from->pitchRadians}
                   : PlayerLook{angleToRadians(m_game.level().spawns().front().yaw), 0.0f}} {}
 
-void PlaySession::look(float countsX, float countsY) {
-    m_look.turn(countsX, countsY, kSensitivity);
+void PlaySession::look(float countsX, float countsY, bool invert) {
+    m_look.turn(countsX, countsY, kSensitivity, invert);
 }
 
 bool PlaySession::handleWeaponEvent(const SDL_Event& event, Clock::time_point now) {

@@ -41,7 +41,7 @@ public:
     // The game's weapon names, in the order of GameSettings::weapons, for the HUD.
     void setWeaponNames(std::vector<std::string> names) { m_hud.setWeaponNames(std::move(names)); }
 
-    void look(float countsX, float countsY);
+    void look(float countsX, float countsY, bool invert);
     // Number keys and the mouse wheel change weapons (WeaponSelect). Returns whether the event
     // was one of those.
     bool handleWeaponEvent(const SDL_Event& event, Clock::time_point now);

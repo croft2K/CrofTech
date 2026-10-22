@@ -26,7 +26,9 @@ Run the client: `build\windows-debug\bin\croftech.exe [--game sandbox] [--map na
 [--exec "cmds"]` (`--map` defaults to the game's `start_map`; `--frames` quits after N frames, for
 automated smoke runs; `--exec` runs console commands once the config files have loaded). In the
 client, the key below Esc opens the developer console; `map <name>` there switches level and
-`client.show_entities 1` opens a live, read-only view of every entity's components, and
+`client.show_entities 1` opens a live, read-only view of every entity's components,
+`client.invert_mouse 1` inverts mouse look (the editor reads it too, and has it in its View
+menu), and
 `client.step_smoothing` sets how long the view takes to follow a step up or down stairs
 (`client/StepSmoothing.h`; play-in-editor uses the default). Players are drawn as simple boxes
 (`apps/common/EntityShapes`, through `Renderer::setDynamicGeometry`, which also takes see-through
