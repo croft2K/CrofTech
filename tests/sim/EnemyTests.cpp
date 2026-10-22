@@ -403,6 +403,21 @@ TEST_CASE("a gunner shoots from a distance, keeps it, and sidesteps as it fires"
     CHECK(sim.state().world.weapons.get(gunner)->ammo[0] == ct::kMaxAmmo);
 }
 
+TEST_CASE("enemies and spawns put a little inside the floor stand on it instead") {
+    // The floor's top is off the grid, at 0.125; both were put at 0, inside it.
+    const ct::Brush floor = ct::makeBoxBrush({-15.0f, -15.0f, -1.0f}, {15.0f, 15.0f, 0.125f});
+    ct::Level level = levelWith({floor}, enemyAt(0.0f, 0.0f, 0.0f));
+    level.entities.push_back(ct::makePlayerSpawn({6.0f, 0.0f, 0.0f}, 0.0f));
+    SimHarness sim(level, withCharger());
+    REQUIRE(sim.level().spawns().size() == 1);
+    CHECK(sim.level().spawns()[0].feetPosition.z >= 0.125f);
+    CHECK(sim.level().spawns()[0].feetPosition.z < 0.13f);
+    sim.spawn(sim.level().spawns()[0].feetPosition);
+    const float startX = enemyTransform(sim).position.x;
+    sim.run({}, kSecond);
+    CHECK(enemyTransform(sim).position.x > startX + 1.0f);
+}
+
 TEST_CASE("enemies think the same way every time") {
     const auto run = [] {
         SimHarness sim(

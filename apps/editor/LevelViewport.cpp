@@ -746,15 +746,17 @@ Vec3 LevelViewport::placementPoint(const EditorDocument& document,
     const Ray ray = view.rayThrough(view.rect.x + view.rect.width * 0.5f,
                                     view.rect.y + view.rect.height * 0.5f);
     const std::optional<Vec3> surface = surfacePoint(document, ray);
+    const bool onSurface = surface && (view.orthographic || length(*surface - ray.origin) < 50.0f);
     Vec3 point = view.centre;
-    if (!view.orthographic) {
-        point = surface && length(*surface - ray.origin) < 50.0f
-                    ? *surface
-                    : ray.origin + ray.direction * kPlacementDistance;
-    } else if (surface) {
+    if (onSurface) {
         point = *surface;
+    } else if (!view.orthographic) {
+        point = ray.origin + ray.direction * kPlacementDistance;
     }
-    return snapToGrid(point, settings.grid());
+    const Vec3 snapped = snapToGrid(point, settings.grid());
+    // On a surface it keeps the surface's height, which may be off the grid (imported floors):
+    // snapped down, whatever stands there would start inside the floor.
+    return onSurface ? Vec3{snapped.x, snapped.y, point.z} : snapped;
 }
 
 std::optional<LevelViewport::GizmoFrame> LevelViewport::gizmoFrame(const EditorDocument& document,

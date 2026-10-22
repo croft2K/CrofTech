@@ -116,6 +116,20 @@ std::uint32_t clampedCount(const LevelEntity& entity, const EntityClassInfo& ent
                       static_cast<std::uint32_t>(property->maximum));
 }
 
+// A body placed with its feet a little inside the floor (on a floor off the editor's grid, say) is
+// lifted out onto it, by up to a step; one placed clear of the floor stays exactly where it is.
+Vec3 liftOutOfFloor(const CollisionWorld& world, Vec3 feet, Vec3 halfExtents, float climb) {
+    const Vec3 centre = feet + Vec3{0.0f, 0.0f, halfExtents.z + CollisionWorld::kSurfaceEpsilon};
+    if (!world.overlapsBox(centre, halfExtents, CollisionWorld::kSurfaceEpsilon * 0.5f)) {
+        return feet;
+    }
+    const TraceResult down = world.traceBox(centre + Vec3{0.0f, 0.0f, climb}, centre, halfExtents);
+    if (down.startSolid) {
+        return feet;
+    }
+    return down.endPosition - Vec3{0.0f, 0.0f, halfExtents.z + CollisionWorld::kSurfaceEpsilon};
+}
+
 std::string describe(const Level& level, std::uint32_t index) {
     const LevelEntity& entity = level.entities[index];
     const std::string* name = findProperty(entity, "name");
@@ -210,6 +224,11 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         m_spawns = std::move(*spawns);
     } else {
         m_warnings.push_back(error);
+    }
+    for (SpawnPoint& spawn : m_spawns) {
+        spawn.feetPosition =
+            liftOutOfFloor(m_collision, spawn.feetPosition, settings.movement.halfExtents,
+                           settings.movement.stepHeight);
     }
 
     // Each brush entity's brushes, gathered in one pass.
@@ -382,7 +401,11 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
         if (entity.enemyType == kNoEnemyType) {
             m_warnings.push_back(
                 std::format("{}: the game has no enemy '{}'", describe(level, index), type));
+            break;
         }
+        const MovementSettings& movement = settings.enemies[entity.enemyType].movement;
+        entity.position =
+            liftOutOfFloor(m_collision, entity.position, movement.halfExtents, movement.stepHeight);
         break;
     }
     case LogicClass::None:
