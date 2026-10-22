@@ -13,6 +13,10 @@ namespace {
 constexpr float kFootstepVolume = 0.45f;
 constexpr float kHumVolume = 0.5f;
 constexpr float kExplosionReach = 90.0f;
+constexpr float kFireReach = 70.0f;
+constexpr float kImpactVolume = 0.35f;
+constexpr float kImpactReach = 25.0f;
+constexpr float kOwnFireVolume = 0.7f;
 
 } // namespace
 
@@ -89,6 +93,27 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
             break;
         case GameEventKind::Explosion:
             play("explosion", event, player, 1.0f, kExplosionReach);
+            break;
+        case GameEventKind::Fire:
+            if (event.weapon < m_weaponNames.size()) {
+                play(m_weaponNames[event.weapon] + "_fire", event, player,
+                     event.entity == player ? kOwnFireVolume : 1.0f, kFireReach);
+            }
+            break;
+        case GameEventKind::Impact:
+            if (event.strength > 0.0f && event.entity == player) {
+                // Your hit on someone: a tick in both ears, not a sound from over there.
+                play("hit", event, player);
+            } else if (event.strength == 0.0f) {
+                GameEvent placed = event;
+                placed.entity = {};
+                play("impact", placed, player, kImpactVolume, kImpactReach);
+            }
+            break;
+        case GameEventKind::WeaponSwitch:
+            if (event.entity == player) {
+                play("weapon_switch", event, player);
+            }
             break;
         case GameEventKind::MoverStart: {
             play("mover_start", event, player);

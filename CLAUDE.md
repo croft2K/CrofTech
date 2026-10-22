@@ -50,7 +50,11 @@ is pressed after `rules.respawn_delay`. Players carry weapons (`sim/Weapons.h`, 
 `weapon.<name>.<setting>`), and a game lists its weapons in `game.cfg` in number-key order. Number
 keys and the mouse wheel choose one (`WeaponSelect` in `apps/common/PlayerInput`). A weapon with a
 projectile speed fires rockets or grenades (`sim/Projectile.h`): simulated entities that explode
-on contact or when their fuse runs out, hurting and throwing what is near (rocket jumps).
+on contact or when their fuse runs out, hurting and throwing what is near (rocket jumps). The HUD
+shows a crosshair (marked when your shot hurts someone), the weapons carried and the ammo in hand;
+a placeholder weapon is held in view (`addViewWeapon`). Shots make Fire and Impact game events:
+the client works out where hitscan pellets went from the shooter's random counter, as the server
+did, for tracers and sparks, and each weapon fires with `sounds/<weapon>_fire.wav`.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;

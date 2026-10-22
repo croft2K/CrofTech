@@ -19,8 +19,29 @@ constexpr int kFlashSides = 12;
 constexpr Vec3 kFlashColor{1.0f, 0.55f, 0.15f};
 constexpr Vec3 kFlashCoreColor{1.0f, 0.9f, 0.6f};
 
+constexpr float kSparkSeconds = 0.18f;
+constexpr float kSparkRadius = 0.16f;
+constexpr Vec3 kSparkColor{1.0f, 0.85f, 0.5f};
+constexpr Vec3 kBloodColor{0.9f, 0.08f, 0.05f};
+constexpr float kTracerSeconds = 0.07f;
+constexpr float kTracerWidth = 0.012f;
+constexpr Vec3 kTracerColor{1.0f, 0.9f, 0.6f};
+// Tracers start this far along the shot, so they don't fill the shooter's own view, and offset to
+// where a held weapon would be.
+constexpr float kTracerStart = 0.6f;
+constexpr float kTracerDrop = 0.12f;
+
 float lifetime(GameEventKind kind) {
-    return kind == GameEventKind::Explosion ? kFlashSeconds : kGlowSeconds;
+    switch (kind) {
+    case GameEventKind::Explosion:
+        return kFlashSeconds;
+    case GameEventKind::Impact:
+        return kSparkSeconds;
+    case GameEventKind::Fire:
+        return kTracerSeconds;
+    default:
+        return kGlowSeconds;
+    }
 }
 
 // A ring of panels that fades out and narrows, brightest at the bottom.
@@ -41,22 +62,45 @@ void addGlow(Vec3 position, float age, std::vector<EffectVertex>& out) {
     }
 }
 
+// Two crossed thin quads along the pellet's path, fading from the far end.
+void addTracer(Vec3 origin, Vec3 end, float age, std::vector<EffectVertex>& out) {
+    const Vec3 path = end - origin;
+    const float distance = length(path);
+    if (distance <= kTracerStart * 2.0f) {
+        return;
+    }
+    const Vec3 direction = path / distance;
+    const Vec3 side = normalize(cross(direction, Vec3{0.0f, 0.0f, 1.0f}));
+    const Vec3 lift = cross(side, direction);
+    const Vec3 start = origin + direction * kTracerStart - Vec3{0.0f, 0.0f, kTracerDrop};
+    const float alpha = 0.7f * (1.0f - age);
+    for (const Vec3 across : {side, lift}) {
+        const Vec3 w = across * kTracerWidth;
+        const EffectVertex a0{start - w, kTracerColor, alpha * 0.3f};
+        const EffectVertex a1{start + w, kTracerColor, alpha * 0.3f};
+        const EffectVertex b0{end - w, kTracerColor, alpha};
+        const EffectVertex b1{end + w, kTracerColor, alpha};
+        out.insert(out.end(), {a0, a1, b1, a0, b1, b0});
+    }
+}
+
 // Three crossed discs that swell and fade, hot in the middle and clear at the edge, so the flash
 // looks round from any side.
-void addFlash(Vec3 position, float age, std::vector<EffectVertex>& out) {
+void addFlash(Vec3 position, float age, float startRadius, float endRadius, Vec3 core, Vec3 rim,
+              std::vector<EffectVertex>& out) {
     const float fade = (1.0f - age) * (1.0f - age);
-    const float radius = kFlashStartRadius + (kFlashEndRadius - kFlashStartRadius) * std::sqrt(age);
+    const float radius = startRadius + (endRadius - startRadius) * std::sqrt(age);
     const Vec3 axes[3][2] = {{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
                              {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
                              {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
-    const EffectVertex centre{position, kFlashCoreColor, fade};
+    const EffectVertex centre{position, core, fade};
     for (const auto& axis : axes) {
         for (int side = 0; side < kFlashSides; ++side) {
             const float a0 = static_cast<float>(side) * (2.0f * kPi / kFlashSides);
             const float a1 = static_cast<float>(side + 1) * (2.0f * kPi / kFlashSides);
             const Vec3 p0 = position + (axis[0] * std::cos(a0) + axis[1] * std::sin(a0)) * radius;
             const Vec3 p1 = position + (axis[0] * std::cos(a1) + axis[1] * std::sin(a1)) * radius;
-            out.insert(out.end(), {centre, {p0, kFlashColor, 0.0f}, {p1, kFlashColor, 0.0f}});
+            out.insert(out.end(), {centre, {p0, rim, 0.0f}, {p1, rim, 0.0f}});
         }
     }
 }
@@ -65,8 +109,25 @@ void addFlash(Vec3 position, float age, std::vector<EffectVertex>& out) {
 
 void GameEffects::add(std::span<const GameEvent> events, Clock::time_point now) {
     for (const GameEvent& event : events) {
-        if (event.kind == GameEventKind::Respawn || event.kind == GameEventKind::Explosion) {
-            m_effects.push_back({event.kind, event.position, now});
+        Effect effect;
+        effect.kind = event.kind;
+        effect.position = event.position;
+        effect.start = now;
+        switch (event.kind) {
+        case GameEventKind::Respawn:
+        case GameEventKind::Explosion:
+            m_effects.push_back(effect);
+            break;
+        case GameEventKind::Impact:
+            effect.hit = event.strength > 0.0f;
+            m_effects.push_back(effect);
+            // The tracer leads to the impact, and goes as fast.
+            effect.kind = GameEventKind::Fire;
+            effect.origin = event.origin;
+            m_effects.push_back(effect);
+            break;
+        default:
+            break;
         }
     }
 }
@@ -79,10 +140,22 @@ void GameEffects::build(Clock::time_point now, std::vector<EffectVertex>& out) {
         const float age = std::clamp(std::chrono::duration<float>(now - effect.start).count() /
                                          lifetime(effect.kind),
                                      0.0f, 1.0f);
-        if (effect.kind == GameEventKind::Explosion) {
-            addFlash(effect.position, age, out);
-        } else {
+        switch (effect.kind) {
+        case GameEventKind::Explosion:
+            addFlash(effect.position, age, kFlashStartRadius, kFlashEndRadius, kFlashCoreColor,
+                     kFlashColor, out);
+            break;
+        case GameEventKind::Impact:
+            addFlash(effect.position, age, kSparkRadius * 0.4f, kSparkRadius,
+                     effect.hit ? kBloodColor : kSparkColor, effect.hit ? kBloodColor : kSparkColor,
+                     out);
+            break;
+        case GameEventKind::Fire:
+            addTracer(effect.origin, effect.position, age, out);
+            break;
+        default:
             addGlow(effect.position, age, out);
+            break;
         }
     }
 }

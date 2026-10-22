@@ -172,6 +172,8 @@ TEST_CASE("pellets stray up to the spread from the aim, all around it") {
     aim.yaw = 12000;
     aim.pitch = -3000;
     const ct::Vec3 forward = ct::viewForward(aim);
+    // A negative pitch looks down, as the camera's does.
+    CHECK(forward.z < -0.2f);
     const float cosSpread = ct::sinCos(static_cast<std::uint16_t>(10 * 65536 / 360)).cos;
     std::uint32_t random = 7;
     int wide = 0;
@@ -343,6 +345,8 @@ ct::GameSettings sturdy(std::vector<ct::WeaponSettings> weapons) {
     return settings;
 }
 
+constexpr std::int16_t kStraightDown = -ct::kMaxPitch;
+
 ct::UserCmd firingAt(std::int16_t pitch) {
     ct::UserCmd cmd = firing();
     cmd.pitch = pitch;
@@ -415,7 +419,7 @@ TEST_CASE("a rocket at your own feet throws you high for half its splash damage"
     SimHarness sim(floorWith(), sturdy({rocket()}));
     const ct::EntityId shooter = sim.spawn({0.0f, 0.0f, 0.0f});
     ready(sim);
-    sim.run(firingAt(ct::kMaxPitch), 1);
+    sim.run(firingAt(kStraightDown), 1);
     float highest = 0.0f;
     for (int i = 0; i < 2 * static_cast<int>(ct::kTickRate); ++i) {
         sim.run({}, 1);
@@ -435,7 +439,7 @@ TEST_CASE("an explosion that does no harm still throws") {
     SimHarness sim(floorWith(), sturdy({noHarm}));
     sim.spawn({0.0f, 0.0f, 0.0f});
     ready(sim);
-    sim.run(firingAt(ct::kMaxPitch), 1);
+    sim.run(firingAt(kStraightDown), 1);
     float highest = 0.0f;
     for (int i = 0; i < static_cast<int>(ct::kTickRate); ++i) {
         sim.run({}, 1);
@@ -478,7 +482,7 @@ TEST_CASE("a grenade dropped at your feet comes to rest, then goes off under you
     SimHarness sim(floorWith(), sturdy({dead}));
     sim.spawn({0.0f, 0.0f, 0.0f});
     ready(sim);
-    sim.run(firingAt(ct::kMaxPitch), 1);
+    sim.run(firingAt(kStraightDown), 1);
     sim.run({}, 2 * static_cast<int>(ct::kTickRate));
     REQUIRE(onlyProjectile(sim) != nullptr);
     CHECK((onlyProjectile(sim)->flags & ct::kProjectileResting) != 0);
@@ -509,7 +513,7 @@ TEST_CASE("projectiles that fall out of the world are removed") {
     SimHarness sim(level, sturdy({lob}));
     sim.spawn({0.0f, 0.0f, 0.0f});
     ready(sim);
-    sim.run(firingAt(-4000), 1);
+    sim.run(firingAt(4000), 1);
     REQUIRE(sim.state().world.projectiles.size() == 1);
     sim.run({}, 5 * static_cast<int>(ct::kTickRate));
     CHECK(sim.state().world.projectiles.size() == 0);

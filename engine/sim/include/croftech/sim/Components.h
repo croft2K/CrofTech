@@ -31,7 +31,7 @@ struct Schema<Transform> {
         CT_FIELD(Transform, yaw).withHint(FieldHint::Angle).withDescription("Facing; 0 is +X"),
         CT_FIELD(Transform, pitch)
             .withHint(FieldHint::Angle)
-            .withDescription("Look up (negative) or down (positive)"),
+            .withDescription("Look up (positive) or down (negative)"),
     };
     static constexpr TypeSchema value{"transform", sizeof(Transform), kFields};
 };

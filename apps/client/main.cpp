@@ -374,6 +374,7 @@ int main(int argc, char** argv) {
     // Destroyed before SDL shuts down, sounds first.
     auto audio = std::make_unique<ct::AudioOutput>();
     auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
+    sounds->setWeaponNames(game->weapons);
     ct::GameEvents gameEvents;
     ct::GameEffects gameEffects;
     std::vector<ct::GameEvent> events; // this frame's
@@ -406,6 +407,7 @@ int main(int argc, char** argv) {
         localGame =
             std::make_unique<ct::LocalGame>(prepared.level, settings, client.linkConditions());
         hud = {};
+        hud.setWeaponNames(game->weapons);
         seenTimeline = 0;
         currentLevelHash = ct::levelContentHash(prepared.level);
         for (const std::string& warning : localGame->level().warnings()) {
@@ -532,7 +534,7 @@ int main(int argc, char** argv) {
         }
         // After a load or a respawn, look the way the player faces.
         const bool respawned =
-            hud.update(localGame->latestState(), localGame->player(), settings.rules, now);
+            hud.update(localGame->latestState(), localGame->player(), settings, now);
         if ((localGame->timeline() != seenTimeline || respawned) &&
             localGame->latestState() != nullptr) {
             seenTimeline = localGame->timeline();
@@ -590,7 +592,7 @@ int main(int argc, char** argv) {
 
         events.clear();
         gameEvents.update(localGame->latestState(), localGame->timeline(), localGame->level(),
-                          settings.movement, events);
+                          settings, events);
         gameEffects.add(events, now);
         if (const ct::State* latest = localGame->latestState()) {
             sounds->update(events, localGame->player(), localGame->level(), latest->world,
@@ -600,6 +602,9 @@ int main(int argc, char** argv) {
         effects.clear();
         ct::addPlayers(shapes, *localGame, now, thirdPerson);
         ct::addProjectiles(shapes, *localGame, now);
+        if (!thirdPerson) {
+            ct::addViewWeapon(shapes, *localGame, eye, look.yaw, look.pitch, now);
+        }
         gameEffects.build(now, effects);
         renderer->setDynamicGeometry(shapes, effects);
 

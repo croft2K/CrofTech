@@ -67,10 +67,11 @@ public:
     LinkStats linkStats() const { return m_link.stats(); }
     std::uint64_t malformedPackets() const { return m_client.malformedPackets(); }
 
-private:
-    // How far from the previous snapshot towards the newest to draw, 0 to 1.
+    // How far from the previous snapshot towards the newest to draw, 0 to 1: what is drawn is a
+    // tick behind the newest, plus this.
     float blend(Clock::time_point now) const;
 
+private:
     GameSettings m_settings;
     LoopbackLink m_link;
     Server m_server;

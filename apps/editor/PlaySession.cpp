@@ -70,8 +70,7 @@ void PlaySession::update(const bool* keys, Clock::time_point now) {
         tell("Checkpoint", now);
     }
     // After a load or a respawn, look the way the player faces.
-    const bool respawned =
-        m_hud.update(m_game.latestState(), m_game.player(), m_settings.rules, now);
+    const bool respawned = m_hud.update(m_game.latestState(), m_game.player(), m_settings, now);
     if ((m_game.timeline() != m_timeline || respawned) && m_game.latestState() != nullptr) {
         m_timeline = m_game.timeline();
         if (const Transform* transform =
@@ -83,8 +82,8 @@ void PlaySession::update(const bool* keys, Clock::time_point now) {
         m_eye = m_stepSmoothing.apply(m_game, *eye, kStepSmoothingSeconds, now);
     }
     m_events.clear();
-    m_gameEvents.update(m_game.latestState(), m_game.timeline(), m_game.level(),
-                        m_settings.movement, m_events);
+    m_gameEvents.update(m_game.latestState(), m_game.timeline(), m_game.level(), m_settings,
+                        m_events);
     if (const State* latest = m_game.latestState()) {
         if (const PlayerMotion* motion = latest->world.playerMotions.get(m_game.player())) {
             m_speed = std::sqrt(motion->velocity.x * motion->velocity.x +

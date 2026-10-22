@@ -115,5 +115,6 @@ TEST_CASE("the sandbox game exists and its start map is in its content") {
     for (const std::string& weapon : game->weapons) {
         CAPTURE(weapon);
         CHECK(content.find("weapons/" + weapon + ".cfg"));
+        CHECK(content.find("sounds/" + weapon + "_fire.wav"));
     }
 }

@@ -38,6 +38,9 @@ public:
     PlaySession(const Level& level, const GameSettings& settings, const LinkConditions& conditions,
                 const std::optional<Camera>& from);
 
+    // The game's weapon names, in the order of GameSettings::weapons, for the HUD.
+    void setWeaponNames(std::vector<std::string> names) { m_hud.setWeaponNames(std::move(names)); }
+
     void look(float countsX, float countsY);
     // Number keys and the mouse wheel change weapons (WeaponSelect). Returns whether the event
     // was one of those.

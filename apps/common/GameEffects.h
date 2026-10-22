@@ -10,8 +10,8 @@
 namespace ct {
 
 // Short-lived effects for GameEvents: the glow where a player respawns, the flash of an
-// explosion. Presentation only, timed by the clock; they are added to the effect geometry each
-// frame until they fade.
+// explosion, the streak of a hitscan pellet and the spark where it hit. Presentation only, timed
+// by the clock; they are added to the effect geometry each frame until they fade.
 class GameEffects {
 public:
     using Clock = std::chrono::steady_clock;
@@ -26,6 +26,8 @@ private:
         GameEventKind kind = GameEventKind::Respawn;
         Vec3 position;
         Clock::time_point start;
+        Vec3 origin;      // tracers: where the pellet came from
+        bool hit = false; // impacts: on someone, not a wall
     };
     std::vector<Effect> m_effects;
 };

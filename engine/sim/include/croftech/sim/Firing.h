@@ -29,7 +29,7 @@ struct ShotHit {
 ShotHit traceShot(const CollisionScene& scene, const World& world, const MovementSettings& movement,
                   Vec3 start, Vec3 end, EntityId shooter);
 
-// The way a transform looks: yaw 0 is +X, and a negative pitch looks up.
+// The way a transform looks: yaw 0 is +X, and a positive pitch looks up (as the camera does).
 Vec3 viewForward(const Transform& transform);
 
 // The direction a pellet flies: up to spread degrees from where the transform looks, spread evenly

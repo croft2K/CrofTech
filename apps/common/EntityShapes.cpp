@@ -3,6 +3,7 @@
 #include "croftech/core/Angle.h"
 #include "croftech/sim/Health.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -16,6 +17,15 @@ constexpr Vec3 kCameraHalfExtents{0.15f, 0.15f, 0.15f};
 constexpr Vec3 kProjectileHalfExtents{0.09f, 0.09f, 0.09f};
 constexpr Vec3 kRocketColor{0.85f, 0.82f, 0.75f};
 constexpr Vec3 kGrenadeColor{0.18f, 0.32f, 0.14f};
+
+// The view weapon: where it is held from the eye (forward, right, up), how far it kicks back and
+// drops while being raised, and how long a kick takes to recover.
+constexpr Vec3 kViewWeaponHold{0.36f, 0.11f, -0.10f};
+constexpr float kViewWeaponKick = 0.05f;
+constexpr float kViewWeaponKickSeconds = 0.12f;
+constexpr float kViewWeaponDrop = 0.22f;
+constexpr Vec3 kViewWeaponColor{0.30f, 0.31f, 0.33f};
+constexpr Vec3 kViewWeaponBarrelColor{0.12f, 0.12f, 0.13f};
 
 // Player colours by input slot, linear RGB.
 constexpr std::array<Vec3, 8> kPlayerColors{{
@@ -35,9 +45,15 @@ void addBox(std::vector<WorldVertex>& out, Vec3 centre, Vec3 halfExtents, float 
             Vec3 color) {
     const float c = std::cos(yawRadians);
     const float s = std::sin(yawRadians);
-    const Vec3 axisX{c, s, 0.0f};
-    const Vec3 axisY{-s, c, 0.0f};
-    const Vec3 axisZ{0.0f, 0.0f, 1.0f};
+    const Vec3 axes[3] = {{c, s, 0.0f}, {-s, c, 0.0f}, {0.0f, 0.0f, 1.0f}};
+    addOrientedBox(out, centre, axes, halfExtents, color);
+}
+
+void addOrientedBox(std::vector<WorldVertex>& out, Vec3 centre, const Vec3 (&axes)[3],
+                    Vec3 halfExtents, Vec3 color) {
+    const Vec3 axisX = axes[0];
+    const Vec3 axisY = axes[1];
+    const Vec3 axisZ = axes[2];
     const auto corner = [&](float x, float y, float z) {
         return centre + axisX * (x * halfExtents.x) + axisY * (y * halfExtents.y) +
                axisZ * (z * halfExtents.z);
@@ -132,6 +148,52 @@ void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,
         addBox(out, transform->position, kProjectileHalfExtents, angleToRadians(transform->yaw),
                bounces ? kGrenadeColor : kRocketColor);
     }
+}
+
+void addViewWeapon(std::vector<WorldVertex>& out, const LocalGame& game, Vec3 eye, float yawRadians,
+                   float pitchRadians, LocalGame::Clock::time_point now) {
+    const State* state = game.latestState();
+    if (state == nullptr) {
+        return;
+    }
+    const World& world = state->world;
+    const Weapons* weapons = world.weapons.get(game.player());
+    const Health* health = world.healths.get(game.player());
+    const std::vector<WeaponSettings>& settings = game.settings().weapons;
+    if (weapons == nullptr || weapons->owned == 0 || weapons->current >= settings.size() ||
+        (health != nullptr && isDead(*health))) {
+        return;
+    }
+    const WeaponSettings& weapon = settings[weapons->current];
+    // The tick being drawn, between the last two snapshots, so the weapon keeps time with the view.
+    const float tick = static_cast<float>(state->tick) - 1.0f + game.blend(now);
+    const float sinceRaised =
+        std::max(tick - static_cast<float>(weapons->raisedTick), 0.0f) * kTickSeconds;
+    const float raised =
+        weapon.raiseTime > 0.0f ? std::clamp(sinceRaised / weapon.raiseTime, 0.0f, 1.0f) : 1.0f;
+    const float sinceFired =
+        std::max(tick - static_cast<float>(weapons->firedTick), 0.0f) * kTickSeconds;
+    const float kick = weapons->firedTick != 0 && sinceFired < kViewWeaponKickSeconds
+                           ? kViewWeaponKick * (1.0f - sinceFired / kViewWeaponKickSeconds)
+                           : 0.0f;
+
+    const float cp = std::cos(pitchRadians);
+    const Vec3 forward{std::cos(yawRadians) * cp, std::sin(yawRadians) * cp,
+                       std::sin(pitchRadians)};
+    const Vec3 right{std::sin(yawRadians), -std::cos(yawRadians), 0.0f};
+    const Vec3 up = cross(right, forward);
+    const float drop = kViewWeaponDrop * (1.0f - raised) * (1.0f - raised);
+    // Each weapon a little longer and wider than the one before, so they tell apart.
+    const float size = static_cast<float>(weapons->current);
+    const Vec3 body{0.08f + 0.02f * size, 0.018f + 0.003f * size, 0.024f + 0.003f * size};
+    const Vec3 hold = eye + forward * (kViewWeaponHold.x - kick) + right * kViewWeaponHold.y +
+                      up * (kViewWeaponHold.z - drop);
+    // Forward, left and up make a right-handed set, as addOrientedBox's faces are wound for.
+    const Vec3 axes[3] = {forward, -right, up};
+    addOrientedBox(out, hold, axes, body, kViewWeaponColor);
+    const Vec3 barrel{0.04f, body.y * 0.5f, body.z * 0.4f};
+    addOrientedBox(out, hold + forward * (body.x + barrel.x) + up * (body.z * 0.3f), axes, barrel,
+                   kViewWeaponBarrelColor);
 }
 
 Vec3 thirdPersonPosition(const CollisionWorld& world, Vec3 eye, float yawRadians,

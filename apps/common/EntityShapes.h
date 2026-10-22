@@ -13,6 +13,11 @@ namespace ct {
 // Simple shapes for what moves in the game, drawn until M5 brings models and animation. Built on
 // the CPU every frame as triangle lists for Renderer::setDynamicGeometry.
 
+// A box along three perpendicular unit axes, halfExtents measured along each. The axes must be
+// right-handed (the third is the cross product of the first two), or it is drawn inside out.
+void addOrientedBox(std::vector<WorldVertex>& out, Vec3 centre, const Vec3 (&axes)[3],
+                    Vec3 halfExtents, Vec3 color);
+
 // A box turned by yaw about its centre's vertical axis.
 void addBox(std::vector<WorldVertex>& out, Vec3 centre, Vec3 halfExtents, float yawRadians,
             Vec3 color);
@@ -27,6 +32,13 @@ void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
 // fly straight, dark for those that bounce.
 void addProjectiles(std::vector<WorldVertex>& out, const LocalGame& game,
                     LocalGame::Clock::time_point now);
+
+// The weapon in the player's hand, held low and to the right of a first-person view from eye,
+// looking along yaw and pitch (radians, pitch up positive). Each weapon is a box of its own length;
+// it kicks back when fired and comes up from below when taken out, timed from the newest snapshot.
+// Nothing while dead or unarmed.
+void addViewWeapon(std::vector<WorldVertex>& out, const LocalGame& game, Vec3 eye, float yawRadians,
+                   float pitchRadians, LocalGame::Clock::time_point now);
 
 // Where a camera following the player from behind goes: back from the eyes along the view, and
 // short of any wall in the way.

@@ -146,9 +146,45 @@ def explosion():
     return mix(scaled(rumble, 1.0), scaled(crack, 0.5), scaled(boom, 0.9))
 
 
+def machinegun_fire():
+    return mix(scaled(burst(0.09, 9.0, 0.45, 8), 1.0), scaled(sweep(180, 90, 0.08, 7.0), 0.6))
+
+
+def shotgun_fire():
+    return mix(scaled(burst(0.45, 6.0, 0.2, 9), 1.0), scaled(sweep(120, 45, 0.35, 5.0), 0.9),
+               scaled(burst(0.05, 20.0, 0.8, 10), 0.6))
+
+
+def grenade_launcher_fire():
+    return mix(scaled(sweep(260, 110, 0.18, 6.0, (1.0, 0.4)), 0.8),
+               scaled(burst(0.12, 8.0, 0.2, 11), 0.6))
+
+
+def rocket_launcher_fire():
+    hiss = [s * min(1.0, i / 400.0) for i, s in enumerate(burst(0.6, 3.5, 0.5, 12))]
+    return mix(scaled(sweep(150, 60, 0.3, 5.0), 0.8), scaled(hiss, 0.7))
+
+
+def impact():
+    return mix(scaled(burst(0.06, 12.0, 0.7, 13), 0.9), scaled(sweep(900, 500, 0.05, 9.0), 0.25))
+
+
+def hit():
+    return scaled(sweep(1500, 1300, 0.06, 6.0), 0.6)
+
+
+def weapon_switch():
+    gap = [0.0] * frames(0.07)
+    return mix(scaled(burst(0.03, 15.0, 0.9, 14), 0.6), gap + scaled(burst(0.04, 12.0, 0.7, 15), 0.7))
+
+
 for name, make in [('footstep', footstep), ('jump', jump), ('land', land), ('pain', pain),
                    ('death', death), ('respawn', respawn), ('checkpoint', checkpoint),
                    ('mover_start', mover_start), ('mover_stop', mover_stop),
-                   ('mover_move', mover_move), ('explosion', explosion)]:
+                   ('mover_move', mover_move), ('explosion', explosion),
+                   ('machinegun_fire', machinegun_fire), ('shotgun_fire', shotgun_fire),
+                   ('grenade_launcher_fire', grenade_launcher_fire),
+                   ('rocket_launcher_fire', rocket_launcher_fire), ('impact', impact), ('hit', hit),
+                   ('weapon_switch', weapon_switch)]:
     write(name, make())
     print(f'wrote {name}.wav')

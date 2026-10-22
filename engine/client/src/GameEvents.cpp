@@ -1,7 +1,10 @@
 #include "croftech/client/GameEvents.h"
 
+#include "croftech/sim/CollisionScene.h"
+#include "croftech/sim/Firing.h"
 #include "croftech/sim/Health.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 
@@ -10,6 +13,15 @@ namespace {
 
 // Rising faster than this when leaving the ground is a jump, not walking off a ledge.
 constexpr float kMinJumpSpeed = 1.0f;
+
+GameEvent makeEvent(GameEventKind kind, EntityId entity, Vec3 position, float strength = 0.0f) {
+    GameEvent event;
+    event.kind = kind;
+    event.entity = entity;
+    event.position = position;
+    event.strength = strength;
+    return event;
+}
 
 bool onGround(const PlayerMotion& motion) { return (motion.flags & kPlayerOnGround) != 0; }
 
@@ -26,7 +38,7 @@ GameEvents::GameEvents() : m_last(std::make_unique<State>()) {}
 GameEvents::~GameEvents() = default;
 
 void GameEvents::update(const State* state, std::uint32_t timeline, const GameLevel& level,
-                        const MovementSettings& movement, std::vector<GameEvent>& out) {
+                        const GameSettings& settings, std::vector<GameEvent>& out) {
     if (state == nullptr) {
         m_known = false;
         return;
@@ -35,7 +47,7 @@ void GameEvents::update(const State* state, std::uint32_t timeline, const GameLe
         return;
     }
     if (m_known && timeline == m_timeline && state->tick > m_last->tick) {
-        compare(*state, level, movement, out);
+        compare(*state, level, settings, out);
     } else {
         m_walked.fill(0.0f);
     }
@@ -44,8 +56,9 @@ void GameEvents::update(const State* state, std::uint32_t timeline, const GameLe
     m_timeline = timeline;
 }
 
-void GameEvents::compare(const State& state, const GameLevel& level,
-                         const MovementSettings& movement, std::vector<GameEvent>& out) {
+void GameEvents::compare(const State& state, const GameLevel& level, const GameSettings& settings,
+                         std::vector<GameEvent>& out) {
+    const MovementSettings& movement = settings.movement;
     const World& now = state.world;
     const World& before = m_last->world;
 
@@ -60,7 +73,7 @@ void GameEvents::compare(const State& state, const GameLevel& level,
         }
         const Vec3 feet = transform->position - Vec3{0.0f, 0.0f, movement.halfExtents.z};
         const auto event = [&](GameEventKind kind, float strength = 0.0f) {
-            out.push_back({kind, id, feet, strength, 0});
+            out.push_back(makeEvent(kind, id, feet, strength));
         };
         const Health* health = now.healths.get(id);
         const Health* lastHealth = before.healths.get(id);
@@ -106,9 +119,14 @@ void GameEvents::compare(const State& state, const GameLevel& level,
         if (last == nullptr || ref == nullptr || moving(mover) == moving(*last)) {
             continue;
         }
-        out.push_back({moving(mover) ? GameEventKind::MoverStart : GameEventKind::MoverStop, id,
-                       moverCentre(level, ref->index, now), 0.0f, ref->index});
+        GameEvent event =
+            makeEvent(moving(mover) ? GameEventKind::MoverStart : GameEventKind::MoverStop, id,
+                      moverCentre(level, ref->index, now));
+        event.levelEntity = ref->index;
+        out.push_back(event);
     }
+
+    compareWeapons(state, level, settings, out);
 
     for (std::size_t i = 0; i < now.projectiles.size(); ++i) {
         const EntityId id = now.projectiles.entities()[i];
@@ -116,7 +134,7 @@ void GameEvents::compare(const State& state, const GameLevel& level,
         const Transform* transform = now.transforms.get(id);
         if (hasExploded(now.projectiles.components()[i]) && transform != nullptr &&
             (last == nullptr || !hasExploded(*last))) {
-            out.push_back({GameEventKind::Explosion, id, transform->position, 0.0f, 0});
+            out.push_back(makeEvent(GameEventKind::Explosion, id, transform->position));
         }
     }
 
@@ -133,7 +151,62 @@ void GameEvents::compare(const State& state, const GameLevel& level,
                 const Aabb bounds = entity->model->bounds();
                 centre = (bounds.min + bounds.max) * 0.5f;
             }
-            out.push_back({GameEventKind::CheckpointReached, id, centre, 0.0f, ref->index});
+            GameEvent event = makeEvent(GameEventKind::CheckpointReached, id, centre);
+            event.levelEntity = ref->index;
+            out.push_back(event);
+        }
+    }
+}
+
+void GameEvents::compareWeapons(const State& state, const GameLevel& level,
+                                const GameSettings& settings, std::vector<GameEvent>& out) const {
+    const World& now = state.world;
+    const CollisionScene scene(level, now);
+    for (std::size_t i = 0; i < now.weapons.size(); ++i) {
+        const EntityId id = now.weapons.entities()[i];
+        const Weapons& weapons = now.weapons.components()[i];
+        const Weapons* last = m_last->world.weapons.get(id);
+        const Transform* transform = now.transforms.get(id);
+        const Health* health = now.healths.get(id);
+        const Health* lastHealth = m_last->world.healths.get(id);
+        const bool respawned =
+            health != nullptr && lastHealth != nullptr && !isDead(*health) && isDead(*lastHealth);
+        if (last == nullptr || transform == nullptr || respawned) {
+            continue;
+        }
+        if (weapons.current != last->current) {
+            GameEvent event = makeEvent(GameEventKind::WeaponSwitch, id, transform->position);
+            event.weapon = weapons.current;
+            out.push_back(event);
+        }
+        if (weapons.firedTick == last->firedTick || weapons.firedTick == 0 ||
+            weapons.current >= settings.weapons.size()) {
+            continue;
+        }
+        const WeaponSettings& weapon = settings.weapons[weapons.current];
+        const Vec3 eye = eyePosition(settings.movement, *transform);
+        GameEvent fire = makeEvent(GameEventKind::Fire, id, eye);
+        fire.weapon = weapons.current;
+        out.push_back(fire);
+        if (weapon.projectileSpeed > 0.0f) {
+            continue;
+        }
+        // Each pellet draws two numbers when it spreads, so the counter before the shot is known.
+        const auto pellets = static_cast<std::uint32_t>(std::clamp(weapon.pellets, 1, 64));
+        std::uint32_t random = weapons.random - (weapon.spread > 0.0f ? 2u * pellets : 0u);
+        const float range = std::clamp(weapon.range, 0.0f, 1000.0f);
+        for (std::uint32_t pellet = 0; pellet < pellets; ++pellet) {
+            const Vec3 direction = pelletDirection(*transform, weapon.spread, random);
+            const ShotHit hit =
+                traceShot(scene, now, settings.movement, eye, eye + direction * range, id);
+            if (hit.fraction >= 1.0f) {
+                continue;
+            }
+            GameEvent impact = makeEvent(GameEventKind::Impact, id, hit.position,
+                                         hit.target.isValid() ? 1.0f : 0.0f);
+            impact.weapon = weapons.current;
+            impact.origin = eye;
+            out.push_back(impact);
         }
     }
 }

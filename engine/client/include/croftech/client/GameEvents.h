@@ -2,7 +2,7 @@
 
 #include "croftech/core/Math.h"
 #include "croftech/sim/GameLevel.h"
-#include "croftech/sim/PlayerMovement.h"
+#include "croftech/sim/GameSettings.h"
 #include "croftech/sim/World.h"
 
 #include <array>
@@ -26,15 +26,20 @@ enum class GameEventKind : std::uint8_t {
     MoverStart,
     MoverStop,
     CheckpointReached,
-    Explosion, // a rocket or grenade going off; entity is the projectile
+    Explosion,    // a rocket or grenade going off; entity is the projectile
+    Fire,         // a shot, from the eye; weapon says which
+    Impact,       // where a hitscan pellet stopped; strength 1 if it hit someone, else 0
+    WeaponSwitch, // weapon says which is now in hand
 };
 
 struct GameEvent {
     GameEventKind kind = GameEventKind::Footstep;
-    EntityId entity;
+    EntityId entity; // who or what it happened to; for shots, the shooter
     Vec3 position;
     float strength = 0.0f;
     std::uint32_t levelEntity = 0; // movers and checkpoints
+    std::uint32_t weapon = 0;      // shots and switches: GameSettings::weapons index
+    Vec3 origin;                   // impacts: where the pellet came from
 };
 
 class GameEvents {
@@ -49,15 +54,19 @@ public:
 
     // Once a frame with the client's newest state (null before the first): appends what happened
     // since the last state it was given. A new timeline (a loaded save) starts afresh, with no
-    // events for the jump back in time.
+    // events for the jump back in time. Where hitscan pellets went is worked out again from the
+    // shooter's random counter, as the server did, but from where the shooter is in this state,
+    // which may be a tick or two after the shot.
     void update(const State* state, std::uint32_t timeline, const GameLevel& level,
-                const MovementSettings& movement, std::vector<GameEvent>& out);
+                const GameSettings& settings, std::vector<GameEvent>& out);
     // Forgets the last state, as when another level starts.
     void reset() { m_known = false; }
 
 private:
-    void compare(const State& state, const GameLevel& level, const MovementSettings& movement,
+    void compare(const State& state, const GameLevel& level, const GameSettings& settings,
                  std::vector<GameEvent>& out);
+    void compareWeapons(const State& state, const GameLevel& level, const GameSettings& settings,
+                        std::vector<GameEvent>& out) const;
 
     std::unique_ptr<State> m_last; // the state the events so far were worked out to
     bool m_known = false;

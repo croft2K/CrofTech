@@ -20,9 +20,14 @@ std::vector<ct::GameEvent> watch(SimHarness& sim, ct::GameEvents& events, const 
     std::vector<ct::GameEvent> seen;
     for (int i = 0; i < ticks; ++i) {
         sim.run(cmd, 1);
-        events.update(&sim.state(), timeline, sim.level(), sim.movement(), seen);
+        events.update(&sim.state(), timeline, sim.level(), sim.settings(), seen);
     }
     return seen;
+}
+
+const ct::GameEvent& first(const std::vector<ct::GameEvent>& events, GameEventKind kind) {
+    return *std::find_if(events.begin(), events.end(),
+                         [kind](const ct::GameEvent& e) { return e.kind == kind; });
 }
 
 std::size_t count(const std::vector<ct::GameEvent>& events, GameEventKind kind) {
@@ -142,4 +147,47 @@ TEST_CASE("a rocket going off is one explosion, where it went off") {
     });
     CHECK(blast->position.x == doctest::Approx(6.0f).epsilon(0.01));
     CHECK(blast->position.z == doctest::Approx(sim.movement().eyeHeight).epsilon(0.01));
+}
+
+TEST_CASE("the client finds the pellets that hit just where the server's shot put them") {
+    ct::WeaponSettings scatter;
+    scatter.given = true;
+    scatter.startAmmo = 5;
+    scatter.raiseTime = 0.0f;
+    scatter.damage = 5;
+    scatter.pellets = 12;
+    scatter.spread = 5.0f;
+    ct::WeaponSettings other = scatter;
+    ct::GameSettings settings;
+    settings.weapons = {scatter, other};
+    const ct::Brush wall = ct::makeBoxBrush({12.0f, -10.0f, 0.0f}, {13.0f, 10.0f, 5.0f});
+    SimHarness sim(ct::Level{{floorBrush(), wall}, {}}, settings);
+    const ct::EntityId shooter = sim.spawn({0.0f, 0.0f, 0.0f});
+    const ct::EntityId target = sim.spawn({4.0f, 0.0f, 0.0f}, 0, 1);
+    ct::GameEvents events;
+    watch(sim, events, {}, 1);
+
+    std::vector<ct::GameEvent> seen = watch(sim, events, pressing(ct::kButtonAttack), 1);
+    REQUIRE(count(seen, GameEventKind::Fire) == 1);
+    CHECK(first(seen, GameEventKind::Fire).entity == shooter);
+    CHECK(first(seen, GameEventKind::Fire).weapon == 0);
+    // Every pellet stops somewhere: on the target, or on the wall behind it.
+    CHECK(count(seen, GameEventKind::Impact) == 12);
+    const auto hits = std::count_if(seen.begin(), seen.end(), [](const ct::GameEvent& e) {
+        return e.kind == GameEventKind::Impact && e.strength > 0.0f;
+    });
+    const std::int32_t lost = 100 - sim.state().world.healths.get(target)->health;
+    CHECK(hits > 0);
+    CHECK(lost == 5 * hits);
+    for (const ct::GameEvent& e : seen) {
+        if (e.kind == GameEventKind::Impact && e.strength == 0.0f) {
+            CHECK(e.position.x == doctest::Approx(12.0f).epsilon(0.01));
+        }
+    }
+
+    ct::UserCmd choose;
+    choose.weapon = 2;
+    seen = watch(sim, events, choose, 1);
+    REQUIRE(count(seen, GameEventKind::WeaponSwitch) == 1);
+    CHECK(first(seen, GameEventKind::WeaponSwitch).weapon == 1);
 }

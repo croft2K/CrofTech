@@ -306,6 +306,7 @@ int main(int argc, char** argv) {
     // Destroyed before SDL shuts down, sounds first.
     auto audio = std::make_unique<ct::AudioOutput>();
     auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
+    sounds->setWeaponNames(game->weapons);
     ct::GameEffects gameEffects;
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
@@ -347,6 +348,7 @@ int main(int argc, char** argv) {
             ct::logError("Can't play: {}", playError);
             return;
         }
+        play->setWeaponNames(game->weapons);
         for (const std::string& warning : play->game().level().warnings()) {
             ct::logWarning("{}", warning);
         }
@@ -645,6 +647,8 @@ int main(int argc, char** argv) {
             effects.clear();
             ct::addPlayers(shapes, play->game(), now, false);
             ct::addProjectiles(shapes, play->game(), now);
+            ct::addViewWeapon(shapes, play->game(), camera.position, camera.yawRadians,
+                              camera.pitchRadians, now);
             gameEffects.build(now, effects);
             renderer->setDynamicGeometry(shapes, effects);
             renderer->drawFrame(play->camera(), ui, &rect);

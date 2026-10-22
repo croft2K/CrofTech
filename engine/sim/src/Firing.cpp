@@ -223,7 +223,7 @@ ShotHit traceShot(const CollisionScene& scene, const World& world, const Movemen
 Vec3 viewForward(const Transform& transform) {
     const SinCos yaw = sinCos(transform.yaw);
     const SinCos pitch = sinCos(transform.pitch);
-    return {pitch.cos * yaw.cos, pitch.cos * yaw.sin, -pitch.sin};
+    return {pitch.cos * yaw.cos, pitch.cos * yaw.sin, pitch.sin};
 }
 
 Vec3 pelletDirection(const Transform& transform, float spread, std::uint32_t& random) {
