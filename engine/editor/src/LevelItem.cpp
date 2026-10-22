@@ -101,14 +101,26 @@ std::vector<LevelItem> withWholeGroups(const Level& level, std::span<const Level
     return withWholeEntities(level, result);
 }
 
-std::optional<Aabb> entityMarker(const LevelEntity& entity, Vec3 playerHalfExtents) {
+Vec3 BodySizes::halfExtents(const LevelEntity& entity) const {
+    if (entity.className != kEnemyClass || enemies.empty()) {
+        return player;
+    }
+    const std::string* type = findProperty(entity, "type");
+    if (type == nullptr || type->empty()) {
+        return enemies.front().second;
+    }
+    const auto found = std::find_if(enemies.begin(), enemies.end(),
+                                    [&](const auto& kind) { return kind.first == *type; });
+    return found != enemies.end() ? found->second : player;
+}
+
+std::optional<Aabb> entityMarker(const LevelEntity& entity, const BodySizes& bodies) {
     const std::optional<Vec3> origin = entityOrigin(entity);
     if (!origin) {
         return std::nullopt;
     }
-    // Enemies are drawn the player's size until markers know each kind's.
     if (entity.className == kPlayerSpawnClass || entity.className == kEnemyClass) {
-        const Vec3 half = playerHalfExtents;
+        const Vec3 half = bodies.halfExtents(entity);
         return Aabb{*origin - Vec3{half.x, half.y, 0.0f},
                     *origin + Vec3{half.x, half.y, half.z * 2.0f}};
     }
@@ -143,12 +155,12 @@ std::optional<Vec3> entityFacing(const LevelEntity& entity) {
     return Vec3{static_cast<float>(std::cos(radians)), static_cast<float>(std::sin(radians)), 0.0f};
 }
 
-std::optional<Aabb> itemBounds(const Level& level, LevelItem item, Vec3 playerHalfExtents) {
+std::optional<Aabb> itemBounds(const Level& level, LevelItem item, const BodySizes& bodies) {
     if (!exists(level, item)) {
         return std::nullopt;
     }
     if (item.kind == LevelItem::Kind::Entity) {
-        return entityMarker(level.entities[item.index], playerHalfExtents);
+        return entityMarker(level.entities[item.index], bodies);
     }
     Aabb bounds;
     if (!computeBrushBounds(level.brushes[item.index], bounds)) {
@@ -158,10 +170,10 @@ std::optional<Aabb> itemBounds(const Level& level, LevelItem item, Vec3 playerHa
 }
 
 std::optional<Aabb> itemBounds(const Level& level, std::span<const LevelItem> items,
-                               Vec3 playerHalfExtents) {
+                               const BodySizes& bodies) {
     std::optional<Aabb> total;
     for (const LevelItem& item : items) {
-        if (const std::optional<Aabb> bounds = itemBounds(level, item, playerHalfExtents)) {
+        if (const std::optional<Aabb> bounds = itemBounds(level, item, bodies)) {
             total =
                 total ? Aabb{min(total->min, bounds->min), max(total->max, bounds->max)} : *bounds;
         }

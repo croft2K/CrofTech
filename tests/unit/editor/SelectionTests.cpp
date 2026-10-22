@@ -4,11 +4,13 @@
 #include "croftech/editor/LevelItem.h"
 #include "croftech/editor/SelectionDrag.h"
 #include "croftech/level/BrushGeometry.h"
+#include "croftech/level/EntityClasses.h"
 
 #include <doctest/doctest.h>
 
 #include <cmath>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace {
@@ -167,13 +169,37 @@ TEST_CASE("a selection drag previews without history and commits once") {
 
 TEST_CASE("item bounds cover brushes and entity markers") {
     const ct::Level level = threeBoxesAndASpawn();
-    const ct::Vec3 half{0.5f, 0.5f, 1.0f};
+    ct::BodySizes bodies;
+    bodies.player = {0.5f, 0.5f, 1.0f};
     const std::vector<LevelItem> items{LevelItem::brush(2), LevelItem::entity(0)};
-    const auto bounds = ct::itemBounds(level, items, half);
+    const auto bounds = ct::itemBounds(level, items, bodies);
     REQUIRE(bounds.has_value());
     CHECK(bounds->min == ct::Vec3{-0.5f, -0.5f, 0.0f});
     CHECK(bounds->max == ct::Vec3{5.0f, 1.0f, 3.0f});
-    CHECK_FALSE(ct::itemBounds(level, LevelItem::brush(9), half).has_value());
+    CHECK_FALSE(ct::itemBounds(level, LevelItem::brush(9), bodies).has_value());
+}
+
+TEST_CASE("enemy markers are the size of their kind") {
+    ct::BodySizes bodies;
+    bodies.player = {0.4f, 0.4f, 0.9f};
+    const auto enemy = [](const char* type) {
+        ct::LevelEntity entity{std::string(ct::kEnemyClass), {{"origin", "0 0 0"}}};
+        if (type != nullptr) {
+            entity.properties.push_back({"type", type});
+        }
+        return entity;
+    };
+    // With no kinds known, the player's size.
+    CHECK(ct::entityMarker(enemy("gunner"), bodies)->max == ct::Vec3{0.4f, 0.4f, 1.8f});
+    bodies.enemies = {{"charger", {0.5f, 0.5f, 1.0f}}, {"gunner", {0.3f, 0.3f, 1.1f}}};
+    CHECK(ct::entityMarker(enemy("gunner"), bodies)->max == ct::Vec3{0.3f, 0.3f, 2.2f});
+    CHECK(ct::entityMarker(enemy("gunner"), bodies)->min == ct::Vec3{-0.3f, -0.3f, 0.0f});
+    // No type is the first kind; one the game doesn't have, the player's size.
+    CHECK(ct::entityMarker(enemy(nullptr), bodies)->max == ct::Vec3{0.5f, 0.5f, 2.0f});
+    CHECK(ct::entityMarker(enemy(""), bodies)->max == ct::Vec3{0.5f, 0.5f, 2.0f});
+    CHECK(ct::entityMarker(enemy("ghost"), bodies)->max == ct::Vec3{0.4f, 0.4f, 1.8f});
+    const ct::LevelEntity spawn{std::string(ct::kPlayerSpawnClass), {{"origin", "0 0 0"}}};
+    CHECK(ct::entityMarker(spawn, bodies)->max == ct::Vec3{0.4f, 0.4f, 1.8f});
 }
 
 TEST_CASE("entities with a yaw face that way, or their class's default") {

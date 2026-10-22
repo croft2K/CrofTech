@@ -80,7 +80,13 @@ carries a waiting enemy back. `--map enemies_test` has chargers in the open, on 
 a lift and behind a door, one on patrol, and gunners on the platform (on patrol) and beyond lava
 (with pillars to hide behind). In the editor, the patrol routes of selected entities are drawn in
 green (`entityReferences` in `editor/EntityLinks.h`, for any property of the Reference type), and
-the inspector's "Add patrol point" puts the next point of a route a few metres on, linked in.
+the inspector's "Add patrol point" puts the next point of a route a few metres on, linked in;
+enemy markers are their kind's size (`BodySizes` in `editor/LevelItem.h`). An enemy sounds like
+its kind (`sounds/<kind>_alert.wav`, then `alert.wav`; the same for pain, death, footstep and
+swing), and its noticing you (`EnemyAlert`) and swinging (`EnemySwing`) are game events.
+`client.show_ai 1` (Play > Show what enemies think in the editor) labels each enemy with its
+state and health and draws its view cone, hearing ring, path, goal, target and post
+(`apps/common/EnemyThoughts`).
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;

@@ -13,6 +13,7 @@
 
 #include "AudioOutput.h"
 #include "EditorPanels.h"
+#include "EnemyThoughts.h"
 #include "EntityShapes.h"
 #include "GameEffects.h"
 #include "GameSounds.h"
@@ -147,7 +148,7 @@ void buildDefaultLayout(ImGuiID dockspace) {
 std::optional<ct::Vec3> selectionCentre(const ct::EditorDocument& document,
                                         const ct::EditorSettings& settings) {
     const std::optional<ct::Aabb> bounds =
-        ct::itemBounds(document.level(), document.selection(), settings.playerHalfExtents);
+        ct::itemBounds(document.level(), document.selection(), settings.bodies);
     if (!bounds) {
         return std::nullopt;
     }
@@ -203,7 +204,12 @@ std::optional<ct::Vec3> nudgeShortcut(const std::pair<ct::Vec3, ct::Vec3>& axes)
 // What play-in-editor shows over the game: how to stop, and how the game is doing.
 void drawPlayBanner(const ct::PlaySession& play, bool captured, const ct::EditorSettings& settings,
                     const ct::EditorDocument& document, const ct::ViewRect& view) {
-    play.hud().draw(view.x, view.y, view.width, view.height, ct::PlaySession::Clock::now());
+    const ct::PlaySession::Clock::time_point now = ct::PlaySession::Clock::now();
+    if (settings.showEnemyThoughts) {
+        ct::drawEnemyLabels(play.game(), now, play.camera(), view.x, view.y, view.width,
+                            view.height);
+    }
+    play.hud().draw(view.x, view.y, view.width, view.height, now);
     const float padding = ImGui::GetStyle().WindowPadding.x;
     ImGui::SetNextWindowPos({view.x + padding, view.y + padding});
     ImGui::SetNextWindowBgAlpha(0.7f);
@@ -227,7 +233,7 @@ void drawPlayBanner(const ct::PlaySession& play, bool captured, const ct::Editor
         if (!captured) {
             ImGui::Text("Click to take control");
         }
-        if (const std::string* notice = play.notice(ct::PlaySession::Clock::now())) {
+        if (const std::string* notice = play.notice(now)) {
             ImGui::TextUnformatted(notice->c_str());
         }
     }
@@ -276,7 +282,10 @@ int main(int argc, char** argv) {
 
     const ct::GameSettings gameSettings = loadGameSettings(content, *game);
     ct::EditorSettings settings;
-    settings.playerHalfExtents = gameSettings.movement.halfExtents;
+    settings.bodies.player = gameSettings.movement.halfExtents;
+    for (const ct::EnemySettings& enemy : gameSettings.enemies) {
+        settings.bodies.enemies.emplace_back(enemy.name, enemy.movement.halfExtents);
+    }
     settings.invertMouse = invertMouseSetting(content);
     ct::NavMeshView navMeshView(ct::navAgent(gameSettings.movement));
     ct::LevelViewport viewport(startingCamera(*level));
@@ -326,6 +335,7 @@ int main(int argc, char** argv) {
     auto audio = std::make_unique<ct::AudioOutput>();
     auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
     sounds->setWeaponNames(game->weapons);
+    sounds->setEnemyNames(game->enemies);
     ct::GameEffects gameEffects;
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
@@ -677,6 +687,9 @@ int main(int argc, char** argv) {
             gameEffects.build(now, effects);
             if (settings.showNavMesh) {
                 navMeshView.drawing().add(effects);
+            }
+            if (settings.showEnemyThoughts) {
+                ct::addEnemyThoughts(effects, play->game(), now);
             }
             renderer->setDynamicGeometry(shapes, effects);
             renderer->drawFrame(play->camera(), ui, &rect);

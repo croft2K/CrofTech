@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 
 namespace ct {
 namespace {
@@ -25,6 +26,22 @@ GameEvent makeEvent(GameEventKind kind, EntityId entity, Vec3 position, float st
 }
 
 bool onGround(const PlayerMotion& motion) { return (motion.flags & kPlayerOnGround) != 0; }
+
+// What an enemy's change of state between two states shows: noticing a player (or finding again
+// the one it searched for), or starting a swing.
+std::optional<GameEventKind> enemyChange(const Enemy& now, const Enemy& before) {
+    const EnemyState state = enemyState(now);
+    const EnemyState was = enemyState(before);
+    if ((state == EnemyState::Alerted && was != EnemyState::Alerted) ||
+        (state == EnemyState::Chase && was == EnemyState::Search)) {
+        return GameEventKind::EnemyAlert;
+    }
+    if (state == EnemyState::Attack &&
+        (was != EnemyState::Attack || now.attackTick != before.attackTick)) {
+        return GameEventKind::EnemySwing;
+    }
+    return std::nullopt;
+}
 
 bool moving(const Mover& mover) {
     const auto phase = static_cast<MoverPhase>(mover.phase);
@@ -74,8 +91,14 @@ void GameEvents::compare(const State& state, const GameLevel& level, const GameS
             continue;
         }
         const Vec3 feet = transform->position - Vec3{0.0f, 0.0f, movement.halfExtents.z};
+        const Enemy* enemy = now.enemies.get(id);
+        const auto eventAt = [&](GameEventKind kind, Vec3 position, float strength) {
+            GameEvent made = makeEvent(kind, id, position, strength);
+            made.enemyType = enemy != nullptr ? enemy->type : kNoEnemyType;
+            out.push_back(made);
+        };
         const auto event = [&](GameEventKind kind, float strength = 0.0f) {
-            out.push_back(makeEvent(kind, id, feet, strength));
+            eventAt(kind, feet, strength);
         };
         const Health* health = now.healths.get(id);
         const Health* lastHealth = before.healths.get(id);
@@ -91,6 +114,13 @@ void GameEvents::compare(const State& state, const GameLevel& level, const GameS
             } else if (!dead && health->hurtTick != lastHealth->hurtTick &&
                        health->health < lastHealth->health) {
                 event(GameEventKind::Hurt, static_cast<float>(lastHealth->health - health->health));
+            }
+        }
+        const Enemy* lastEnemy = before.enemies.get(id);
+        if (!dead && enemy != nullptr && lastEnemy != nullptr) {
+            if (const std::optional<GameEventKind> change = enemyChange(*enemy, *lastEnemy)) {
+                eventAt(*change, transform->position + Vec3{0.0f, 0.0f, movement.halfExtents.z},
+                        0.0f);
             }
         }
         if (dead || lastTransform == nullptr || lastMotion == nullptr) {

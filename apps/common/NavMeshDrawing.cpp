@@ -1,5 +1,7 @@
 #include "NavMeshDrawing.h"
 
+#include "EntityShapes.h"
+
 #include "croftech/core/Random.h"
 
 #include <cmath>
@@ -38,26 +40,6 @@ void addTriangle(std::vector<EffectVertex>& out, Vec3 a, Vec3 b, Vec3 c, Vec3 co
     out.push_back({c, colour, alpha});
 }
 
-// A line as two crossed strips, so it shows from any side.
-void addLine(std::vector<EffectVertex>& out, Vec3 start, Vec3 end, float width, Vec3 colour,
-             float alpha) {
-    const Vec3 along = end - start;
-    if (dot(along, along) == 0.0f) {
-        return;
-    }
-    const Vec3 direction = normalize(along);
-    Vec3 side = cross(direction, Vec3{0.0f, 0.0f, 1.0f});
-    if (dot(side, side) < 1e-6f) {
-        side = {1.0f, 0.0f, 0.0f};
-    }
-    side = normalize(side) * (width * 0.5f);
-    const Vec3 other = normalize(cross(direction, side)) * (width * 0.5f);
-    for (const Vec3 offset : {side, other}) {
-        addTriangle(out, start - offset, start + offset, end + offset, colour, alpha);
-        addTriangle(out, start - offset, end + offset, end - offset, colour, alpha);
-    }
-}
-
 } // namespace
 
 void NavMeshDrawing::set(const NavMesh& mesh) {
@@ -73,11 +55,11 @@ void NavMeshDrawing::set(const NavMesh& mesh) {
     const Vec3 edgeLift{0.0f, 0.0f, kEdgeLift};
     for (const NavEdge& edge : mesh.edges()) {
         if (edge.boundary) {
-            addLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth,
-                    {0.1f, 0.8f, 0.5f}, 0.8f);
+            addEffectLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth,
+                          {0.1f, 0.8f, 0.5f}, 0.8f);
         } else {
-            addLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth * 0.5f,
-                    {0.05f, 0.3f, 0.25f}, 0.6f);
+            addEffectLine(m_vertices, edge.start + edgeLift, edge.end + edgeLift, kEdgeWidth * 0.5f,
+                          {0.05f, 0.3f, 0.25f}, 0.6f);
         }
     }
     for (const NavLink& link : mesh.links()) {
@@ -87,13 +69,13 @@ void NavMeshDrawing::set(const NavMesh& mesh) {
             const float t = static_cast<float>(i) / static_cast<float>(kLinkSegments);
             const Vec3 point = link.start + (link.end - link.start) * t + edgeLift +
                                Vec3{0.0f, 0.0f, 4.0f * t * (1.0f - t) * kLinkArc};
-            addLine(m_vertices, previous, point, kLinkWidth, colour, 1.0f);
+            addEffectLine(m_vertices, previous, point, kLinkWidth, colour, 1.0f);
             previous = point;
         }
         // A post at each stop.
         for (const Vec3 stop : {link.start, link.end}) {
-            addLine(m_vertices, stop, stop + Vec3{0.0f, 0.0f, 0.5f}, kLinkWidth * 2.0f, colour,
-                    1.0f);
+            addEffectLine(m_vertices, stop, stop + Vec3{0.0f, 0.0f, 0.5f}, kLinkWidth * 2.0f,
+                          colour, 1.0f);
         }
     }
     m_ready = true;

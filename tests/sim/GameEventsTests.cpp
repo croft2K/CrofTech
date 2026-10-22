@@ -1,11 +1,14 @@
 #include "SimHarness.h"
 
 #include "croftech/client/GameEvents.h"
+#include "croftech/level/EntityClasses.h"
 #include "croftech/sim/Damage.h"
+#include "croftech/sim/Enemies.h"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 using ct::GameEventKind;
@@ -205,4 +208,45 @@ TEST_CASE("taking a pickup and its coming back are events, credited to who took 
     CHECK(first(seen, GameEventKind::Pickup).position.x == doctest::Approx(2.0f));
     seen = watch(sim, events, {}, ct::kTickRate);
     CHECK(count(seen, GameEventKind::PickupRespawn) == 1);
+}
+
+TEST_CASE("an enemy noticing a player and swinging at them are events, marked with its kind") {
+    ct::GameSettings settings;
+    ct::EnemySettings charger;
+    charger.name = "charger";
+    charger.meleeDamage = 10;
+    charger.movement = ct::enemyMovement(charger, settings.movement);
+    settings.enemies = {charger};
+    // Facing away from the player, until the player hurts it.
+    const ct::LevelEntity enemy{std::string(ct::kEnemyClass),
+                                {{"origin", "-6 0 0"}, {"yaw", "180"}}};
+    SimHarness sim(
+        ct::Level{{ct::makeBoxBrush({-15.0f, -15.0f, -1.0f}, {15.0f, 15.0f, 0.0f})}, {enemy}},
+        settings);
+    const ct::EntityId player = sim.spawn({6.0f, 0.0f, 0.0f});
+    const ct::EntityId enemyId = sim.level().entity(0)->id;
+    ct::GameEvents events;
+    CHECK(count(watch(sim, events, {}, ct::kTickRate / 2), GameEventKind::EnemyAlert) == 0);
+    ct::Damage damage;
+    damage.amount = 10;
+    damage.attacker = player;
+    ct::applyDamage(sim.state(), sim.settings().rules, enemyId, damage);
+    const std::vector<ct::GameEvent> seen = watch(sim, events, {}, 3 * ct::kTickRate);
+
+    REQUIRE(count(seen, GameEventKind::EnemyAlert) == 1);
+    const ct::GameEvent& alert = first(seen, GameEventKind::EnemyAlert);
+    CHECK(alert.entity == enemyId);
+    CHECK(alert.enemyType == 0);
+    CHECK(alert.position.z == doctest::Approx(charger.height).epsilon(0.01));
+    REQUIRE(count(seen, GameEventKind::EnemySwing) >= 1);
+    CHECK(first(seen, GameEventKind::EnemySwing).entity == enemyId);
+    // Its hurts and footsteps are its own; the player's are a player's.
+    const auto has = [&](GameEventKind kind, ct::EntityId who, std::uint32_t type) {
+        return std::any_of(seen.begin(), seen.end(), [&](const ct::GameEvent& e) {
+            return e.kind == kind && e.entity == who && e.enemyType == type;
+        });
+    };
+    CHECK(has(GameEventKind::Hurt, enemyId, 0));
+    CHECK(has(GameEventKind::Footstep, enemyId, 0));
+    CHECK(has(GameEventKind::Hurt, player, ct::kNoEnemyType));
 }

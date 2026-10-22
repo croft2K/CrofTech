@@ -177,8 +177,11 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    drawn in the editor, which adds the next point with one button), searching (it follows a lost
    target round the corner, searches spots about where it lost it, then walks back to its post or
    patrol), and cover for the gunner (after a burst or a hit, by chance, it runs to a nearby spot
-   the target can't see, waits, and comes out again). 6d: sounds and effects of their own, editor
-   markers at each kind's size, and an AI debug view (state, path, what it sees).* Enemy types are data: health, size, speed, senses, attacks and behaviour tuning.
+   the target can't see, waits, and comes out again). 6d done (2026-10-22): enemy sounds of their
+   own kind (`<kind>_alert`, `_pain`, `_death`, `_footstep` and `_swing`, else the plain sound), a
+   spark off an enemy's head as it notices you, bodies flashing when hurt, editor markers at each
+   kind's size, and a view of what enemies think (`client.show_ai`, and Play > Show what enemies
+   think in the editor): state, health, view cone, hearing ring, path, goal, target and post.* Enemy types are data: health, size, speed, senses, attacks and behaviour tuning.
    Enemies move with the player movement code, driven by commands from their AI, so they step,
    slide and ride lifts the way players do. They see players inside a view cone with line of
    sight, and hear shots and footsteps. Behaviour is a state machine (idle, patrol, alerted, chase,

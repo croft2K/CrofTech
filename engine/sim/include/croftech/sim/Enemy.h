@@ -43,7 +43,7 @@ struct Enemy {
     std::uint32_t stateTick = 0; // when it went into the state
     std::uint32_t flags = 0;
     EntityId target;
-    Vec3 lastSeen;              // the target's feet when it was last seen, or last known of
+    Vec3 lastSeen;              // the middle of the target when it was last seen, or last known of
     std::uint32_t seenTick = 0; // when it last saw the target
     std::uint32_t hurtSeen = 0; // the Health::hurtTick it last reacted to
     // Where its path leads: the target's last known place, a patrol point, a spot to search or
@@ -82,7 +82,7 @@ struct Schema<Enemy> {
         CT_FIELD(Enemy, target).withDescription("The player it is after"),
         CT_FIELD(Enemy, lastSeen)
             .withHint(FieldHint::Distance)
-            .withDescription("The target's feet when last seen or known of"),
+            .withDescription("The middle of the target when last seen or known of"),
         CT_FIELD(Enemy, seenTick).withDescription("Tick it last saw the target"),
         CT_FIELD(Enemy, hurtSeen).withDescription("The hurt tick it last reacted to"),
         CT_FIELD(Enemy, goal).withHint(FieldHint::Distance).withDescription("Where its path leads"),

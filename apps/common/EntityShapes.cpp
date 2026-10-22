@@ -33,6 +33,9 @@ constexpr float kPickupBobMetres = 0.06f;
 constexpr float kPickupBobPerSecond = 2.2f;
 constexpr Vec3 kViewWeaponBarrelColor{0.12f, 0.12f, 0.13f};
 
+constexpr float kHurtFlashSeconds = 0.15f;
+constexpr Vec3 kHurtFlashColor{1.0f, 0.55f, 0.45f};
+
 // Player colours by input slot, linear RGB.
 // Dark, so enemies stand apart from players' bright colours.
 constexpr std::array<Vec3, 4> kEnemyColors{{
@@ -53,7 +56,46 @@ constexpr std::array<Vec3, 8> kPlayerColors{{
     {0.45f, 0.45f, 0.45f},
 }};
 
+// The tick being drawn, between the last two snapshots, so what is timed from the state keeps time
+// with what moves.
+float drawnTick(const LocalGame& game, const State& state, LocalGame::Clock::time_point now) {
+    return static_cast<float>(state.tick) - 1.0f + game.blend(now);
+}
+
+// A body's colour, flashing pale for a moment each time it is hurt.
+Vec3 withHurtFlash(Vec3 color, const Health* health, float tick) {
+    if (health == nullptr || health->hurtTick == 0) {
+        return color;
+    }
+    const float since = std::max(tick - static_cast<float>(health->hurtTick), 0.0f) * kTickSeconds;
+    if (since >= kHurtFlashSeconds) {
+        return color;
+    }
+    return color + (kHurtFlashColor - color) * (1.0f - since / kHurtFlashSeconds);
+}
+
 } // namespace
+
+void addEffectLine(std::vector<EffectVertex>& out, Vec3 start, Vec3 end, float width, Vec3 colour,
+                   float alpha) {
+    const Vec3 along = end - start;
+    if (dot(along, along) == 0.0f) {
+        return;
+    }
+    const Vec3 direction = normalize(along);
+    Vec3 side = cross(direction, Vec3{0.0f, 0.0f, 1.0f});
+    if (dot(side, side) < 1e-6f) {
+        side = {1.0f, 0.0f, 0.0f};
+    }
+    side = normalize(side) * (width * 0.5f);
+    const Vec3 other = normalize(cross(direction, side)) * (width * 0.5f);
+    for (const Vec3 offset : {side, other}) {
+        const Vec3 corners[4] = {start - offset, start + offset, end + offset, end - offset};
+        for (const int i : {0, 1, 2, 0, 2, 3}) {
+            out.push_back({corners[i], colour, alpha});
+        }
+    }
+}
 
 void addBox(std::vector<WorldVertex>& out, Vec3 centre, Vec3 halfExtents, float yawRadians,
             Vec3 color) {
@@ -134,7 +176,8 @@ void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
                    lying, yaw, color * 0.6f);
             continue;
         }
-        addBox(out, transform->position, half, yaw, color);
+        addBox(out, transform->position, half, yaw,
+               withHurtFlash(color, health, drawnTick(game, *state, now)));
         const Vec3 forward{std::cos(yaw), std::sin(yaw), 0.0f};
         const Vec3 visor{half.x * 0.25f, half.y * 0.7f, 0.08f};
         addBox(out, feet + Vec3{0.0f, 0.0f, movement.eyeHeight} + forward * (half.x + visor.x),
@@ -170,7 +213,8 @@ void addEnemies(std::vector<WorldVertex>& out, const LocalGame& game,
                    color * 0.5f);
             continue;
         }
-        addBox(out, transform->position, half, yaw, color);
+        addBox(out, transform->position, half, yaw,
+               withHurtFlash(color, health, drawnTick(game, *state, now)));
         const Vec3 right{std::sin(yaw), -std::cos(yaw), 0.0f};
         const Vec3 eye{0.05f, half.y * 0.15f, 0.05f};
         const Vec3 eyes = feet + Vec3{0.0f, 0.0f, movement.eyeHeight} + forward * (half.x + eye.x);
@@ -280,8 +324,7 @@ void addViewWeapon(std::vector<WorldVertex>& out, const LocalGame& game, Vec3 ey
         return;
     }
     const WeaponSettings& weapon = settings[weapons->current];
-    // The tick being drawn, between the last two snapshots, so the weapon keeps time with the view.
-    const float tick = static_cast<float>(state->tick) - 1.0f + game.blend(now);
+    const float tick = drawnTick(game, *state, now);
     const float sinceRaised =
         std::max(tick - static_cast<float>(weapons->raisedTick), 0.0f) * kTickSeconds;
     const float raised =

@@ -2,6 +2,8 @@
 add_library(ct_app_common STATIC
     AudioOutput.cpp
     AudioOutput.h
+    EnemyThoughts.cpp
+    EnemyThoughts.h
     EntityShapes.cpp
     EntityShapes.h
     GameEffects.cpp

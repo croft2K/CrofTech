@@ -207,6 +207,79 @@ def pickup_respawn():
     return scaled(sweep(700, 1100, 0.3, 4.0, (1.0, 0.3)), 0.5)
 
 
+def growl(start_hz, end_hz, seconds, wobble_hz, seed):
+    """A rough voice: a buzzy tone that wobbles, with breath under it, swelling then fading."""
+    out, phase = [], 0.0
+    breath = noise(seed)
+    count = frames(seconds)
+    for i in range(count):
+        t = i / count
+        frequency = (start_hz + (end_hz - start_hz) * t) * (1.0 + 0.06 * math.sin(2 * math.pi * wobble_hz * i / RATE))
+        phase += 2.0 * math.pi * frequency / RATE
+        tone = math.sin(phase) + 0.6 * math.sin(2 * phase) + 0.4 * math.sin(3 * phase) + 0.25 * math.sin(5 * phase)
+        out.append((tone + 0.5 * breath()) * math.sin(math.pi * min(1.0, t * 1.4)) ** 0.7 * (1.0 - t) ** 0.5)
+    return lowpass(out, 0.3)
+
+
+def beeps(notes, seconds, gap):
+    """Square-ish tones one after another, as a machine would call out."""
+    out = []
+    for n, hz in enumerate(notes):
+        count = frames(seconds)
+        tone = [(1.0 if math.sin(2 * math.pi * hz * i / RATE) >= 0.0 else -1.0) * 0.5
+                * min(1.0, i / 40.0) * min(1.0, (count - i) / 200.0) for i in range(count)]
+        out = mix(out or [0.0], [0.0] * frames((seconds + gap) * n) + lowpass(tone, 0.35))
+    return out
+
+
+def alert():
+    return scaled(growl(200, 360, 0.3, 9, 20), 0.8)
+
+
+def swing():
+    # Noise that swells and fades, brighter in the middle, as something swept through the air.
+    sample = noise(21)
+    count = frames(0.28)
+    out, value = [], 0.0
+    for i in range(count):
+        t = i / count
+        amount = 0.04 + 0.3 * math.sin(math.pi * t)
+        value += (sample() - value) * amount
+        out.append(value * math.sin(math.pi * t) ** 2)
+    return scaled(out, 1.0)
+
+
+def charger_alert():
+    return mix(scaled(growl(95, 150, 0.6, 6, 22), 1.0), scaled(burst(0.4, 3.0, 0.06, 23), 0.4))
+
+
+def charger_pain():
+    return scaled(growl(170, 110, 0.25, 11, 24), 0.9)
+
+
+def charger_death():
+    return mix(scaled(growl(150, 45, 1.0, 5, 25), 1.0), scaled(burst(0.6, 4.0, 0.05, 26), 0.3))
+
+
+def charger_footstep():
+    return mix(scaled(burst(0.09, 8.0, 0.12, 27), 0.9), scaled(sweep(85, 45, 0.12, 6.0), 0.9))
+
+
+def gunner_alert():
+    return beeps([880, 660, 990], 0.08, 0.03)
+
+
+def gunner_pain():
+    return mix(scaled(sweep(620, 380, 0.2, 4.0, (1.0, 0.0, 0.5, 0.0, 0.3)), 0.7),
+               scaled(burst(0.12, 8.0, 0.6, 28), 0.3))
+
+
+def gunner_death():
+    falling = sweep(700, 90, 0.8, 2.5, (1.0, 0.0, 0.45, 0.0, 0.25))
+    static = [s * min(1.0, i / frames(0.3)) for i, s in enumerate(burst(0.9, 3.0, 0.7, 29))]
+    return mix(scaled(falling, 0.7), scaled(static, 0.35))
+
+
 for name, make in [('footstep', footstep), ('jump', jump), ('land', land), ('pain', pain),
                    ('death', death), ('respawn', respawn), ('checkpoint', checkpoint),
                    ('mover_start', mover_start), ('mover_stop', mover_stop),
@@ -216,6 +289,10 @@ for name, make in [('footstep', footstep), ('jump', jump), ('land', land), ('pai
                    ('rocket_launcher_fire', rocket_launcher_fire), ('impact', impact), ('hit', hit),
                    ('weapon_switch', weapon_switch), ('pickup_health', pickup_health),
                    ('pickup_armour', pickup_armour), ('pickup_ammo', pickup_ammo),
-                   ('pickup_weapon', pickup_weapon), ('pickup_respawn', pickup_respawn)]:
+                   ('pickup_weapon', pickup_weapon), ('pickup_respawn', pickup_respawn),
+                   ('alert', alert), ('swing', swing), ('charger_alert', charger_alert),
+                   ('charger_pain', charger_pain), ('charger_death', charger_death),
+                   ('charger_footstep', charger_footstep), ('gunner_alert', gunner_alert),
+                   ('gunner_pain', gunner_pain), ('gunner_death', gunner_death)]:
     write(name, make())
     print(f'wrote {name}.wav')

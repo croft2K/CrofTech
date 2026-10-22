@@ -22,6 +22,12 @@ constexpr int kFlashSides = 12;
 constexpr Vec3 kFlashColor{1.0f, 0.55f, 0.15f};
 constexpr Vec3 kFlashCoreColor{1.0f, 0.9f, 0.6f};
 
+// A spark that rises off an enemy's head as it notices a player.
+constexpr float kAlertSeconds = 0.4f;
+constexpr float kAlertRise = 0.35f;
+constexpr Vec3 kAlertColor{1.0f, 0.8f, 0.2f};
+constexpr Vec3 kAlertCoreColor{1.0f, 1.0f, 0.8f};
+
 constexpr float kSparkSeconds = 0.18f;
 constexpr float kSparkRadius = 0.16f;
 constexpr Vec3 kSparkColor{1.0f, 0.85f, 0.5f};
@@ -42,6 +48,8 @@ float lifetime(GameEventKind kind) {
         return kSparkSeconds;
     case GameEventKind::Fire:
         return kTracerSeconds;
+    case GameEventKind::EnemyAlert:
+        return kAlertSeconds;
     default:
         return kGlowSeconds;
     }
@@ -119,6 +127,7 @@ void GameEffects::add(std::span<const GameEvent> events, Clock::time_point now) 
         switch (event.kind) {
         case GameEventKind::Respawn:
         case GameEventKind::Explosion:
+        case GameEventKind::EnemyAlert:
             m_effects.push_back(effect);
             break;
         case GameEventKind::PickupRespawn:
@@ -163,6 +172,10 @@ void GameEffects::build(Clock::time_point now, std::vector<EffectVertex>& out) {
             break;
         case GameEventKind::PickupRespawn:
             addGlow(effect.position, age, kPickupGlowScale, out);
+            break;
+        case GameEventKind::EnemyAlert:
+            addFlash(effect.position + Vec3{0.0f, 0.0f, 0.1f + kAlertRise * age}, age, 0.06f, 0.22f,
+                     kAlertCoreColor, kAlertColor, out);
             break;
         default:
             addGlow(effect.position, age, 1.0f, out);

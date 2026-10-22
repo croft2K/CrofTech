@@ -738,8 +738,7 @@ std::optional<LevelViewport::Pick> LevelViewport::pick(const EditorDocument& doc
         }
     }
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
-        const std::optional<Aabb> marker =
-            entityMarker(level.entities[i], settings.playerHalfExtents);
+        const std::optional<Aabb> marker = entityMarker(level.entities[i], settings.bodies);
         if (!marker) {
             continue;
         }
@@ -1682,7 +1681,7 @@ void LevelViewport::finishMarquee(const Drag& drag, EditorDocument& document,
         items = document.selection();
     }
     const auto consider = [&](LevelItem item) {
-        const std::optional<Aabb> bounds = itemBounds(level, item, settings.playerHalfExtents);
+        const std::optional<Aabb> bounds = itemBounds(level, item, settings.bodies);
         if (!bounds) {
             return;
         }
@@ -1738,7 +1737,7 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
     }
     const LinePainter painter(view.viewProjection, view.rect);
     const Level& level = document.level();
-    const Vec3 halfExtents = settings.playerHalfExtents;
+    const BodySizes& bodies = settings.bodies;
 
     if (view.orthographic) {
         // A grid behind everything, then every brush's edges: a plan of the level.
@@ -1777,7 +1776,7 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
     }
 
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
-        if (const auto marker = entityMarker(level.entities[i], halfExtents)) {
+        if (const auto marker = entityMarker(level.entities[i], bodies)) {
             const bool spawn = level.entities[i].className == kPlayerSpawnClass;
             const ImU32 color = spawn ? kSpawnColor : kEntityColor;
             painter.box(*marker, color, 1.5f);
@@ -1793,7 +1792,7 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
         }
         if (item.kind == LevelItem::Kind::Brush) {
             painter.brush(level.brushes[item.index], color, thickness);
-        } else if (const auto marker = entityMarker(level.entities[item.index], halfExtents)) {
+        } else if (const auto marker = entityMarker(level.entities[item.index], bodies)) {
             painter.box(*marker, color, thickness);
         }
     };

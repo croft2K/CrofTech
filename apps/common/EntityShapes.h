@@ -18,19 +18,24 @@ namespace ct {
 void addOrientedBox(std::vector<WorldVertex>& out, Vec3 centre, const Vec3 (&axes)[3],
                     Vec3 halfExtents, Vec3 color);
 
+// A see-through line as two crossed strips, so it shows from any side.
+void addEffectLine(std::vector<EffectVertex>& out, Vec3 start, Vec3 end, float width, Vec3 colour,
+                   float alpha);
+
 // A box turned by yaw about its centre's vertical axis.
 void addBox(std::vector<WorldVertex>& out, Vec3 centre, Vec3 halfExtents, float yawRadians,
             Vec3 color);
 
 // Every player in the newest snapshot as a body the size of its collision box, coloured by input
-// slot, with a dark visor facing where it looks; the dead lie flat. The client's own player is
+// slot (flashing pale for a moment when hurt), with a dark visor facing where it looks; the dead
+// lie flat. The client's own player is
 // left out unless includeOwn (seen from behind in third person).
 void addPlayers(std::vector<WorldVertex>& out, const LocalGame& game,
                 LocalGame::Clock::time_point now, bool includeOwn);
 
 // Every enemy in the newest snapshot as a body the size of its kind's box, in a dark colour of its
-// kind with pale eyes facing where it looks, and an arm raised while a swing winds up; the dead
-// lie flat.
+// kind (flashing pale for a moment when hurt) with pale eyes facing where it looks, and an arm
+// raised while a swing winds up; the dead lie flat.
 void addEnemies(std::vector<WorldVertex>& out, const LocalGame& game,
                 LocalGame::Clock::time_point now);
 

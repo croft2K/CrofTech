@@ -17,6 +17,7 @@
 // dying, fire respawns.
 
 #include "AudioOutput.h"
+#include "EnemyThoughts.h"
 #include "EntityShapes.h"
 #include "GameEffects.h"
 #include "GameHud.h"
@@ -105,6 +106,7 @@ struct ClientCVars {
     const ct::CVar& stepSmoothing;
     const ct::CVar& thirdPerson;
     const ct::CVar& showNavMesh;
+    const ct::CVar& showAi;
     const ct::CVar& volume;
     const ct::CVar& fakeLatency;
     const ct::CVar& fakeJitter;
@@ -136,6 +138,9 @@ ClientCVars registerClientCVars(ct::Console& console) {
         console.add(ct::CVar::makeBool(
             "client.show_navmesh", false,
             "draw the navigation mesh enemies walk: floors by area, edges, and lift rides")),
+        console.add(ct::CVar::makeBool(
+            "client.show_ai", false,
+            "label each enemy with its state and health, and draw its view cone, path and target")),
         console.add(ct::CVar::makeFloat("client.volume", 0.8f, 0.0f, 1.0f,
                                         "loudness of every sound, 0 to 1")),
         console.add(ct::CVar::makeFloat("net.fake_latency_ms", 0.0f, 0.0f, 1000.0f,
@@ -383,6 +388,7 @@ int main(int argc, char** argv) {
     auto audio = std::make_unique<ct::AudioOutput>();
     auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
     sounds->setWeaponNames(game->weapons);
+    sounds->setEnemyNames(game->enemies);
     ct::GameEvents gameEvents;
     ct::GameEffects gameEffects;
     std::vector<ct::GameEvent> events; // this frame's
@@ -576,8 +582,21 @@ int main(int argc, char** argv) {
                    localGame->serverTickMilliseconds(), horizontalSpeed});
         lastFrame = now;
 
+        const bool thirdPerson = client.thirdPerson.asBool();
+        ct::Camera camera;
+        camera.position = thirdPerson ? ct::thirdPersonPosition(localGame->level().collision(), eye,
+                                                                look.yaw, look.pitch)
+                                      : eye;
+        camera.yawRadians = look.yaw;
+        camera.pitchRadians = look.pitch;
+        camera.horizontalFovRadians16x9 = client.fov.asFloat() * (ct::kPi / 180.0f);
+
         devUi->beginFrame();
         const ImGuiViewport* screen = ImGui::GetMainViewport();
+        if (client.showAi.asBool()) {
+            ct::drawEnemyLabels(*localGame, now, camera, screen->Pos.x, screen->Pos.y,
+                                screen->Size.x, screen->Size.y);
+        }
         hud.draw(screen->Pos.x, screen->Pos.y, screen->Size.x, screen->Size.y, now);
         if (client.showStats.asBool()) {
             stats.draw();
@@ -594,12 +613,6 @@ int main(int argc, char** argv) {
         }
         consoleWindow.draw();
         const ImDrawData* ui = devUi->endFrame();
-
-        const bool thirdPerson = client.thirdPerson.asBool();
-        ct::Camera camera;
-        camera.position = thirdPerson ? ct::thirdPersonPosition(localGame->level().collision(), eye,
-                                                                look.yaw, look.pitch)
-                                      : eye;
 
         events.clear();
         gameEvents.update(localGame->latestState(), localGame->timeline(), localGame->level(),
@@ -630,11 +643,10 @@ int main(int argc, char** argv) {
             }
             navMeshDrawing.add(effects);
         }
+        if (client.showAi.asBool()) {
+            ct::addEnemyThoughts(effects, *localGame, now);
+        }
         renderer->setDynamicGeometry(shapes, effects);
-
-        camera.yawRadians = look.yaw;
-        camera.pitchRadians = look.pitch;
-        camera.horizontalFovRadians16x9 = client.fov.asFloat() * (ct::kPi / 180.0f);
         renderer->drawFrame(camera, ui);
 
         ++frameCount;

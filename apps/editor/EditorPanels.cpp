@@ -309,6 +309,9 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         requests.playFromHere = ImGui::MenuItem("Play from here", "Shift+F5");
         ImGui::SetItemTooltip("Start the player where the 3D camera is, facing the same way");
         ImGui::TextDisabled("While playing: F6 saves, F9 loads the newest save or checkpoint");
+        ImGui::MenuItem("Show what enemies think", nullptr, &settings.showEnemyThoughts);
+        ImGui::SetItemTooltip("While playing, label each enemy with its state and health, and draw "
+                              "its view cone, path, goal and target");
         ImGui::SeparatorText("Network conditions");
         LinkConditions& conditions = settings.playConditions;
         const float width = ImGui::GetFontSize() * 12.0f;

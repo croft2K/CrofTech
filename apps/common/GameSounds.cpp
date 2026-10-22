@@ -18,6 +18,7 @@ constexpr float kImpactVolume = 0.35f;
 constexpr float kImpactReach = 25.0f;
 constexpr float kOwnFireVolume = 0.7f;
 constexpr float kPickupRespawnVolume = 0.6f;
+constexpr float kAlertReach = 50.0f;
 
 } // namespace
 
@@ -26,7 +27,7 @@ GameSounds::GameSounds(AudioOutput& output, const ContentPaths& content)
 
 GameSounds::~GameSounds() { stopAll(); }
 
-std::optional<Mixer::SoundId> GameSounds::sound(std::string_view name) {
+std::optional<Mixer::SoundId> GameSounds::sound(std::string_view name, bool quiet) {
     if (const auto found = m_sounds.find(name); found != m_sounds.end()) {
         return found->second;
     }
@@ -43,11 +44,21 @@ std::optional<Mixer::SoundId> GameSounds::sound(std::string_view name) {
             error = "can't be read";
         }
     }
-    if (!id) {
+    if (!id && !quiet) {
         logWarning("{}: {}", relative, error);
     }
     m_sounds.emplace(std::string(name), id);
     return id;
+}
+
+std::string GameSounds::named(std::string_view name, const GameEvent& event) {
+    if (event.enemyType < m_enemyNames.size()) {
+        std::string own = std::format("{}_{}", m_enemyNames[event.enemyType], name);
+        if (sound(own, true)) {
+            return own;
+        }
+    }
+    return std::string(name);
 }
 
 void GameSounds::play(std::string_view name, const GameEvent& event, EntityId player, float volume,
@@ -70,7 +81,7 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
     for (const GameEvent& event : events) {
         switch (event.kind) {
         case GameEventKind::Footstep:
-            play("footstep", event, player, kFootstepVolume);
+            play(named("footstep", event), event, player, kFootstepVolume);
             break;
         case GameEventKind::Jump:
             play("jump", event, player);
@@ -81,10 +92,10 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
                             1.0f));
             break;
         case GameEventKind::Hurt:
-            play("pain", event, player);
+            play(named("pain", event), event, player);
             break;
         case GameEventKind::Death:
-            play("death", event, player);
+            play(named("death", event), event, player);
             break;
         case GameEventKind::Respawn:
             play("respawn", event, player);
@@ -120,6 +131,12 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
             break;
         case GameEventKind::PickupRespawn:
             play("pickup_respawn", event, player, kPickupRespawnVolume);
+            break;
+        case GameEventKind::EnemyAlert:
+            play(named("alert", event), event, player, 1.0f, kAlertReach);
+            break;
+        case GameEventKind::EnemySwing:
+            play(named("swing", event), event, player);
             break;
         case GameEventKind::WeaponSwitch:
             if (event.entity == player) {

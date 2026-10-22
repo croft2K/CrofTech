@@ -32,6 +32,8 @@ enum class GameEventKind : std::uint8_t {
     WeaponSwitch,  // weapon says which is now in hand
     Pickup,        // taken; entity is who took it, levelEntity the pickup
     PickupRespawn, // back again; levelEntity is the pickup
+    EnemyAlert,    // an enemy noticed a player, or found the one it was searching for; at its head
+    EnemySwing,    // an enemy started a swing
 };
 
 struct GameEvent {
@@ -42,6 +44,8 @@ struct GameEvent {
     std::uint32_t levelEntity = 0; // movers, checkpoints and pickups
     std::uint32_t weapon = 0;      // shots and switches: GameSettings::weapons index
     Vec3 origin;                   // impacts: where the pellet came from
+    // When entity is an enemy, its kind (GameSettings::enemies index), so it can sound like one.
+    std::uint32_t enemyType = kNoEnemyType;
 };
 
 class GameEvents {

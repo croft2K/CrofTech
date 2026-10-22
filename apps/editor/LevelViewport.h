@@ -44,14 +44,17 @@ struct EditorSettings {
     ShapeKind shape = ShapeKind::Box;
     ShapeSettings shapeSettings; // forward comes from facing when a shape is drawn
     ShapeFacing facing = ShapeFacing::AwayFromView;
-    // The player's collision box, so spawn markers show the size the game uses.
-    Vec3 playerHalfExtents{0.4f, 0.4f, 0.9f};
+    // The player's and each enemy's collision box, so spawn and enemy markers show the sizes the
+    // game uses.
+    BodySizes bodies;
     // Vertex tool handles behind a surface are hidden in 3D panes, and can't be picked there.
     bool hideHandlesBehindSurfaces = true;
     // Wires are drawn for the selected entities, or with this for every entity.
     bool showAllWires = false;
     // The navigation mesh enemies walk, drawn in 3D panes and in play.
     bool showNavMesh = false;
+    // In play, what each enemy is thinking (EnemyThoughts.h).
+    bool showEnemyThoughts = false;
     // Moving the mouse forward looks down, flying the 3D camera and in play; starts as
     // client.invert_mouse in config/client.cfg.
     bool invertMouse = false;

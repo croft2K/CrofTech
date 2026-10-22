@@ -10,7 +10,8 @@
 namespace ct {
 
 // Short-lived effects for GameEvents: the glow where a player respawns, the flash of an
-// explosion, the streak of a hitscan pellet and the spark where it hit. Presentation only, timed
+// explosion, the streak of a hitscan pellet and the spark where it hit, and a spark off the head
+// of an enemy that notices a player. Presentation only, timed
 // by the clock; they are added to the effect geometry each frame until they fade.
 class GameEffects {
 public:
