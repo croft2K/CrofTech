@@ -343,6 +343,10 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
                               "plain sight");
         ImGui::MenuItem("Show all wires", nullptr, &settings.showAllWires);
         ImGui::SetItemTooltip("Draw every entity's outputs, not just the selected entities'");
+        ImGui::MenuItem("Show navigation mesh", nullptr, &settings.showNavMesh);
+        ImGui::SetItemTooltip("Draw where enemies the player's size can walk, in 3D panes and in "
+                              "play: ground green, doors orange, lifts violet with their rides, "
+                              "hurt volumes red. It is rebuilt as the level changes");
         ImGui::Separator();
         if (ImGui::BeginMenu("Grid")) {
             for (std::size_t i = 0; i < kGridSizes.size(); ++i) {

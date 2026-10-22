@@ -21,6 +21,7 @@
 #include "GameEffects.h"
 #include "GameHud.h"
 #include "GameSounds.h"
+#include "NavMeshDrawing.h"
 #include "PlayerInput.h"
 #include "SaveFiles.h"
 #include "WorldMesh.h"
@@ -102,6 +103,7 @@ struct ClientCVars {
     const ct::CVar& showEntities;
     const ct::CVar& stepSmoothing;
     const ct::CVar& thirdPerson;
+    const ct::CVar& showNavMesh;
     const ct::CVar& volume;
     const ct::CVar& fakeLatency;
     const ct::CVar& fakeJitter;
@@ -128,6 +130,9 @@ ClientCVars registerClientCVars(ct::Console& console) {
             "seconds the view takes to follow a step up or down stairs; 0 follows at once")),
         console.add(ct::CVar::makeBool("client.third_person", false,
                                        "1 = follow the player from behind, to see it move")),
+        console.add(ct::CVar::makeBool(
+            "client.show_navmesh", false,
+            "draw the navigation mesh enemies walk: floors by area, edges, and lift rides")),
         console.add(ct::CVar::makeFloat("client.volume", 0.8f, 0.0f, 1.0f,
                                         "loudness of every sound, 0 to 1")),
         console.add(ct::CVar::makeFloat("net.fake_latency_ms", 0.0f, 0.0f, 1000.0f,
@@ -395,8 +400,10 @@ int main(int argc, char** argv) {
     std::vector<ct::Vec3> moverOffsets;
     std::vector<ct::WorldVertex> shapes; // rebuilt every frame
     std::vector<ct::EffectVertex> effects;
+    ct::NavMeshDrawing navMeshDrawing; // made when first shown in each level
     const auto enterLevel = [&](const PreparedLevel& prepared) {
         localGame.reset();
+        navMeshDrawing.clear();
         sounds->stopAll();
         gameEvents.reset();
         gameEffects.clear();
@@ -607,6 +614,17 @@ int main(int argc, char** argv) {
             ct::addViewWeapon(shapes, *localGame, eye, look.yaw, look.pitch, now);
         }
         gameEffects.build(now, effects);
+        if (client.showNavMesh.asBool()) {
+            if (!navMeshDrawing.ready()) {
+                const ct::NavMesh& navMesh = localGame->level().navMesh();
+                for (const std::string& warning : navMesh.warnings()) {
+                    ct::logWarning("Navigation mesh: {}", warning);
+                }
+                ct::logInfo("Navigation mesh: {} polygons", navMesh.polygonCount());
+                navMeshDrawing.set(navMesh);
+            }
+            navMeshDrawing.add(effects);
+        }
         renderer->setDynamicGeometry(shapes, effects);
 
         camera.yawRadians = look.yaw;

@@ -100,6 +100,7 @@ constexpr SignalInfo kTimerInputs[] = {
 };
 
 constexpr std::string_view kActivateChoices[] = {"input", "touch", "stand"};
+constexpr std::string_view kMoverNavChoices[] = {"auto", "door", "lift", "solid"};
 
 constexpr PropertyInfo kMoverProperties[] = {
     kName,
@@ -115,6 +116,11 @@ constexpr PropertyInfo kMoverProperties[] = {
     {"loop", Flag, "0", "Keeps going back and forth, waiting at each end (platforms)"},
     {"start_moving", Flag, "0", "Sets off as the level starts"},
     {"start_at_end", Flag, "0", "Starts at the end position (a door that starts open)"},
+    {"nav", Choice, "auto",
+     "How enemies find their way past it: a door they go through when it is open, a lift they "
+     "ride between its stops, or a solid obstacle. auto: movers that open to a touch or an input "
+     "are doors, those stood on or that loop are lifts, and those that don't move are solid",
+     0.0f, 0.0f, kMoverNavChoices},
 };
 constexpr SignalInfo kMoverEvents[] = {
     {"on_leave_start", "Set off from the start (a door starts opening)"},

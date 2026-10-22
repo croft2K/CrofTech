@@ -37,6 +37,6 @@ add_library(ct_sim STATIC
 add_library(ct::sim ALIAS ct_sim)
 
 target_include_directories(ct_sim PUBLIC include)
-target_link_libraries(ct_sim PUBLIC ct::core ct::level)
+target_link_libraries(ct_sim PUBLIC ct::core ct::level ct::nav)
 
 ct_apply_defaults(ct_sim)

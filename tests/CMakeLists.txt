@@ -28,6 +28,7 @@ add_executable(ct_unit_tests
     unit/net/ProtocolTests.cpp
     unit/sim/CollisionWorldTests.cpp
     unit/sim/GameSettingsTests.cpp
+    unit/sim/LevelNavigationTests.cpp
     unit/sim/MovementConfigTests.cpp
     unit/sim/SaveGameTests.cpp
     unit/sim/StateSaveTests.cpp
@@ -53,6 +54,7 @@ add_executable(ct_sim_tests
     sim/LogicTests.cpp
     sim/MoverTests.cpp
     sim/MovementTests.cpp
+    sim/NavigationTests.cpp
     sim/PickupTests.cpp
     sim/ServerTests.cpp
     sim/SimHarness.h

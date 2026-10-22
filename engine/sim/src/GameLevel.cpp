@@ -33,6 +33,8 @@ std::optional<Enum> findByName(const std::string_view (&names)[N], std::string_v
     return std::nullopt;
 }
 
+} // namespace
+
 LogicClass logicClassOf(std::string_view className) {
     if (className == "trigger") {
         return LogicClass::Trigger;
@@ -60,6 +62,8 @@ LogicClass logicClassOf(std::string_view className) {
     }
     return LogicClass::None;
 }
+
+namespace {
 
 // Classes whose brushes are a model of their own rather than world geometry: triggers,
 // checkpoints and hurt volumes are volumes players walk through, and movers collide where they
@@ -114,7 +118,71 @@ std::string describe(const Level& level, std::uint32_t index) {
     return std::format("{} (entity {})", entity.className, index);
 }
 
+// The mover class's "nav", with auto worked out from how it is set going.
+NavMoverKind moverNavKind(const LevelEntity& entity, const EntityClassInfo& moverClass) {
+    switch (choiceProperty(entity, moverClass, "nav")) {
+    case 1:
+        return NavMoverKind::Door;
+    case 2:
+        return NavMoverKind::Lift;
+    case 3:
+        return NavMoverKind::Solid;
+    default:
+        break;
+    }
+    const Vec3 move = vectorProperty(entity, moverClass, "move");
+    if (dot(move, move) == 0.0f) {
+        return NavMoverKind::Solid;
+    }
+    switch (static_cast<MoverActivation>(choiceProperty(entity, moverClass, "activate"))) {
+    case MoverActivation::Touch:
+        return NavMoverKind::Door;
+    case MoverActivation::Stand:
+        return NavMoverKind::Lift;
+    case MoverActivation::Input:
+        break;
+    }
+    return flagProperty(entity, moverClass, "loop") ? NavMoverKind::Lift : NavMoverKind::Door;
+}
+
 } // namespace
+
+NavAgent navAgent(const MovementSettings& movement) {
+    NavAgent agent;
+    agent.radius = std::max(movement.halfExtents.x, movement.halfExtents.y);
+    agent.height = movement.halfExtents.z * 2.0f;
+    agent.climb = movement.stepHeight;
+    agent.minGroundNormalZ = movement.minGroundNormalZ;
+    return agent;
+}
+
+NavInput navInput(const Level& level) {
+    NavInput input;
+    input.solid = staticBrushes(level);
+    std::vector<std::uint32_t> movers(level.entities.size(), kNoNavMover);
+    for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
+        const LevelEntity& entity = level.entities[i];
+        const EntityClassInfo* entityClass = findEntityClass(entity.className);
+        if (logicClassOf(entity.className) == LogicClass::Mover && entityClass != nullptr) {
+            movers[i] = static_cast<std::uint32_t>(input.movers.size());
+            NavMover& mover = input.movers.emplace_back();
+            mover.id = i;
+            mover.kind = moverNavKind(entity, *entityClass);
+            mover.move = vectorProperty(entity, *entityClass, "move");
+        }
+    }
+    for (const Brush& brush : level.brushes) {
+        if (brush.entity >= level.entities.size()) {
+            continue;
+        }
+        if (movers[brush.entity] != kNoNavMover) {
+            input.movers[movers[brush.entity]].brushes.push_back(brush);
+        } else if (logicClassOf(level.entities[brush.entity].className) == LogicClass::Hurt) {
+            input.hazards.push_back(brush);
+        }
+    }
+    return input;
+}
 
 std::string_view logicEventName(LogicEvent event) {
     return kEventNames[static_cast<std::size_t>(event)];
@@ -125,8 +193,9 @@ std::string_view logicInputName(LogicInput input) {
 }
 
 GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
-                     std::span<const WeaponSettings> weapons)
-    : m_collision(staticBrushes(level)), m_entities(level.entities.size()) {
+                     const GameSettings& settings)
+    : m_collision(staticBrushes(level)), m_entities(level.entities.size()),
+      m_navInput(navInput(level)), m_navAgent(navAgent(settings.movement)) {
     std::string error;
     if (start) {
         m_spawns.push_back(*start);
@@ -144,7 +213,7 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         }
     }
     for (std::uint32_t i = 0; i < level.entities.size(); ++i) {
-        readEntity(level, i, weapons);
+        readEntity(level, i, settings.weapons);
         if (hasModel(m_entities[i].logicClass)) {
             if (owned[i].empty()) {
                 m_warnings.push_back(std::format("{} has no brushes", describe(level, i)));
@@ -157,6 +226,12 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
     resolveOutputs(level);
     spawnLogic();
     findKillHeight(level);
+}
+
+const NavMesh& GameLevel::navMesh() const {
+    std::call_once(m_navBuilt,
+                   [this] { m_navMesh = std::make_unique<NavMesh>(m_navInput, m_navAgent); });
+    return *m_navMesh;
 }
 
 void GameLevel::findKillHeight(const Level& level) {

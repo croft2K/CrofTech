@@ -14,7 +14,7 @@ IncludeCategories:
     Priority: 1
   - Regex: '^"croftech/'
     Priority: 2
-  - Regex: '^<(doctest|tracy|SDL3|vulkan|volk|vk_mem_alloc|VkBootstrap|imgui|Jolt)'
+  - Regex: '^<(doctest|tracy|SDL3|vulkan|volk|vk_mem_alloc|VkBootstrap|imgui|Jolt|Recast|Detour)'
     Priority: 3
   - Regex: '^<'
     Priority: 4

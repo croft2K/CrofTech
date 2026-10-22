@@ -1,12 +1,14 @@
 #pragma once
 
 #include "croftech/level/Level.h"
+#include "croftech/nav/NavMesh.h"
 #include "croftech/sim/CollisionWorld.h"
 #include "croftech/sim/GameSettings.h"
 #include "croftech/sim/World.h"
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -71,6 +73,14 @@ inline constexpr std::int32_t kUsualPickupArmour = 50;
 
 std::string_view logicEventName(LogicEvent event);
 std::string_view logicInputName(LogicInput input);
+LogicClass logicClassOf(std::string_view className);
+
+// The player's box, step and slopes, as the agent of a navigation mesh: enemies the player's size
+// walk the mesh built for it.
+NavAgent navAgent(const MovementSettings& movement);
+// The level as a navigation mesh sees it: world geometry, hurt volumes to keep out of, and movers
+// as doors, lifts or obstacles (the mover class's "nav").
+NavInput navInput(const Level& level);
 
 // Logic entities a level may have; the rest of the entity table is left for players and the
 // inputs in flight between entities.
@@ -86,7 +96,8 @@ inline constexpr float kOutOfWorldDepth = 64.0f;
 // the entities and inputs they reach, the spawn points, and the state play starts from. It is
 // shared by every tick and never part of the state.
 //
-// A start point replaces the level's spawns, for play from here in the editor.
+// A start point replaces the level's spawns, for play from here in the editor. The navigation
+// mesh is built the first time something asks for it.
 class GameLevel {
 public:
     struct Target {
@@ -142,9 +153,10 @@ public:
         }
     };
 
-    // Pickups name weapons; they are found among the game's weapons by name.
+    // Pickups name weapons, which are found among the game's weapons by name; the navigation mesh
+    // is built for the player's size.
     explicit GameLevel(const Level& level, std::optional<SpawnPoint> start = {},
-                       std::span<const WeaponSettings> weapons = {});
+                       const GameSettings& settings = {});
     GameLevel(const GameLevel&) = delete;
     GameLevel& operator=(const GameLevel&) = delete;
 
@@ -164,6 +176,8 @@ public:
     // What was wrong with the level's logic (unknown inputs, targets that don't exist, values out
     // of range). Each was skipped or clamped; the level still plays.
     std::span<const std::string> warnings() const { return m_warnings; }
+    // Built on the first call, from any thread; its own warnings are in NavMesh::warnings.
+    const NavMesh& navMesh() const;
 
 private:
     void readEntity(const Level& level, std::uint32_t index,
@@ -181,6 +195,10 @@ private:
     std::vector<Target> m_targets;
     std::unique_ptr<State> m_start;
     std::vector<std::string> m_warnings;
+    NavInput m_navInput;
+    NavAgent m_navAgent;
+    mutable std::once_flag m_navBuilt;
+    mutable std::unique_ptr<NavMesh> m_navMesh;
 };
 
 } // namespace ct

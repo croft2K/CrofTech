@@ -4,6 +4,8 @@ add_executable(croftech_editor
     LevelViewport.cpp
     LevelViewport.h
     main.cpp
+    NavMeshView.cpp
+    NavMeshView.h
     PlaySession.cpp
     PlaySession.h
 )

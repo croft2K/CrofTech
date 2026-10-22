@@ -96,7 +96,17 @@ else. Movers have their own collision models, placed at each mover's offset by `
 which player movement traces against; each tick movers move before players, pushing players out
 of the way and carrying riders, and a move that would leave a player inside something is undone
 (a closing door goes back up). The client draws each mover's brushes as a separate part of the
-world mesh, moved by its offset between snapshots. Problems in the wiring are warnings, logged when play starts. In the editor a click in the view
+world mesh, moved by its offset between snapshots. Problems in the wiring are warnings, logged when play starts.
+The navigation mesh (`engine/nav`: Recast builds it, Detour finds paths in `NavQuery`) is built
+from the same level (`navInput` in `sim/GameLevel.h`) for an agent the player's size, the first
+time `GameLevel::navMesh` is asked for it: world brushes are solid, hurt volumes are hazard areas
+paths avoid, and each mover is a door (built open; where it stands shut is a door area), a lift
+(walkable at both stops, with a link for the ride) or an obstacle, by its `nav` setting. Paths
+say at each corner which door or lift comes next, and a filter blocks the movers that won't open.
+`client.show_navmesh 1` draws it in the game, and View > Show navigation mesh in the editor,
+which rebuilds it on a worker thread as the level changes (`apps/common/NavMeshDrawing`). Recast
+comes from an overlay port (`vcpkg-overlays/`) built with virtual query filters and 64-bit
+polygon references. In the editor a click in the view
 picks a whole group or entity, Alt-click one brush; Ctrl+G groups the selection, Ctrl+Shift+G
 ungroups. The hierarchy shows groups and entities as trees and selects exactly the row clicked
 (Ctrl toggles, Shift selects a range); F2 or a double-click renames a brush, entity or group; a selected mover shows a see-through copy at its end with a drag handle, and
@@ -135,8 +145,12 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
                      (core)
     engine/level     level data: brushes, entities, brush geometry, level files, .map import
                      (core)
+    engine/nav       navigation meshes built from brushes (Recast) and path queries (Detour);
+                     knows nothing of the simulation, so the editor can build one too
+                     (core, level)
     engine/sim       ECS world, components, collision, movement, level logic and gameplay
-                     (health and damage; later weapons, pickups, AI, encounters)   (core, level)
+                     (health, damage, weapons, pickups; later AI, encounters)
+                     (core, level, nav)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    client connection, LocalGame (server thread + client over an in-memory
                      link), GameEvents worked out from snapshots, view smoothing; later

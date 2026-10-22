@@ -50,6 +50,8 @@ struct EditorSettings {
     bool hideHandlesBehindSurfaces = true;
     // Wires are drawn for the selected entities, or with this for every entity.
     bool showAllWires = false;
+    // The navigation mesh enemies walk, drawn in 3D panes and in play.
+    bool showNavMesh = false;
     // How the in-memory link behaves in play-in-editor.
     LinkConditions playConditions;
 

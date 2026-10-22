@@ -10,6 +10,8 @@ add_library(ct_app_common STATIC
     GameHud.h
     GameSounds.cpp
     GameSounds.h
+    NavMeshDrawing.cpp
+    NavMeshDrawing.h
     PlayerInput.cpp
     PlayerInput.h
     SaveFiles.cpp

@@ -14,7 +14,7 @@
 namespace ct {
 
 Server::Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start)
-    : m_level(level, start, settings.weapons), m_simulation(m_level, settings),
+    : m_level(level, start, settings), m_simulation(m_level, settings),
       m_current(std::make_unique<State>(m_level.startState())), m_next(std::make_unique<State>()) {
     CT_ASSERT(!m_level.spawns().empty());
 }

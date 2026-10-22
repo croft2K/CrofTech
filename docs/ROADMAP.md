@@ -150,8 +150,16 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    heard and glowing back in the game, and `levels/weapons_test.level` to try it all.* Health,
    armour, ammo and weapon items placed in the editor. They respawn after a
    delay in arenas and stay taken in single player, with an on_pickup event for the wiring.
-5. **Navigation mesh.** Recast (zlib licence) builds it from the level's collision when the
-   GameLevel is built; Detour finds paths. Doors and lifts are links that open and close with
+5. **Navigation mesh.** *Done (2026-10-22): a new `engine/nav` module (Recast and Detour 1.6
+   from an overlay port with virtual query filters and 64-bit polygon references), a tiled mesh
+   for an agent the player's size built the first time the GameLevel is asked for it, hurt
+   volumes as hazard areas, movers as doors, lifts or obstacles (the mover's new `nav` setting,
+   worked out from how it is set going when left on auto), paths that name the door or lift at
+   each corner with a filter for movers that won't open, `client.show_navmesh`, and View > Show
+   navigation mesh in the editor, rebuilt on a worker thread as the level changes. Left for later:
+   meshes for agents of other sizes (one per enemy size class, step 6 on), links for dropping off
+   ledges and for jumps, and drawing the mesh in the orthographic panes.* Recast (zlib licence)
+   builds it from the level's collision when the GameLevel is built; Detour finds paths. Doors and lifts are links that open and close with
    their movers. The mesh is drawn on request in the game and in the editor, and building a test
    level's mesh is checked by tests.
 6. **Enemies.** Enemy types are data: health, size, speed, senses, attacks and behaviour tuning.

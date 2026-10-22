@@ -177,7 +177,7 @@ TEST_CASE("pickups that name no weapon, or one the game doesn't have, are report
         floorWith({pickup({{"origin", "0 0 0"}, {"item", "ammo"}}),
                    pickup({{"origin", "0 0 0"}, {"item", "weapon"}, {"weapon", "bfg"}}),
                    pickup({{"origin", "0 0 0"}, {"item", "weapon"}, {"weapon", "cannon"}})}),
-        {}, armed().weapons);
+        {}, armed());
     REQUIRE(level.warnings().size() == 2);
     CHECK(level.warnings()[0].find("needs a weapon") != std::string::npos);
     CHECK(level.warnings()[1].find("'bfg'") != std::string::npos);

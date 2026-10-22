@@ -17,6 +17,7 @@
 #include "GameEffects.h"
 #include "GameSounds.h"
 #include "LevelViewport.h"
+#include "NavMeshView.h"
 #include "PlaySession.h"
 #include "WorldMesh.h"
 
@@ -28,6 +29,7 @@
 #include "croftech/editor/EditorActions.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
+#include "croftech/sim/GameLevel.h"
 #include "croftech/sim/GameSettings.h"
 #include "croftech/sim/MovementConfig.h"
 
@@ -262,6 +264,7 @@ int main(int argc, char** argv) {
     const ct::GameSettings gameSettings = loadGameSettings(content, *game);
     ct::EditorSettings settings;
     settings.playerHalfExtents = gameSettings.movement.halfExtents;
+    ct::NavMeshView navMeshView(ct::navAgent(gameSettings.movement));
     ct::LevelViewport viewport(startingCamera(*level));
     ct::EditorDocument document(std::move(*level), *levelPath);
     ct::logInfo("Editing {} ({} brushes, {} entities)", levelPath->string(),
@@ -610,6 +613,9 @@ int main(int argc, char** argv) {
         }
 
         const ImDrawData* ui = devUi->endFrame();
+        if (settings.showNavMesh) {
+            navMeshView.update(document.level(), document.changeCount());
+        }
         if (document.changeCount() != meshChangeCount || meshForPlay != (play != nullptr)) {
             meshChangeCount = document.changeCount();
             meshForPlay = play != nullptr;
@@ -652,10 +658,17 @@ int main(int argc, char** argv) {
             ct::addViewWeapon(shapes, play->game(), camera.position, camera.yawRadians,
                               camera.pitchRadians, now);
             gameEffects.build(now, effects);
+            if (settings.showNavMesh) {
+                navMeshView.drawing().add(effects);
+            }
             renderer->setDynamicGeometry(shapes, effects);
             renderer->drawFrame(play->camera(), ui, &rect);
         } else {
-            renderer->setDynamicGeometry({}, {});
+            effects.clear();
+            if (settings.showNavMesh) {
+                navMeshView.drawing().add(effects);
+            }
+            renderer->setDynamicGeometry({}, effects);
             std::vector<ct::WorldView> worldViews;
             for (const ct::LevelViewport::PaneDraw& pane : viewport.paneDraws(view)) {
                 const ImVec2 scale = io.DisplayFramebufferScale;
