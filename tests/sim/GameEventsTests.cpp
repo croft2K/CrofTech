@@ -250,3 +250,29 @@ TEST_CASE("an enemy noticing a player and swinging at them are events, marked wi
     CHECK(has(GameEventKind::Footstep, enemyId, 0));
     CHECK(has(GameEventKind::Hurt, player, ct::kNoEnemyType));
 }
+
+TEST_CASE("an enemy a spawner sends in is an event where it appears") {
+    ct::GameSettings settings;
+    ct::EnemySettings charger;
+    charger.name = "charger";
+    charger.movement = ct::enemyMovement(charger, settings.movement);
+    settings.enemies = {charger};
+    const ct::LevelEntity spawner{std::string(ct::kSpawnerClass),
+                                  {{"origin", "3 4 0"}, {"name", "pit"}, {"hunt", "0"}}};
+    const ct::LevelEntity timer{
+        "timer",
+        {{"origin", "0 0 0"}, {"interval", "0.1"}, {"repeat", "0"}, {"start_on", "1"}},
+        {{"on_timer", "pit", "spawn", 0.0f}}};
+    SimHarness sim(ct::Level{{ct::makeBoxBrush({-15.0f, -15.0f, -1.0f}, {15.0f, 15.0f, 0.0f})},
+                             {spawner, timer}},
+                   settings);
+    ct::GameEvents events;
+    const std::vector<ct::GameEvent> seen = watch(sim, events, {}, ct::kTickRate / 2);
+    REQUIRE(count(seen, GameEventKind::EnemySpawn) == 1);
+    const ct::GameEvent& spawned = first(seen, GameEventKind::EnemySpawn);
+    CHECK(spawned.enemyType == 0);
+    CHECK(spawned.position.x == 3.0f);
+    CHECK(spawned.position.y == 4.0f);
+    CHECK(spawned.position.z == doctest::Approx(0.0f).epsilon(0.01));
+    CHECK(count(seen, GameEventKind::Footstep) == 0);
+}

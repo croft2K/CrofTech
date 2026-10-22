@@ -36,7 +36,7 @@ enum EnemyFlags : std::uint32_t {
 };
 
 // An enemy's mind: its own body is the Transform, PlayerMotion and Health it also has. Enemies
-// placed in the level also have a LevelEntityRef, for the wiring.
+// placed in the level also have a LevelEntityRef, for the wiring; those a spawner sent name it.
 struct Enemy {
     std::uint32_t type = 0; // GameSettings::enemies index
     std::uint32_t state = 0;
@@ -64,7 +64,10 @@ struct Enemy {
     std::uint32_t waitTick = 0; // standing at a patrol point, search spot or cover: when it goes on
     std::uint32_t lookYaw = 0;  // standing with no target in sight, the way it turns to face
     std::uint32_t coverTick = 0; // when it may next run for cover
-    std::uint32_t random = 0;    // counter for core/Random.h
+    // The level entity of the spawner that sent it, or kNoEntity for one placed in the level. Its
+    // events go to the spawner's wiring, and it counts towards the spawner's encounter.
+    std::uint32_t spawner = kNoEntity;
+    std::uint32_t random = 0; // counter for core/Random.h
 };
 
 template <>
@@ -107,6 +110,8 @@ struct Schema<Enemy> {
         CT_FIELD(Enemy, lookYaw)
             .withDescription("Standing still: the way it turns to (angle units)"),
         CT_FIELD(Enemy, coverTick).withDescription("Tick it may next run for cover"),
+        CT_FIELD(Enemy, spawner)
+            .withDescription("The spawner that sent it (level entity); none if placed"),
         CT_FIELD(Enemy, random).withDescription("Random number counter"),
     };
     static constexpr TypeSchema value{"enemy", sizeof(Enemy), kFields};

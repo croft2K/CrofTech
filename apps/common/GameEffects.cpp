@@ -126,6 +126,7 @@ void GameEffects::add(std::span<const GameEvent> events, Clock::time_point now) 
         effect.start = now;
         switch (event.kind) {
         case GameEventKind::Respawn:
+        case GameEventKind::EnemySpawn:
         case GameEventKind::Explosion:
         case GameEventKind::EnemyAlert:
             m_effects.push_back(effect);

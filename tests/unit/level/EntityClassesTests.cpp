@@ -145,3 +145,23 @@ TEST_CASE("enemies name the first point of their patrol, and each point the next
         CHECK_FALSE(ct::checkPropertyValue(*property, "two words", problem));
     }
 }
+
+TEST_CASE("spawners name their encounter, and encounters run waves") {
+    const ct::EntityClassInfo* spawner = ct::findEntityClass(ct::kSpawnerClass);
+    const ct::EntityClassInfo* encounter = ct::findEntityClass(ct::kEncounterClass);
+    REQUIRE(spawner != nullptr);
+    REQUIRE(encounter != nullptr);
+    const ct::PropertyInfo* named = ct::findPropertyInfo(*spawner, "encounter");
+    REQUIRE(named != nullptr);
+    CHECK(named->type == ct::PropertyType::Reference);
+    REQUIRE(named->choices.size() == 1);
+    CHECK(named->choices[0] == ct::kEncounterClass);
+    CHECK(ct::findSignal(spawner->inputs, "spawn") != nullptr);
+    CHECK(ct::findSignal(spawner->events, "on_death") != nullptr);
+    for (const char* event : {"on_start", "on_wave", "on_cleared"}) {
+        CHECK(ct::findSignal(encounter->events, event) != nullptr);
+    }
+    for (const char* input : {"start", "stop"}) {
+        CHECK(ct::findSignal(encounter->inputs, input) != nullptr);
+    }
+}

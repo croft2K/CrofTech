@@ -20,8 +20,8 @@ struct BodySizes {
     Vec3 player{0.4f, 0.4f, 0.9f};                     // half extents
     std::vector<std::pair<std::string, Vec3>> enemies; // name and half extents
 
-    // An enemy's by its type: the first kind's when it names none, the player's when the game
-    // has no such kind (or no enemies). The player's for anything else.
+    // An enemy's or a spawner's by its type: the first kind's when it names none, the player's
+    // when the game has no such kind (or no enemies). The player's for anything else.
     Vec3 halfExtents(const LevelEntity& entity) const;
 };
 
@@ -55,9 +55,9 @@ std::vector<LevelItem> groupMembers(const Level& level, std::uint32_t group);
 // view picks a whole group as it does a whole door. Sorted, with no repeats.
 std::vector<LevelItem> withWholeGroups(const Level& level, std::span<const LevelItem> items);
 
-// The box drawn and picked for an entity: the body standing on a spawn point or an enemy's
-// origin, the box that takes a pickup, a small cube for anything else. Nullopt if the entity has
-// no readable origin.
+// The box drawn and picked for an entity: the body standing on a spawn point's, an enemy's or a
+// spawner's origin, the box that takes a pickup, a small cube for anything else. Nullopt if the
+// entity has no readable origin.
 std::optional<Aabb> entityMarker(const LevelEntity& entity, const BodySizes& bodies);
 
 // The way an entity faces across the ground, as a unit vector, for those with a "yaw" (player

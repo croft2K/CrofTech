@@ -24,6 +24,7 @@ add_library(ct_sim STATIC
     src/CollisionScene.cpp
     src/CollisionWorld.cpp
     src/Damage.cpp
+    src/Encounters.cpp
     src/Enemies.cpp
     src/Firing.cpp
     src/GameLevel.cpp

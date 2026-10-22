@@ -433,6 +433,23 @@ void LevelLogic::apply(const Queued& input) {
             alertEnemy(input.target, *enemy, target);
         }
         return;
+    case LogicClass::Spawner:
+        if (Spawner* spawner = world.spawners.get(id);
+            spawner != nullptr && input.input == LogicInput::Spawn) {
+            spawner->waiting = std::min(spawner->waiting + 1, kMaxSpawnerWaiting);
+        }
+        return;
+    case LogicClass::Encounter:
+        if (Encounter* encounter = world.encounters.get(id)) {
+            const EncounterPhase phase = encounterPhase(*encounter);
+            if (input.input == LogicInput::Start && phase == EncounterPhase::Waiting) {
+                encounter->phase = static_cast<std::uint32_t>(EncounterPhase::Between);
+                encounter->nextWaveTick = m_state.tick;
+            } else if (input.input == LogicInput::Stop && phase != EncounterPhase::Cleared) {
+                stopEncounter(input.target, *encounter);
+            }
+        }
+        return;
     case LogicClass::PatrolPoint:
     case LogicClass::None:
         return;

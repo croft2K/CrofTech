@@ -117,6 +117,10 @@ void GameEvents::compare(const State& state, const GameLevel& level, const GameS
             }
         }
         const Enemy* lastEnemy = before.enemies.get(id);
+        if (enemy != nullptr && lastEnemy == nullptr && enemy->spawner != kNoEntity) {
+            event(GameEventKind::EnemySpawn);
+            continue; // appearing is no step or jump
+        }
         if (!dead && enemy != nullptr && lastEnemy != nullptr) {
             if (const std::optional<GameEventKind> change = enemyChange(*enemy, *lastEnemy)) {
                 eventAt(*change, transform->position + Vec3{0.0f, 0.0f, movement.halfExtents.z},

@@ -202,6 +202,55 @@ constexpr SignalInfo kPatrolPointEvents[] = {
     {"on_arrive", "An enemy on patrol reached it"},
 };
 
+constexpr std::string_view kEncounterClasses[] = {kEncounterClass};
+
+constexpr PropertyInfo kSpawnerProperties[] = {
+    {"origin", Vector, "", "Where the feet of the enemies it sends appear, metres"},
+    {"yaw", Angle, "0", "Direction they face, degrees; 0 is +X, 90 is +Y"},
+    kName,
+    {"type", Enemy, "",
+     "The kind of enemy it sends, from the game's list (enemies in game.cfg); empty is the first"},
+    {"encounter", Reference, "",
+     "The encounter whose waves it sends enemies in; empty sends one for each spawn input only",
+     0.0f, 0.0f, kEncounterClasses},
+    {"wave", Count, "1", "Which of its encounter's waves it sends enemies in, counting from 1",
+     1.0f, 64.0f},
+    {"count", Count, "1",
+     "How many enemies it sends in its wave, one after another as each moves off the spot", 1.0f,
+     64.0f},
+    {"hunt", Flag, "1",
+     "Its enemies go straight for the nearest player; 0, they stand where they appear until they "
+     "notice one"},
+};
+constexpr SignalInfo kSpawnerEvents[] = {
+    {"on_spawn", "It sent an enemy (the enemy sets it off)"},
+    {"on_death", "One of the enemies it sent was killed"},
+};
+constexpr SignalInfo kSpawnerInputs[] = {
+    {"spawn", "Send one enemy, as soon as the spot is clear"},
+};
+
+constexpr PropertyInfo kEncounterProperties[] = {
+    kOrigin,
+    kName,
+    {"max_alive", Count, "0",
+     "Most of its enemies alive at once; the rest wait their turn. 0 has no limit", 0.0f, 64.0f},
+    {"next_wave_at", Count, "0",
+     "The next wave starts when this few of its enemies are left alive (after the delay)", 0.0f,
+     64.0f},
+    {"wave_delay", Number, "1", "Seconds from one wave ending to the next starting", 0.0f, 60.0f},
+    {"start_on", Flag, "0", "Starts when the level starts, rather than on a start input"},
+};
+constexpr SignalInfo kEncounterEvents[] = {
+    {"on_start", "Its first wave started"},
+    {"on_wave", "A wave started, the first one too"},
+    {"on_cleared", "The last of its enemies was killed"},
+};
+constexpr SignalInfo kEncounterInputs[] = {
+    {"start", "Start the first wave, unless it has started already"},
+    {"stop", "Send no more enemies; those already sent stay"},
+};
+
 constexpr EntityClassInfo kClasses[] = {
     {kPlayerSpawnClass, "Where a player starts", EntityShape::Point, kSpawnProperties, {}, {}},
     {"trigger", "An invisible volume that fires events when players go in and out",
@@ -234,6 +283,12 @@ constexpr EntityClassInfo kClasses[] = {
      kPatrolPointProperties,
      kPatrolPointEvents,
      {}},
+    {kSpawnerClass, "Where enemies appear during play, sent by an encounter or a spawn input",
+     EntityShape::Point, kSpawnerProperties, kSpawnerEvents, kSpawnerInputs},
+    {kEncounterClass,
+     "A fight in waves of enemies from the spawners that name it; wire its events to doors to "
+     "lock the arena",
+     EntityShape::Point, kEncounterProperties, kEncounterEvents, kEncounterInputs},
 };
 
 constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"}, {"wait", "3"}};
@@ -342,6 +397,20 @@ constexpr EntityPreset kPresets[] = {
     {"Patrol point",
      "A point an enemy walks to on patrol (name it in the enemy's patrol, or a point's next)",
      kPatrolPointClass,
+     {},
+     {},
+     false,
+     {}},
+    {"Encounter",
+     "A fight in waves: wire a trigger to its start input, and its events to the arena's doors",
+     kEncounterClass,
+     {},
+     {},
+     false,
+     {}},
+    {"Spawner",
+     "Where enemies of an encounter's wave appear (name the encounter and wave in the inspector)",
+     kSpawnerClass,
      {},
      {},
      false,

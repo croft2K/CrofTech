@@ -13,6 +13,7 @@ TEST_CASE("the shipped levels build navigation meshes with no warnings") {
     for (const char* path : {CROFTECH_CONTENT_DIR "/levels/movement_test.level",
                              CROFTECH_CONTENT_DIR "/levels/weapons_test.level",
                              CROFTECH_CONTENT_DIR "/levels/enemies_test.level",
+                             CROFTECH_CONTENT_DIR "/levels/encounter_test.level",
                              CROFTECH_SOURCE_DIR "/games/sandbox/content/levels/map1.map"}) {
         CAPTURE(path);
         std::vector<std::string> importWarnings;
@@ -54,4 +55,35 @@ TEST_CASE("the enemies test level plays with chargers and gunners and no warning
             return ct::enemyState(enemy) == ct::EnemyState::Patrol;
         });
     CHECK(patrolling == 2);
+}
+
+TEST_CASE("the encounter test level has an arena of three waves and no warnings") {
+    std::vector<std::string> importWarnings;
+    std::string error;
+    const std::optional<ct::Level> level = ct::loadAnyLevelFile(
+        CROFTECH_CONTENT_DIR "/levels/encounter_test.level", importWarnings, error);
+    REQUIRE_MESSAGE(level, error);
+    ct::GameSettings settings;
+    for (const char* name : {"machinegun", "shotgun", "rocket_launcher"}) {
+        ct::WeaponSettings weapon;
+        weapon.name = name;
+        settings.weapons.push_back(weapon);
+    }
+    ct::EnemySettings charger;
+    charger.name = "charger";
+    charger.movement = ct::enemyMovement(charger, settings.movement);
+    ct::EnemySettings gunner = charger;
+    gunner.name = "gunner";
+    settings.enemies = {charger, gunner};
+    const ct::GameLevel gameLevel(*level, {}, settings);
+    for (const std::string& warning : gameLevel.warnings()) {
+        FAIL_CHECK(warning);
+    }
+    const ct::World& world = gameLevel.startState().world;
+    CHECK(world.spawners.size() == 10);
+    REQUIRE(world.encounters.size() == 1);
+    const ct::LevelEntityRef* ref = world.levelEntities.get(world.encounters.entities()[0]);
+    REQUIRE(ref != nullptr);
+    CHECK(gameLevel.entity(ref->index)->waveCount == 3);
+    CHECK(world.enemies.size() == 0);
 }

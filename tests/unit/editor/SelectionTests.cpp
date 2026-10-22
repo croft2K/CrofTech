@@ -179,7 +179,7 @@ TEST_CASE("item bounds cover brushes and entity markers") {
     CHECK_FALSE(ct::itemBounds(level, LevelItem::brush(9), bodies).has_value());
 }
 
-TEST_CASE("enemy markers are the size of their kind") {
+TEST_CASE("enemy and spawner markers are the size of their kind") {
     ct::BodySizes bodies;
     bodies.player = {0.4f, 0.4f, 0.9f};
     const auto enemy = [](const char* type) {
@@ -200,6 +200,10 @@ TEST_CASE("enemy markers are the size of their kind") {
     CHECK(ct::entityMarker(enemy("ghost"), bodies)->max == ct::Vec3{0.4f, 0.4f, 1.8f});
     const ct::LevelEntity spawn{std::string(ct::kPlayerSpawnClass), {{"origin", "0 0 0"}}};
     CHECK(ct::entityMarker(spawn, bodies)->max == ct::Vec3{0.4f, 0.4f, 1.8f});
+    // Spawners show the enemy they send.
+    const ct::LevelEntity spawner{std::string(ct::kSpawnerClass),
+                                  {{"origin", "0 0 0"}, {"type", "gunner"}}};
+    CHECK(ct::entityMarker(spawner, bodies)->max == ct::Vec3{0.3f, 0.3f, 2.2f});
 }
 
 TEST_CASE("entities with a yaw face that way, or their class's default") {

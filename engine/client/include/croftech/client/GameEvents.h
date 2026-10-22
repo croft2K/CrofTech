@@ -34,6 +34,7 @@ enum class GameEventKind : std::uint8_t {
     PickupRespawn, // back again; levelEntity is the pickup
     EnemyAlert,    // an enemy noticed a player, or found the one it was searching for; at its head
     EnemySwing,    // an enemy started a swing
+    EnemySpawn,    // a spawner sent an enemy; at its feet
 };
 
 struct GameEvent {

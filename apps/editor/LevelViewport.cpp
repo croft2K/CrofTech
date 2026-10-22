@@ -44,6 +44,8 @@ constexpr ImU32 kHoverColor = IM_COL32(255, 255, 255, 140);
 constexpr ImU32 kSelectedColor = IM_COL32(255, 210, 40, 255);
 constexpr ImU32 kFaceColor = IM_COL32(80, 200, 255, 255);
 constexpr ImU32 kSpawnColor = IM_COL32(90, 230, 120, 230);
+// Spawners stand for enemies that aren't there yet, so they are told apart from placed ones.
+constexpr ImU32 kSpawnerColor = IM_COL32(240, 150, 60, 230);
 constexpr ImU32 kEntityColor = IM_COL32(255, 150, 60, 230);
 constexpr ImU32 kInvalidColor = IM_COL32(255, 80, 60, 255);
 constexpr ImU32 kMarqueeColor = IM_COL32(120, 180, 255, 255);
@@ -1777,8 +1779,10 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
 
     for (std::size_t i = 0; i < level.entities.size(); ++i) {
         if (const auto marker = entityMarker(level.entities[i], bodies)) {
-            const bool spawn = level.entities[i].className == kPlayerSpawnClass;
-            const ImU32 color = spawn ? kSpawnColor : kEntityColor;
+            const std::string& className = level.entities[i].className;
+            const ImU32 color = className == kPlayerSpawnClass ? kSpawnColor
+                                : className == kSpawnerClass   ? kSpawnerColor
+                                                               : kEntityColor;
             painter.box(*marker, color, 1.5f);
             if (const std::optional<Vec3> facing = entityFacing(level.entities[i])) {
                 drawFacing(painter, *marker, *facing, color);

@@ -12,7 +12,8 @@
 namespace ct {
 
 // Components of the logic entities placed in levels (triggers, checkpoints, hurt volumes, relays,
-// counters, timers, movers) and of the inputs on their way between them. What a level sets (a
+// counters, timers, movers, pickups, spawners, encounters) and of the inputs on their way between
+// them. What a level sets (a
 // counter's target, a timer's interval, the wiring) is static and stays in the GameLevel; only what
 // changes during play is here, so it is saved, rewound and sent like any other state.
 
@@ -219,6 +220,60 @@ static_assert(describesEveryByte(Schema<Pickup>::value));
 
 inline bool isAvailable(const Pickup& pickup) {
     return (pickup.flags & kLogicEnabled) != 0 && (pickup.flags & kPickupTaken) == 0;
+}
+
+// Most enemies a spawner keeps waiting to be sent.
+inline constexpr std::uint32_t kMaxSpawnerWaiting = 64;
+
+// Where enemies appear. It sends the enemies waiting (put there by its encounter's waves, or by
+// spawn inputs) one at a time, whenever its spot is clear and its encounter has room for another.
+struct Spawner {
+    std::uint32_t waiting = 0;
+};
+
+template <>
+struct Schema<Spawner> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Spawner, waiting)
+            .withRange(0, kMaxSpawnerWaiting)
+            .withDescription("Enemies waiting to be sent"),
+    };
+    static constexpr TypeSchema value{"spawner", sizeof(Spawner), kFields};
+};
+static_assert(describesEveryByte(Schema<Spawner>::value));
+
+enum class EncounterPhase : std::uint32_t {
+    Waiting, // for its start input
+    Between, // waves: the next starts at nextWaveTick
+    Running, // a wave: its spawners are sending enemies, or they are being fought
+    Cleared, // every wave was sent and killed
+    Stopped, // by its stop input
+};
+inline constexpr std::uint32_t kEncounterPhaseCount = 5;
+
+// A fight in waves. Which spawners send which wave, and how many, is in the GameLevel.
+struct Encounter {
+    std::uint32_t phase = 0;
+    std::uint32_t waves = 0;        // waves started so far
+    std::uint32_t nextWaveTick = 0; // between waves: when the next starts
+};
+
+template <>
+struct Schema<Encounter> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Encounter, phase)
+            .withRange(0, kEncounterPhaseCount - 1)
+            .withDescription("0 waiting, 1 between waves, 2 running a wave, 3 cleared, 4 stopped"),
+        CT_FIELD(Encounter, waves).withDescription("Waves started so far"),
+        CT_FIELD(Encounter, nextWaveTick).withDescription("Between waves: tick the next starts"),
+    };
+    static constexpr TypeSchema value{"encounter", sizeof(Encounter), kFields};
+};
+static_assert(describesEveryByte(Schema<Encounter>::value));
+
+inline EncounterPhase encounterPhase(const Encounter& encounter) {
+    return encounter.phase < kEncounterPhaseCount ? static_cast<EncounterPhase>(encounter.phase)
+                                                  : EncounterPhase::Stopped;
 }
 
 } // namespace ct

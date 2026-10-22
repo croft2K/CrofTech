@@ -86,7 +86,14 @@ its kind (`sounds/<kind>_alert.wav`, then `alert.wav`; the same for pain, death,
 swing), and its noticing you (`EnemyAlert`) and swinging (`EnemySwing`) are game events.
 `client.show_ai 1` (Play > Show what enemies think in the editor) labels each enemy with its
 state and health and draws its view cone, hearing ring, path, goal, target and post
-(`apps/common/EnemyThoughts`).
+(`apps/common/EnemyThoughts`). Encounters (`sim/src/Encounters.cpp`, run after enemies) fight in
+waves: each `spawner` names its `encounter` and wave, and sends its count of enemies one at a time
+as its spot clears (hunting the nearest player unless `hunt` is off), or one for each spawn
+input; the encounter starts on its start input (or with the level), keeps to `max_alive`,
+starts the next wave once `next_wave_at` are left and `wave_delay` has passed, and fires
+on_start, on_wave and on_cleared, which lock and unlock the arena through the wiring. A sent
+enemy's `Enemy::spawner` names its spawner, whose wiring gets its events. `--map
+encounter_test` is a hall of weapons leading into a three-wave arena.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;

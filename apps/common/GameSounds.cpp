@@ -98,6 +98,7 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
             play(named("death", event), event, player);
             break;
         case GameEventKind::Respawn:
+        case GameEventKind::EnemySpawn:
             play("respawn", event, player);
             break;
         case GameEventKind::CheckpointReached:

@@ -527,14 +527,14 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
         }
         const EnemySettings& type = settings.enemies[enemy.type];
         const MovementSettings& movement = type.movement;
+        // Where its events go: its own wiring if placed in the level, its spawner's if sent.
         const LevelEntityRef* ref = world.levelEntities.get(id);
+        const std::uint32_t wiring = ref != nullptr ? ref->index : enemy.spawner;
 
         if (isDead(*health)) {
             if ((enemy.flags & kEnemyDeathFired) == 0) {
                 enemy.flags |= kEnemyDeathFired;
-                if (ref != nullptr) {
-                    fire(ref->index, LogicEvent::OnDeath, health->attacker);
-                }
+                fire(wiring, LogicEvent::OnDeath, health->attacker);
             }
             if (type.corpseTime >= 0.0f &&
                 tick >= health->diedTick + secondsToTicks(type.corpseTime)) {
@@ -551,9 +551,7 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
         if (health->hurtTick != enemy.hurtSeen) {
             enemy.hurtSeen = health->hurtTick;
             hurtInFight = enemyState(enemy) == EnemyState::Chase;
-            if (ref != nullptr) {
-                alertEnemy(ref->index, enemy, health->attacker);
-            }
+            alertEnemy(wiring, enemy, health->attacker);
         }
 
         EnemyState state = enemyState(enemy);
@@ -574,16 +572,16 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
                     seen = player;
                 }
             }
-            if (seen.isValid() && ref != nullptr) {
-                alertEnemy(ref->index, enemy, seen);
+            if (seen.isValid()) {
+                alertEnemy(wiring, enemy, seen);
             }
         }
         if (calm || state == EnemyState::Lost) {
             // Shots and running nearby wake it, or tell it where its lost target went.
             if (const EntityId heard = hearPlayer(world, type, transform->position, tick);
-                heard.isValid() && (enemy.flags & kEnemyAmbush) == 0 && ref != nullptr &&
+                heard.isValid() && (enemy.flags & kEnemyAmbush) == 0 &&
                 enemyState(enemy) == state) {
-                alertEnemy(ref->index, enemy, heard);
+                alertEnemy(wiring, enemy, heard);
             }
         }
         state = enemyState(enemy);

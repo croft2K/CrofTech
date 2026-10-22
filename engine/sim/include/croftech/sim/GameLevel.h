@@ -30,6 +30,8 @@ enum class LogicClass : std::uint8_t {
     Pickup,
     Enemy,
     PatrolPoint,
+    Spawner,
+    Encounter,
 };
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
@@ -48,6 +50,10 @@ enum class LogicEvent : std::uint8_t {
     OnAlert,
     OnDeath,
     OnArrive,
+    OnSpawn,
+    OnStart,
+    OnWave,
+    OnCleared,
 };
 
 enum class LogicInput : std::uint8_t {
@@ -63,6 +69,7 @@ enum class LogicInput : std::uint8_t {
     MoveToStart,
     Resume,
     Alert,
+    Spawn,
 };
 
 // What sets a mover going besides its inputs (the mover class's "activate").
@@ -155,13 +162,23 @@ public:
         std::uint32_t weapon = kNoWeapon; // GameSettings::weapons index
         std::int32_t respawnTicks = -1;   // -1 never comes back
 
-        // Enemies, and patrol points (position is where their enemies' feet go).
+        // Enemies, spawners, and patrol points (position is where their enemies' feet go).
         std::uint32_t enemyType = kNoEnemyType; // GameSettings::enemies index
         std::uint16_t yaw = 0;
         bool ambush = false;
         // The patrol point an enemy walks to first, or the one after a patrol point; kNoEntity
         // for none.
         std::uint32_t next = kNoEntity;
+
+        // Spawners (count is how many each wave sends) and encounters (startOn starts them with
+        // the level).
+        std::uint32_t encounter = kNoEntity; // a spawner's, or kNoEntity
+        std::uint32_t wave = 0;              // a spawner's, counting from 0 among its encounter's
+        bool hunt = true;                    // a spawner's enemies go for the nearest player
+        std::uint32_t maxAlive = 0;          // 0 has no limit
+        std::uint32_t nextWaveAt = 0;
+        std::uint32_t waveDelayTicks = 0;
+        std::uint32_t waveCount = 0;
 
         // Where a mover's brushes are when it has travelled the distance: exactly its move at
         // the end.
@@ -204,6 +221,9 @@ private:
     void readEntity(const Level& level, std::uint32_t index, const GameSettings& settings);
     void resolveOutputs(const Level& level);
     void resolveReferences(const Level& level);
+    // Numbers each encounter's waves from 0 in the order of the spawners' wave settings, so a
+    // gap in them is no wave of its own.
+    void numberWaves(const Level& level);
     void spawnLogic(const GameSettings& settings);
     void findKillHeight(const Level& level);
 

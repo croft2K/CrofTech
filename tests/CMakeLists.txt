@@ -49,6 +49,7 @@ ct_add_test(ct_unit_tests)
 add_executable(ct_sim_tests
     unit/Main.cpp
     sim/DeterminismTests.cpp
+    sim/EncounterTests.cpp
     sim/EnemyTests.cpp
     sim/GameEventsTests.cpp
     sim/HealthTests.cpp
@@ -66,6 +67,8 @@ add_executable(ct_sim_tests
     sim/TestLevels.h
 )
 target_link_libraries(ct_sim_tests PRIVATE ct::client ct::sim doctest::doctest)
+target_compile_definitions(ct_sim_tests PRIVATE
+    CROFTECH_CONTENT_DIR="${PROJECT_SOURCE_DIR}/content")
 ct_apply_defaults(ct_sim_tests)
 ct_add_test(ct_sim_tests)
 

@@ -45,6 +45,10 @@ public:
     // Enemies look, think and move (Enemies.cpp): after players have moved, so they act on where
     // players are now. The dead fall, and are taken away when their corpse time is up.
     void runEnemies(const CollisionScene& scene, const GameSettings& settings, NavQueries& queries);
+    // Encounters end waves whose enemies are dead (or nearly) and start the next after their
+    // delay, and spawners send the enemies waiting, each when its spot is clear and its encounter
+    // has room (Encounters.cpp). After enemies, so the dead of this tick are counted.
+    void runEncounters(const GameSettings& settings);
 
 private:
     struct Queued {
@@ -86,6 +90,14 @@ private:
                    const NavFilter& filter);
     // The living player nearest the point, if any.
     EntityId nearestPlayer(Vec3 point) const;
+
+    // Encounters (Encounters.cpp).
+    // The encounter of the spawner that sent the enemy, if any.
+    const GameLevel::Entity* encounterOf(const Enemy& enemy, std::uint32_t& index) const;
+    // Fires on_start (for the first) and on_wave, and gives the wave's spawners their enemies.
+    void startWave(std::uint32_t index, Encounter& encounter);
+    // No more waves, and its spawners forget the enemies they had waiting.
+    void stopEncounter(std::uint32_t index, Encounter& encounter);
 
     // Movers (Movers.cpp).
     void applyMoverInput(std::uint32_t index, const GameLevel::Entity& entity, Mover& mover,

@@ -102,7 +102,7 @@ std::vector<LevelItem> withWholeGroups(const Level& level, std::span<const Level
 }
 
 Vec3 BodySizes::halfExtents(const LevelEntity& entity) const {
-    if (entity.className != kEnemyClass || enemies.empty()) {
+    if ((entity.className != kEnemyClass && entity.className != kSpawnerClass) || enemies.empty()) {
         return player;
     }
     const std::string* type = findProperty(entity, "type");
@@ -119,7 +119,8 @@ std::optional<Aabb> entityMarker(const LevelEntity& entity, const BodySizes& bod
     if (!origin) {
         return std::nullopt;
     }
-    if (entity.className == kPlayerSpawnClass || entity.className == kEnemyClass) {
+    if (entity.className == kPlayerSpawnClass || entity.className == kEnemyClass ||
+        entity.className == kSpawnerClass) {
         const Vec3 half = bodies.halfExtents(entity);
         return Aabb{*origin - Vec3{half.x, half.y, 0.0f},
                     *origin + Vec3{half.x, half.y, half.z * 2.0f}};

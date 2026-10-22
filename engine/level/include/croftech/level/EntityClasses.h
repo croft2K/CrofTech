@@ -36,6 +36,10 @@ enum class PropertyType : std::uint8_t {
 inline constexpr std::string_view kEnemyClass = "enemy";
 // The points of an enemy's patrol route: it walks from each to the next.
 inline constexpr std::string_view kPatrolPointClass = "patrol_point";
+// Where enemies appear during play, sent by an encounter's waves or a spawn input.
+inline constexpr std::string_view kSpawnerClass = "spawner";
+// A fight in waves, each sent by the spawners that name the encounter and that wave.
+inline constexpr std::string_view kEncounterClass = "encounter";
 
 // Items players pick up by walking into them. The origin is where one rests; it is taken by
 // touching this box above it.

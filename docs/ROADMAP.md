@@ -189,7 +189,11 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    the wiring. Two kinds to start: a melee charger and a ranged gunner.
 7. **Encounters.** An encounter entity runs waves from spawner entities: how many at once, and
    when the next wave starts. It locks the arena through the wiring (on_start closes the doors,
-   on_cleared opens them). A music entity with play and stop inputs crossfades between tracks.
+   on_cleared opens them). *Done (2026-10-22): `spawner` (kind, encounter, wave, count, hunt; a
+   spawn input; on_spawn, on_death) and `encounter` (max_alive, next_wave_at, wave_delay,
+   start_on; start and stop; on_start, on_wave, on_cleared), and
+   `levels/encounter_test.level`. The music entity is put off: Tony means to bring in FMOD or an
+   open-source equivalent, which will decide how music and sound are driven.*
 8. **Script entity (Luau).** Takes inputs and fires outputs through the same wiring, and keeps its
    state in components, so it is saved and rewound. It is sandboxed for maps downloaded from
    servers: no I/O, an instruction and memory budget per call, and deterministic maths only.

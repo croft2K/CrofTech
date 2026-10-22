@@ -17,15 +17,16 @@ namespace {
 constexpr std::string_view kEventNames[] = {
     "on_enter",       "on_exit",        "on_trigger",   "on_reached",       "on_timer",
     "on_leave_start", "on_reached_end", "on_leave_end", "on_reached_start", "on_pickup",
-    "on_alert",       "on_death",       "on_arrive",
+    "on_alert",       "on_death",       "on_arrive",    "on_spawn",         "on_start",
+    "on_wave",        "on_cleared",
 };
-static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnArrive) + 1);
+static_assert(std::size(kEventNames) == static_cast<std::size_t>(LogicEvent::OnCleared) + 1);
 
 constexpr std::string_view kInputNames[] = {
-    "enable", "disable", "toggle",      "trigger",       "add",    "reset",
-    "start",  "stop",    "move_to_end", "move_to_start", "resume", "alert",
+    "enable", "disable",     "toggle",        "trigger", "add",   "reset", "start",
+    "stop",   "move_to_end", "move_to_start", "resume",  "alert", "spawn",
 };
-static_assert(std::size(kInputNames) == static_cast<std::size_t>(LogicInput::Alert) + 1);
+static_assert(std::size(kInputNames) == static_cast<std::size_t>(LogicInput::Spawn) + 1);
 
 template <typename Enum, std::size_t N>
 std::optional<Enum> findByName(const std::string_view (&names)[N], std::string_view name) {
@@ -69,6 +70,12 @@ LogicClass logicClassOf(std::string_view className) {
     }
     if (className == kPatrolPointClass) {
         return LogicClass::PatrolPoint;
+    }
+    if (className == kSpawnerClass) {
+        return LogicClass::Spawner;
+    }
+    if (className == kEncounterClass) {
+        return LogicClass::Encounter;
     }
     return LogicClass::None;
 }
@@ -275,11 +282,13 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
     }
     resolveOutputs(level);
     resolveReferences(level);
+    numberWaves(level);
     spawnLogic(settings);
     findKillHeight(level);
     // While the level loads, rather than on an enemy's first thought.
     for (const Entity& entity : m_entities) {
-        if (entity.logicClass == LogicClass::Enemy && entity.enemyType < settings.enemies.size()) {
+        if ((entity.logicClass == LogicClass::Enemy || entity.logicClass == LogicClass::Spawner) &&
+            entity.enemyType < settings.enemies.size()) {
             navMesh(navAgent(settings.enemies[entity.enemyType].movement));
         }
     }
@@ -403,12 +412,20 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
         }
         break;
     }
-    case LogicClass::Enemy: {
+    case LogicClass::Enemy:
+    case LogicClass::Spawner: {
         entity.position = vectorProperty(levelEntity, *entityClass, "origin");
         const double degrees = angleProperty(levelEntity, *entityClass, "yaw");
         entity.yaw = static_cast<std::uint16_t>(
             std::llround(degrees / 360.0 * static_cast<double>(kAngleUnitsPerTurn)) & 0xFFFF);
-        entity.ambush = flagProperty(levelEntity, *entityClass, "ambush");
+        if (entity.logicClass == LogicClass::Enemy) {
+            entity.ambush = flagProperty(levelEntity, *entityClass, "ambush");
+        } else {
+            // The wave as set; numberWaves turns it into the encounter's own numbering.
+            entity.wave = clampedCount(levelEntity, *entityClass, "wave");
+            entity.count = clampedCount(levelEntity, *entityClass, "count");
+            entity.hunt = flagProperty(levelEntity, *entityClass, "hunt");
+        }
         const std::string_view type = textProperty(levelEntity, *entityClass, "type");
         if (settings.enemies.empty()) {
             m_warnings.push_back(std::format("{}: the game has no enemies (enemies in game.cfg)",
@@ -437,6 +454,13 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
         entity.position = vectorProperty(levelEntity, *entityClass, "origin");
         entity.waitTicks = static_cast<std::int32_t>(
             secondsToTicks(clampedNumber(levelEntity, *entityClass, "wait")));
+        break;
+    case LogicClass::Encounter:
+        entity.maxAlive = clampedCount(levelEntity, *entityClass, "max_alive");
+        entity.nextWaveAt = clampedCount(levelEntity, *entityClass, "next_wave_at");
+        entity.waveDelayTicks =
+            secondsToTicks(clampedNumber(levelEntity, *entityClass, "wave_delay"));
+        entity.startOn = flagProperty(levelEntity, *entityClass, "start_on");
         break;
     case LogicClass::None:
         break;
@@ -516,10 +540,14 @@ void GameLevel::resolveReferences(const Level& level) {
         const LevelEntity& levelEntity = level.entities[index];
         const EntityClassInfo* entityClass = findEntityClass(levelEntity.className);
         std::string_view key;
+        LogicClass named = LogicClass::PatrolPoint;
         if (entity.logicClass == LogicClass::Enemy) {
             key = "patrol";
         } else if (entity.logicClass == LogicClass::PatrolPoint) {
             key = "next";
+        } else if (entity.logicClass == LogicClass::Spawner) {
+            key = "encounter";
+            named = LogicClass::Encounter;
         }
         if (key.empty() || entityClass == nullptr) {
             continue;
@@ -533,12 +561,42 @@ void GameLevel::resolveReferences(const Level& level) {
         if (it == names.end() || it->first != name) {
             m_warnings.push_back(
                 std::format("{} {}: no entity is named '{}'", describe(level, index), key, name));
-        } else if (m_entities[it->second].logicClass != LogicClass::PatrolPoint) {
-            m_warnings.push_back(std::format("{} {}: {} is not a patrol point",
-                                             describe(level, index), key,
-                                             describe(level, it->second)));
+        } else if (m_entities[it->second].logicClass != named) {
+            m_warnings.push_back(std::format(
+                "{} {}: {} is not {}", describe(level, index), key, describe(level, it->second),
+                named == LogicClass::Encounter ? "an encounter" : "a patrol point"));
+        } else if (named == LogicClass::Encounter) {
+            entity.encounter = it->second;
         } else {
             entity.next = it->second;
+        }
+    }
+}
+
+void GameLevel::numberWaves(const Level& level) {
+    for (std::uint32_t index = 0; index < m_entities.size(); ++index) {
+        Entity& encounter = m_entities[index];
+        if (encounter.logicClass != LogicClass::Encounter) {
+            continue;
+        }
+        std::vector<std::uint32_t> waves;
+        for (const Entity& spawner : m_entities) {
+            if (spawner.logicClass == LogicClass::Spawner && spawner.encounter == index) {
+                waves.push_back(spawner.wave);
+            }
+        }
+        std::sort(waves.begin(), waves.end());
+        waves.erase(std::unique(waves.begin(), waves.end()), waves.end());
+        encounter.waveCount = static_cast<std::uint32_t>(waves.size());
+        if (waves.empty()) {
+            m_warnings.push_back(
+                std::format("{}: no spawner names it, so it has no waves", describe(level, index)));
+        }
+        for (Entity& spawner : m_entities) {
+            if (spawner.logicClass == LogicClass::Spawner && spawner.encounter == index) {
+                spawner.wave = static_cast<std::uint32_t>(
+                    std::lower_bound(waves.begin(), waves.end(), spawner.wave) - waves.begin());
+            }
         }
     }
 }
@@ -612,6 +670,17 @@ void GameLevel::spawnLogic(const GameSettings& settings) {
                 }
             }
             break;
+        case LogicClass::Spawner:
+            world.spawners.add(entity.id, {});
+            break;
+        case LogicClass::Encounter: {
+            Encounter encounter;
+            if (entity.startOn) {
+                encounter.phase = static_cast<std::uint32_t>(EncounterPhase::Between);
+            }
+            world.encounters.add(entity.id, encounter);
+            break;
+        }
         case LogicClass::PatrolPoint:
         case LogicClass::None:
             break;
