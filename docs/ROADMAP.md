@@ -26,8 +26,8 @@ Each milestone ends in something playable.
 | M0 | Bootstrap | CMake presets, vcpkg, CI, `CLAUDE.md`, doctest, Tracy hookup | **Done.** One command builds and tests Windows debug, asan and profile builds |
 | M1 | Foundations | SDL3 window and raw input, Vulkan static mesh, fixed 128 Hz loop with interpolated uncapped rendering, ECS with `EntityId` handles, state hashing, player movement and collision on a test level, headless sim tests | **Done** (playtested 2026-10-20). Walk the test level; movement tuned from a hot-reloading data file; headless movement and determinism tests pass; tick cost shown in the title bar and Tracy |
 | M2 | Editor and level logic | Docked ImGui editor, text level format, TrenchBroom `.map` import, brush tools (multi-selection, move/rotate/scale gizmos, primitives such as wedges, cylinders, arches and stairs, vertex, edge and face editing, clip, extrude, hollow, subtract, merge), undo/redo command stack, schema-generated inspector, play-in-editor over the in-memory transport, logic entities (triggers, relays, counters, timers, doors, movers) with event wiring, saves and checkpoints, play from here | **Done** (playtested 2026-10-21). Build a level with a working door puzzle in the editor, play it, save, load |
-| M3 | Gameplay and AI | Hitscan and projectile weapons, damage, pickups, respawn, navmesh from the level, enemy perception and data-driven behaviours, encounter system (waves, arena locks, music cues), script entity (Luau) | First playable single-player arena; an encounter built with wiring plus one script |
-| M4 | Editor tools | Texture and material assignment with face alignment, editable level-geometry meshes, visual logic graph (wires as nodes, with the outputs table as the text form), movers that follow a path through several stops and movers that turn (rotating doors), asset browser, hot reload of textures, materials, shaders and levels, a game data panel (add, reorder and tune weapons from templates, then movement, rules and pickups; saved to the game's config files with undo, applied live in play-in-editor) | Block out and wire a new arena without leaving the editor |
+| M3 | Gameplay and AI | Hitscan and projectile weapons, damage, pickups, respawn, navmesh from the level, enemy perception and data-driven behaviours, encounter system (waves, arena locks), script entity (Luau) with in-editor script editing | **Done** (2026-10-23). An encounter built with wiring (`encounter_test`) and a level run by a script (`script_test`), both played. The planned arena was dropped for entity authoring; music waits for the audio middleware |
+| M4 | Entity authoring and editor tools | Entity types made in the editor from templates (enemies, pickups, props), per-entity property overrides, enemy behaviour as graphs on our own deterministic runtime, a node-graph editor shared by behaviours and the visual logic graph (wires as nodes, with the outputs table as the text form), a game data panel (entity types, weapons, movement, rules; saved to the game's files with undo, applied live in play-in-editor); then texture and material assignment with face alignment, editable level-geometry meshes, movers along paths and turning movers, asset browser, hot reload of textures, materials, shaders and levels | Make a new enemy type with a behaviour of its own, place it with per-entity tweaks, and block out and wire an arena with it, without leaving the editor |
 | M5 | Rendering and animation | Render graph, clustered forward lighting, PBR, cascaded and local shadows, GPU-driven culling, skeletal animation, Jolt physics (client-only ragdolls and debris first; server-authoritative props later, outside the rewound state), sequencer (camera paths, animation, audio, events, keyframed movers with easing), TAA plus a sharp competitive mode, level compiler and content cooking into pack files | A scripted intro sequence in a lit, shadowed level at a stable frame rate |
 | M6 | Real networking | Pack checksums so clients and server run identical content, UDP transport, connect tokens, encryption, redundant inputs, delta-compressed snapshots, clock sync, prediction and reconciliation, interpolation, netgraph, packet fuzzers | Two machines play smoothly at 150 ms RTT, 20 ms jitter, 5% loss |
 | M7 | Combat netcode and scale | Lag compensation with rewind cap, sub-tick inputs, server-side projectiles, demo recording, shot debugger, relevancy and visibility culling, bandwidth budgets, Linux dedicated server, bot clients | 24-hour bot soak with no leaks; server tick p99 under 4 ms |
@@ -216,9 +216,43 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    entity's inspector), and beside the code the entities running it (outlined in the view), the
    wiring in and out, and what doesn't line up: inputs or events the script lacks, game:send to
    names the level doesn't have, inputs nothing sends.*
-9. **First playable arena.** Built in the editor, with weapons and pickups, waves of both enemy
-   kinds, arena locks and one scripted moment (music waits for the audio middleware). M3 is done
-   when it has been played through.
+9. **First playable arena.** *Dropped (2026-10-23): Tony chose to go on to making entities and
+   their behaviour in the editor, which the arena would have been built with. `encounter_test`
+   and `script_test` stand as M3's encounter and scripted level.*
+
+## M4 plan
+
+Agreed 2026-10-23. Tony's aim: the charger and gunner are templates, and new entities should be
+made from scratch in the editor, their properties and behaviour included. Entity authoring comes
+first; the rest of the editor tools follow. In order; each step builds, tests and commits on its
+own, and everything a step adds to play is simulation state, so it saves, rewinds and replicates.
+
+1. **Entity types.** A type is a data file the editor writes and the game loads: what it is built
+   on (enemy, pickup, prop; props are boxes until M5 brings models), its properties with defaults
+   and ranges, how it looks and sounds, its behaviour (step 3) and an optional script. A Game data
+   panel makes a type by copying a template (the charger and gunner become the first), edits it
+   with undo, and applies it live in play-in-editor. Types are listed in the Create menu and the
+   inspector like the engine's own classes, and levels name them as they name enemy kinds today.
+2. **Per-entity overrides.** Any property of a type can be set on one placed entity or spawner
+   (a calmer gunner here, a faster charger there) without a new type. Overrides are kept with
+   each entity in its components.
+3. **Behaviour runtime.** Behaviour trees (sequence, fallback, parallel, decorators, conditions,
+   actions) run in the simulation each tick, deterministic, with no per-tick allocation and each
+   enemy's running state in a fixed-size component. The nodes are the abilities enemies have now:
+   see, hear, notice; move to, patrol, chase, keep distance, take cover, search; strike, fire a
+   burst, strafe; health below, target visible, time in state, a random chance. A Luau script can
+   be a node for an odd custom decision. The charger and gunner are rebuilt as trees and must play
+   as they do now (checked by the existing enemy tests).
+4. **Behaviour graph editor.** A node-graph window (imgui-node-editor, MIT, from vcpkg) to build
+   and edit a type's tree, with problems shown on the nodes; in play, each enemy's running nodes
+   light up (alongside "Show what enemies think").
+5. **Visual logic graph.** The level's wiring as nodes in the same graph window, with the outputs
+   table as the text form.
+6. **Game data for the rest.** Weapons, movement and rules in the Game data panel, made from
+   templates and tuned live.
+7. **The remaining editor tools.** Texture and material assignment with face alignment, editable
+   level-geometry meshes, movers along paths and turning movers, the asset browser and hot reload
+   of textures, materials, shaders and levels. Planned in detail when step 6 is done.
 
 ## Decisions
 
@@ -236,6 +270,7 @@ snapshots like the logic of M2, and every tuning value is game data layered over
 | Modelling | Brushes first; later, editable meshes for level geometry (bevels, curves, detail) in our editor. Characters, weapons and animation are made in Blender and imported as glTF |
 | Quality bar | The editor and engine must eventually compare with the latest idTech and id Studio (2026-10-21). As there, brushes are for blockout and collision; visual detail comes from editable level meshes, imported models, materials, decals and lighting. Every limit and simplification is temporary, and detail features come forward wherever the order allows |
 | Gameplay code | Gameplay systems (health, weapons, pickups, AI, encounters) are part of `engine/sim`, because their components live in the `World` that is saved, rewound and sent. Games change them through data files; game-specific code waits until there is a game that needs it. Navigation (Recast/Detour) and scripting (Luau) get modules of their own that the simulation links |
+| Behaviour authoring | Our own behaviour-tree runtime in `engine/sim`, authored as graphs in the editor (2026-10-23). Existing libraries (BehaviorTree.CPP; its Groot2 editor isn't open source) keep running state in heap objects, allocate as they run and use wall-clock time, which breaks saves, rewinds and determinism. Only the graph widget is borrowed: imgui-node-editor |
 | Script language | Luau: built to sandbox untrusted scripts (maps downloaded from servers), small enough to compile into the Linux server, and simple to keep deterministic. Gameplay code (weapons, rules, modes) stays C++; a C# gameplay layer may be revisited once networking works (after M6/M7) |
 
 ## Still open
