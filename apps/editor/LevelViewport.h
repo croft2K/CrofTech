@@ -140,6 +140,9 @@ public:
     void fly(const FlyInput& input);
     // Brings a point into the middle of the active pane (a 3D pane backs off by distance).
     void frame(Vec3 point, float distance);
+    // Every pane looks from the camera (the orthographic ones at what it looks at), as when the
+    // viewport was made; for a level opened in place of another. Layout and modes stay.
+    void lookFrom(const Camera& camera);
 
     // What the renderer draws in each pane this frame. region is the whole view.
     struct PaneDraw {

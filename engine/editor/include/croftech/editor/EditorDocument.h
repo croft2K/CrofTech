@@ -37,6 +37,8 @@ public:
     void previewEntity(std::size_t index, const LevelEntity& entity);
 
     // Increases with every change to the level, previews included, so views know to rebuild.
+    // Each document starts it where no other document in the process has been, so views also
+    // rebuild for a different level opened in its place.
     std::uint64_t changeCount() const { return m_changeCount; }
     bool hasUnsavedChanges() const { return m_history.stateId() != m_savedStateId; }
 

@@ -4,12 +4,22 @@
 #include "croftech/level/LevelFile.h"
 
 #include <algorithm>
+#include <atomic>
 #include <utility>
 
 namespace ct {
+namespace {
+
+// Far enough apart that no document's changes reach the next one's start.
+std::uint64_t firstChangeCount() {
+    static std::atomic<std::uint64_t> documents{0};
+    return documents.fetch_add(1) << 40;
+}
+
+} // namespace
 
 EditorDocument::EditorDocument(Level level, std::filesystem::path path)
-    : m_level(std::move(level)), m_path(std::move(path)) {}
+    : m_level(std::move(level)), m_path(std::move(path)), m_changeCount(firstChangeCount()) {}
 
 void EditorDocument::execute(std::unique_ptr<Command> command) {
     m_history.execute(std::move(command), m_level);

@@ -8,6 +8,8 @@ add_executable(croftech_editor
     main.cpp
     NavMeshView.cpp
     NavMeshView.h
+    OpenLevelDialog.cpp
+    OpenLevelDialog.h
     PlaySession.cpp
     PlaySession.h
     ScriptPanel.cpp

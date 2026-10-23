@@ -17,6 +17,7 @@ namespace ct {
 
 // What the menu bar asked the application to do this frame.
 struct MenuRequests {
+    bool open = false;
     bool save = false;
     bool quit = false;
     bool frameSelection = false;

@@ -26,6 +26,7 @@ add_executable(ct_unit_tests
     unit/level/BrushGeometryTests.cpp
     unit/level/EntityClassesTests.cpp
     unit/level/LevelFileTests.cpp
+    unit/level/LevelLoadTests.cpp
     unit/level/MapImportTests.cpp
     unit/net/LoopbackLinkTests.cpp
     unit/net/ProtocolTests.cpp

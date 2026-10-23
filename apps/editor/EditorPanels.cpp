@@ -253,6 +253,7 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
     const bool hasSelection = !document.selection().empty();
     const float grid = settings.grid();
     if (ImGui::BeginMenu("File")) {
+        requests.open = ImGui::MenuItem("Open...", "Ctrl+O");
         requests.save = ImGui::MenuItem("Save", "Ctrl+S");
         ImGui::Separator();
         requests.quit = ImGui::MenuItem("Quit");

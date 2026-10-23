@@ -115,7 +115,9 @@ window (`apps/editor/ScriptPanel`, `CodeEditor`; the text, cursor, undo and Luau
 which also checks `game:send` calls written with names in quotes; `ScriptProgram::callSites`). What scripts print and their errors
 reach the log through `Simulation::takeScriptMessages`. `--map script_test` is a combination lock.
 
-Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
+Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`;
+File > Open (Ctrl+O) lists the content folders' levels (`listLevelFiles` in `level/LevelLoad.h`)
+or browses for any `.level` or `.map`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
 drags preview live and record one command when released, and edits of several selected items are
 one compound command. Moves, turns, flips and scales of any brush shape go through

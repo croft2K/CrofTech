@@ -152,3 +152,9 @@ TEST_CASE("delete and duplicate act on the selection as single commands") {
     }
     CHECK(document.level() == twoBoxes());
 }
+
+TEST_CASE("each document counts its changes from a start no other document has") {
+    const ct::EditorDocument first(ct::Level{}, "a.level");
+    const ct::EditorDocument second(ct::Level{}, "b.level");
+    CHECK(first.changeCount() != second.changeCount());
+}

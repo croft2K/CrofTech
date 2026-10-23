@@ -489,15 +489,22 @@ const char* viewModeName(ViewMode mode) {
 }
 
 LevelViewport::LevelViewport(Camera camera) {
-    // The orthographic panes centre on what the camera looks at.
-    const Vec3 target = camera.position + cameraBasis(camera).forward * kPlacementDistance * 2.0f;
     constexpr std::array<ViewMode, 4> kModes{ViewMode::Perspective, ViewMode::Top, ViewMode::Front,
                                              ViewMode::Side};
     for (std::size_t i = 0; i < m_panes.size(); ++i) {
         m_panes[i].mode = kModes[i];
-        m_panes[i].camera = camera;
-        m_panes[i].centre = target;
     }
+    lookFrom(camera);
+}
+
+void LevelViewport::lookFrom(const Camera& camera) {
+    // The orthographic panes centre on what the camera looks at.
+    const Vec3 target = camera.position + cameraBasis(camera).forward * kPlacementDistance * 2.0f;
+    for (ViewPane& pane : m_panes) {
+        pane.camera = camera;
+        pane.centre = target;
+    }
+    m_corners.clear();
 }
 
 void LevelViewport::setLayout(ViewLayout layout) {

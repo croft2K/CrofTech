@@ -19,6 +19,7 @@
 #include "GameSounds.h"
 #include "LevelViewport.h"
 #include "NavMeshView.h"
+#include "OpenLevelDialog.h"
 #include "PlaySession.h"
 #include "ScriptPanel.h"
 #include "WorldMesh.h"
@@ -332,6 +333,27 @@ int main(int argc, char** argv) {
     auto scriptsRefreshed = std::chrono::steady_clock::now();
     ct::ScriptPanel scriptPanel(content, scripts);
     panels.setScripts(&scripts, &scriptPanel);
+    ct::OpenLevelDialog openDialog(window);
+    std::filesystem::path openAfterAsking; // a level to open once unsaved changes are settled
+    // Opens a level in place of the one being edited (whose changes are dealt with first).
+    const auto openLevel = [&](const std::filesystem::path& path) {
+        std::vector<std::string> openWarnings;
+        std::string openError;
+        std::optional<ct::Level> opened = ct::loadAnyLevelFile(path, openWarnings, openError);
+        for (const std::string& warning : openWarnings) {
+            ct::logWarning("{}", warning);
+        }
+        if (!opened) {
+            ct::logError("Can't open {}: {}", path.string(), openError);
+            return;
+        }
+        viewport.cancelDrag(document);
+        viewport.clearToolState();
+        viewport.lookFrom(startingCamera(*opened));
+        document = ct::EditorDocument(std::move(*opened), path);
+        ct::logInfo("Editing {} ({} brushes, {} entities)", path.string(),
+                    document.level().brushes.size(), document.level().entities.size());
+    };
     bool running = true;
     bool quitRequested = false;
     bool flying = false;
@@ -550,6 +572,8 @@ int main(int argc, char** argv) {
                 viewport.tool() == ct::EditorTool::Vertex && !viewport.selectedCorners().empty();
             if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
                 save(document);
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_O)) {
+                menu.open = true;
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
                 viewport.cancelDrag(document);
                 document.undo();
@@ -615,6 +639,40 @@ int main(int argc, char** argv) {
         }
         if (menu.save) {
             save(document);
+        }
+        if (menu.open && !playing) {
+            openDialog.show(content);
+        }
+        if (const std::optional<std::filesystem::path> chosen = openDialog.draw()) {
+            if (document.hasUnsavedChanges()) {
+                openAfterAsking = *chosen;
+                ImGui::OpenPopup("Open another level");
+            } else {
+                openLevel(*chosen);
+            }
+        }
+        if (ImGui::BeginPopupModal("Open another level", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Save changes to %s before opening %s?",
+                        document.path().filename().string().c_str(),
+                        openAfterAsking.filename().string().c_str());
+            if (ImGui::Button("Save and open")) {
+                save(document);
+                if (!document.hasUnsavedChanges()) {
+                    openLevel(openAfterAsking);
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Open without saving")) {
+                openLevel(openAfterAsking);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
         if ((startPlaying || startPlayingHere) && !playing) {
             startPlay(startPlayingHere);
