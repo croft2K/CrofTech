@@ -156,6 +156,9 @@ bool GameData::rebuild(std::string& error) {
         }
     }
     m_settings = gameSettingsFromCVars(*console, m_manifest.weapons, m_manifest.enemies);
+    for (std::string& problem : loadBehaviourTrees(m_content, m_settings)) {
+        m_warnings.push_back(std::move(problem));
+    }
     m_console = std::move(console);
     ++m_changeCount;
     return true;

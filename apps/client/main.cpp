@@ -43,6 +43,7 @@
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/script/ScriptFiles.h"
+#include "croftech/sim/BehaviourTree.h"
 #include "croftech/sim/GameSettings.h"
 #include "croftech/sim/MovementConfig.h"
 
@@ -407,7 +408,16 @@ int main(int argc, char** argv) {
     // The inspector reads a copy, so the simulation thread is never held up by drawing.
     const auto inspectedState = std::make_unique<ct::State>();
 
-    ct::GameSettings settings = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
+    // The settings, and the behaviour trees their enemy types name, read again whenever a
+    // setting changes.
+    const auto loadSettings = [&] {
+        ct::GameSettings loaded = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
+        for (const std::string& problem : ct::loadBehaviourTrees(content, loaded)) {
+            ct::logWarning("{}", problem);
+        }
+        return loaded;
+    };
+    ct::GameSettings settings = loadSettings();
     sounds->setSettings(settings);
     std::uint64_t seenChanges = console.changeCount();
 
@@ -551,7 +561,7 @@ int main(int argc, char** argv) {
         }
         if (console.changeCount() != seenChanges) {
             seenChanges = console.changeCount();
-            settings = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
+            settings = loadSettings();
             localGame->setSettings(settings);
             sounds->setSettings(settings);
             localGame->setConditions(client.linkConditions());

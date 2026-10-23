@@ -1,5 +1,6 @@
 #include "croftech/sim/Enemies.h"
 
+#include "EnemyTick.h"
 #include "LevelLogic.h"
 #include "NavQueries.h"
 
@@ -72,6 +73,11 @@ constexpr float kRunningSpeed = 3.0f;
 constexpr float kStrafeShare = 0.7f;
 // It checks for floor this far to the side before stepping that way.
 constexpr float kStrafeLook = 1.0f;
+
+void become(Enemy& enemy, EnemyState state, TickIndex tick) {
+    enemy.state = static_cast<std::uint32_t>(state);
+    enemy.stateTick = tick;
+}
 
 TickIndex secondsToTicks(float seconds) {
     return static_cast<TickIndex>(std::max(seconds, 0.0f) * static_cast<float>(kTickRate) + 0.5f);
@@ -328,6 +334,7 @@ void makeEnemy(World& world, EntityId id, const GameSettings& settings, std::uin
     enemy.lookYaw = yaw;
     enemy.random = (id.index << 16) ^ type;
     world.enemies.add(id, enemy);
+    world.enemyBehaviours.add(id, {});
     const std::uint32_t weapon = enemySettings.weaponIndex;
     if (weapon < settings.weapons.size() && weapon < kMaxWeapons) {
         // Its gun, with ammo it never runs out of.
@@ -375,7 +382,7 @@ void LevelLogic::alertEnemy(std::uint32_t index, Enemy& enemy, EntityId target) 
     enemy.state = static_cast<std::uint32_t>(hunting ? EnemyState::Chase : EnemyState::Alerted);
     enemy.stateTick = m_state.tick;
     enemy.pathTick = m_state.tick;
-    enemy.flags &= ~kEnemyAtGoal;
+    enemy.flags &= ~(kEnemyAtGoal | kEnemyGaveUp);
     if ((enemy.flags & kEnemyAlertFired) == 0) {
         enemy.flags |= kEnemyAlertFired;
         fire(index, LogicEvent::OnAlert, target);
@@ -387,17 +394,13 @@ void LevelLogic::goBack(Enemy& enemy) {
     enemy.state = static_cast<std::uint32_t>(EnemyState::Patrol);
     enemy.stateTick = m_state.tick;
     enemy.pathTick = m_state.tick;
-    enemy.flags &= ~(kEnemyHasPath | kEnemyRideStart | kEnemyAtGoal);
+    enemy.flags &= ~(kEnemyHasPath | kEnemyRideStart | kEnemyAtGoal | kEnemyGaveUp);
     // To the patrol point it was going to or standing at, or else its post.
     const GameLevel::Entity* point = m_level.entity(enemy.patrolPoint);
     enemy.goal = point != nullptr ? point->position : enemy.home;
 }
 
-void LevelLogic::startSearch(Enemy& enemy, const EnemyTuning& type) {
-    if (type.searchTime <= 0.0f) {
-        goBack(enemy);
-        return;
-    }
+void LevelLogic::startSearch(Enemy& enemy) {
     // It first stands where it lost the target, looking about.
     enemy.state = static_cast<std::uint32_t>(EnemyState::Search);
     enemy.stateTick = m_state.tick;
@@ -516,6 +519,439 @@ LevelLogic::Steering LevelLogic::steer(EntityId id, Enemy& enemy, const Movement
     return steering;
 }
 
+void LevelLogic::viewTarget(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    if (think.viewDone && think.viewed == enemy.target) {
+        return;
+    }
+    think.viewDone = true;
+    think.viewed = enemy.target;
+    think.visible = false;
+    think.level = false;
+    think.gap = 0.0f;
+    think.distance = 0.0f;
+    think.inReach = false;
+    think.inRange = false;
+    const World& world = m_state.world;
+    if (!isLivingPlayer(world, enemy.target)) {
+        return;
+    }
+    const Transform& target = *world.transforms.get(enemy.target);
+    // Hunting, it sees all round.
+    think.visible =
+        canSee(think.scene, world, think.settings, think.type, think.transform, enemy.target, true);
+    if (think.visible) {
+        enemy.lastSeen = target.position;
+        enemy.seenTick = m_state.tick;
+    }
+    think.gap =
+        groundGap(think.transform.position, think.type.movement.halfExtents, target.position,
+                  movementOf(world, enemy.target, think.settings).halfExtents, think.level);
+    think.inReach = think.type.meleeDamage > 0 && think.visible && think.level &&
+                    think.gap <= think.type.meleeRange;
+    think.distance = length(target.position - think.transform.position);
+    const Weapons* weapons = world.weapons.get(think.id);
+    think.inRange = weapons != nullptr && weapons->current < think.settings.weapons.size() &&
+                    think.visible && think.distance <= think.type.attackRange;
+}
+
+void LevelLogic::faceTarget(EnemyTick& think, bool hiding) {
+    const Enemy& enemy = think.enemy;
+    const Transform* target = m_state.world.transforms.get(enemy.target);
+    const bool moving = dot(think.heading, think.heading) > 0.0f;
+    if (think.visible && target != nullptr && !(hiding && moving)) {
+        think.look = target->position - think.transform.position;
+    } else if (moving) {
+        think.look = think.heading;
+    } else if (enemyState(enemy) != EnemyState::Search) {
+        think.look = enemy.lastSeen - think.transform.position;
+    }
+    think.aim = think.visible;
+}
+
+BehaviourStatus LevelLogic::runEnemyNode(EnemyTick& think, const BehaviourNode& node) {
+    using enum BehaviourNodeKind;
+    using enum BehaviourStatus;
+    const auto holds = [](bool condition) { return condition ? Success : Failure; };
+    switch (node.kind) {
+    case HasTarget:
+        return holds(isLivingPlayer(m_state.world, think.enemy.target));
+    case TargetVisible:
+        viewTarget(think);
+        return holds(think.visible);
+    case TargetInReach:
+        viewTarget(think);
+        return holds(think.inReach);
+    case TargetInRange:
+        viewTarget(think);
+        return holds(think.inRange);
+    case TargetWithin:
+        viewTarget(think);
+        return holds(isLivingPlayer(m_state.world, think.enemy.target) &&
+                     think.distance <= node.value);
+    case See:
+        return see(think);
+    case Hear:
+        return hear(think);
+    case React:
+        return react(think);
+    case TakeCover:
+        return hide(think);
+    case Strike:
+        return strike(think);
+    case BehaviourNodeKind::Chase:
+        return chase(think);
+    case KeepDistance:
+        return keepDistance(think);
+    case Strafe:
+        return strafe(think);
+    case FireBurst:
+        return fireBurst(think);
+    case BehaviourNodeKind::Search:
+        return search(think);
+    case BehaviourNodeKind::Patrol:
+        return patrol(think);
+    default:
+        CT_ASSERT(false);
+        return Failure;
+    }
+}
+
+BehaviourStatus LevelLogic::see(EnemyTick& think) {
+    const World& world = m_state.world;
+    const EnemyState state = enemyState(think.enemy);
+    if (state == EnemyState::Idle || state == EnemyState::Patrol || state == EnemyState::Search) {
+        // The nearest player it can see.
+        EntityId seen;
+        float best = std::numeric_limits<float>::max();
+        for (const EntityId player : world.playerControls.entities()) {
+            if (!isLivingPlayer(world, player) ||
+                !canSee(think.scene, world, think.settings, think.type, think.transform, player,
+                        false)) {
+                continue;
+            }
+            const Vec3 offset = world.transforms.get(player)->position - think.transform.position;
+            if (dot(offset, offset) < best) {
+                best = dot(offset, offset);
+                seen = player;
+            }
+        }
+        if (seen.isValid()) {
+            alertEnemy(think.wiring, think.enemy, seen);
+        }
+    }
+    return BehaviourStatus::Success;
+}
+
+BehaviourStatus LevelLogic::hear(EnemyTick& think) {
+    const EnemyState state = enemyState(think.enemy);
+    // Shots and running nearby wake it, or tell it where its lost target went.
+    if ((state == EnemyState::Idle || state == EnemyState::Patrol || state == EnemyState::Search ||
+         state == EnemyState::Lost) &&
+        (think.enemy.flags & kEnemyAmbush) == 0) {
+        if (const EntityId heard =
+                hearPlayer(m_state.world, think.type, think.transform.position, m_state.tick);
+            heard.isValid()) {
+            alertEnemy(think.wiring, think.enemy, heard);
+        }
+    }
+    return BehaviourStatus::Success;
+}
+
+BehaviourStatus LevelLogic::react(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const TickIndex tick = m_state.tick;
+    if (enemyState(enemy) != EnemyState::Alerted) {
+        return BehaviourStatus::Failure;
+    }
+    viewTarget(think);
+    if (tick >= enemy.stateTick + secondsToTicks(think.type.reactionTime)) {
+        become(enemy, EnemyState::Chase, tick);
+        enemy.pathTick = tick;
+        return BehaviourStatus::Failure;
+    }
+    enemy.goal = enemy.lastSeen;
+    enemy.flags &= ~kEnemyAtGoal;
+    faceTarget(think, false);
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::hide(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const TickIndex tick = m_state.tick;
+    if (enemyState(enemy) != EnemyState::Cover) {
+        // Each hurt or burst gives it one chance to go.
+        if (!think.wantsCover) {
+            return BehaviourStatus::Failure;
+        }
+        think.wantsCover = false;
+        if (!takeCover(think.scene, think.settings, think.id, enemy, think.type, think.query,
+                       think.filter)) {
+            return BehaviourStatus::Failure;
+        }
+    }
+    viewTarget(think);
+    if ((enemy.flags & kEnemyAtGoal) != 0) {
+        if (think.visible) {
+            // Found out in its cover.
+            become(enemy, EnemyState::Chase, tick);
+            return BehaviourStatus::Failure;
+        }
+        if (tick >= enemy.waitTick) {
+            become(enemy, EnemyState::Chase, tick);
+            enemy.pathTick = tick;
+            return BehaviourStatus::Failure;
+        }
+    } else {
+        think.heading =
+            steer(think.id, enemy, think.type.movement, think.query, think.filter).heading;
+        if ((enemy.flags & kEnemyAtGoal) != 0) {
+            enemy.waitTick = tick + secondsToTicks(think.type.coverTime);
+        }
+    }
+    faceTarget(think, true);
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::strike(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const EnemyTuning& type = think.type;
+    const TickIndex tick = m_state.tick;
+    viewTarget(think);
+    const Transform* target = m_state.world.transforms.get(enemy.target);
+    if (!think.inReach && enemyState(enemy) != EnemyState::Attack) {
+        return BehaviourStatus::Failure;
+    }
+    if (target == nullptr || !isLivingPlayer(m_state.world, enemy.target)) {
+        become(enemy, EnemyState::Chase, tick);
+        return BehaviourStatus::Failure;
+    }
+    if (enemyState(enemy) != EnemyState::Attack && enemyState(enemy) != EnemyState::Chase) {
+        become(enemy, EnemyState::Chase, tick);
+    }
+    enemy.goal = enemy.lastSeen;
+    enemy.flags &= ~kEnemyAtGoal;
+    if (!think.inReach) {
+        // The target stepped back during the swing: it follows.
+        const Steering steering = steer(think.id, enemy, type.movement, think.query, think.filter);
+        think.heading = steering.heading;
+        if (!steering.waiting && dot(think.heading, think.heading) == 0.0f && think.visible) {
+            think.heading = flat(target->position - think.transform.position);
+        }
+    }
+    faceTarget(think, false);
+
+    // A swing starts when the target is in reach and in front, and lands after its wind-up if
+    // the target is still there.
+    const std::uint16_t towards = directionToAngle(target->position.x - think.transform.position.x,
+                                                   target->position.y - think.transform.position.y);
+    const std::uint16_t facing =
+        dot(flat(think.look), flat(think.look)) > 0.0f
+            ? turnTowards(think.transform.yaw, directionToAngle(think.look.x, think.look.y),
+                          turnStep(type))
+            : think.transform.yaw;
+    if (think.inReach && enemyState(enemy) == EnemyState::Chase && tick >= enemy.readyTick &&
+        angleBetween(facing, towards) <= kSwingAim) {
+        become(enemy, EnemyState::Attack, tick);
+        enemy.attackTick = tick + secondsToTicks(type.meleeWindup);
+        enemy.readyTick = tick + std::max(secondsToTicks(type.meleeInterval), 1u);
+    }
+    if (enemyState(enemy) == EnemyState::Attack && tick >= enemy.attackTick) {
+        if (think.level && think.gap <= type.meleeRange + kSwingSlack) {
+            Vec3 away = flat(target->position - think.transform.position);
+            away = dot(away, away) > 0.0f ? normalize(away) : Vec3{1.0f, 0.0f, 0.0f};
+            Damage damage;
+            damage.amount = type.meleeDamage;
+            damage.kind = DamageKind::Melee;
+            damage.attacker = think.id;
+            damage.push = (away + Vec3{0.0f, 0.0f, kSwingLift}) * type.meleeKnockback;
+            applyDamage(m_state, think.settings.rules, enemy.target, damage);
+        }
+        become(enemy, EnemyState::Chase, tick);
+        return BehaviourStatus::Success;
+    }
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::chase(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const TickIndex tick = m_state.tick;
+    if (!isLivingPlayer(m_state.world, enemy.target) || (enemy.flags & kEnemyGaveUp) != 0) {
+        return BehaviourStatus::Failure;
+    }
+    viewTarget(think);
+    const Transform& target = *m_state.world.transforms.get(enemy.target);
+    if (think.visible) {
+        if (enemyState(enemy) != EnemyState::Chase) {
+            become(enemy, EnemyState::Chase, tick);
+        }
+    } else if (enemyState(enemy) != EnemyState::Lost) {
+        become(enemy, EnemyState::Lost, tick);
+        enemy.flags &= ~kEnemyAtGoal;
+    } else if (tick < enemy.seenTick + kTrackTicks) {
+        // Just out of sight, it still hears where the target goes.
+        enemy.lastSeen = target.position;
+    }
+    if (enemyState(enemy) == EnemyState::Lost &&
+        ((enemy.flags & kEnemyAtGoal) != 0 || tick >= enemy.seenTick + kGiveUpTicks)) {
+        enemy.flags |= kEnemyGaveUp;
+        return BehaviourStatus::Failure;
+    }
+    enemy.goal = enemy.lastSeen;
+    if (enemyState(enemy) == EnemyState::Chase) {
+        // The goal moves with the target, so it is never reached for good.
+        enemy.flags &= ~kEnemyAtGoal;
+    }
+    const Steering steering =
+        steer(think.id, enemy, think.type.movement, think.query, think.filter);
+    think.heading = steering.heading;
+    think.pace = 1.0f;
+    if (!steering.waiting && dot(think.heading, think.heading) == 0.0f && think.visible) {
+        // Off the mesh, or no way round: straight at the target.
+        think.heading = flat(target.position - think.transform.position);
+    }
+    faceTarget(think, false);
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::keepDistance(EnemyTick& think) {
+    viewTarget(think);
+    if (enemyState(think.enemy) != EnemyState::Chase || !think.inRange ||
+        think.distance > think.type.keepDistance) {
+        return BehaviourStatus::Failure;
+    }
+    think.heading = {};
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::strafe(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const EnemyTuning& type = think.type;
+    const TickIndex tick = m_state.tick;
+    viewTarget(think);
+    if (enemyState(enemy) != EnemyState::Chase || !think.inRange || type.strafeTime <= 0.0f) {
+        return BehaviourStatus::Failure;
+    }
+    // One way then the other, turning back where there is no floor to step on.
+    if (tick >= enemy.strafeTick) {
+        enemy.strafeTick =
+            tick +
+            std::max(secondsToTicks(type.strafeTime * (0.5f + randomUnit(enemy.random))), 1u);
+        if (randomUnit(enemy.random) < 0.5f) {
+            enemy.flags ^= kEnemyStrafeLeft;
+        }
+    }
+    const Vec3 targetPosition = m_state.world.transforms.get(enemy.target)->position;
+    const Vec3 toTarget = normalize(flat(targetPosition - think.transform.position));
+    const float sign = (enemy.flags & kEnemyStrafeLeft) != 0 ? 1.0f : -1.0f;
+    Vec3 side = Vec3{-toTarget.y, toTarget.x, 0.0f} * sign;
+    const Vec3 reach{0.3f, 0.3f, type.movement.stepHeight + 0.1f};
+    if (!think.query.nearestPoint(feetOf(think.transform, type.movement) + side * kStrafeLook,
+                                  think.filter, reach)) {
+        enemy.flags ^= kEnemyStrafeLeft;
+        side = -side;
+    }
+    think.heading = dot(think.heading, think.heading) > 0.0f
+                        ? normalize(think.heading) + side * kStrafeShare
+                        : side;
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::fireBurst(EnemyTick& think) {
+    const Enemy& enemy = think.enemy;
+    viewTarget(think);
+    if (enemyState(enemy) != EnemyState::Chase || !think.inRange) {
+        return BehaviourStatus::Failure;
+    }
+    // It shoots once it has moved (runEnemies), when facing the target.
+    const Vec3 targetPosition = m_state.world.transforms.get(enemy.target)->position;
+    const std::uint16_t towards = directionToAngle(targetPosition.x - think.transform.position.x,
+                                                   targetPosition.y - think.transform.position.y);
+    const std::uint16_t facing =
+        dot(flat(think.look), flat(think.look)) > 0.0f
+            ? turnTowards(think.transform.yaw, directionToAngle(think.look.x, think.look.y),
+                          turnStep(think.type))
+            : think.transform.yaw;
+    think.shoot = m_state.tick >= enemy.readyTick && angleBetween(facing, towards) <= kShotAim;
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::search(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const EnemyTuning& type = think.type;
+    const TickIndex tick = m_state.tick;
+    if ((enemy.flags & kEnemyGaveUp) == 0) {
+        return BehaviourStatus::Failure;
+    }
+    if (enemyState(enemy) != EnemyState::Search) {
+        if (type.searchTime <= 0.0f) {
+            return BehaviourStatus::Failure;
+        }
+        startSearch(enemy);
+    }
+    if (tick >= enemy.stateTick + secondsToTicks(type.searchTime)) {
+        return BehaviourStatus::Failure;
+    }
+    think.pace = 1.0f;
+    if ((enemy.flags & kEnemyAtGoal) == 0) {
+        think.heading = steer(think.id, enemy, type.movement, think.query, think.filter).heading;
+        if ((enemy.flags & kEnemyAtGoal) != 0) {
+            // At a spot: it stands looking about for a moment.
+            enemy.waitTick = tick + searchPause(enemy.random);
+            enemy.lookYaw = randomYaw(enemy.random);
+        }
+    } else if (tick >= enemy.waitTick) {
+        const std::optional<Vec3> spot =
+            findSearchSpot(think.query, think.filter, think.transform.position, enemy.lastSeen,
+                           type.searchRadius, enemy.random);
+        if (spot) {
+            enemy.goal = *spot;
+            enemy.flags &= ~(kEnemyAtGoal | kEnemyHasPath | kEnemyRideStart);
+            enemy.pathTick = tick;
+        } else {
+            enemy.waitTick = tick + kPathInterval;
+        }
+    }
+    return BehaviourStatus::Running;
+}
+
+BehaviourStatus LevelLogic::patrol(EnemyTick& think) {
+    Enemy& enemy = think.enemy;
+    const EnemyTuning& type = think.type;
+    const TickIndex tick = m_state.tick;
+    EnemyState state = enemyState(enemy);
+    if (state != EnemyState::Idle && state != EnemyState::Patrol) {
+        // Back from a fight or a search, watching for players again.
+        goBack(enemy);
+        state = EnemyState::Patrol;
+    }
+    if (state == EnemyState::Idle) {
+        const GameLevel::Entity* point = m_level.entity(enemy.patrolPoint);
+        if (point != nullptr && point->next != kNoEntity && tick >= enemy.waitTick) {
+            // On to the next point of its patrol.
+            enemy.patrolPoint = point->next;
+            goBack(enemy);
+            state = EnemyState::Patrol;
+        }
+    }
+    if (state == EnemyState::Patrol) {
+        think.heading = steer(think.id, enemy, type.movement, think.query, think.filter).heading;
+        think.pace = type.speed > 0.0f ? std::min(type.walkSpeed / type.speed, 1.0f) : 1.0f;
+        if ((enemy.flags & kEnemyAtGoal) != 0) {
+            become(enemy, EnemyState::Idle, tick);
+            if (const GameLevel::Entity* point = m_level.entity(enemy.patrolPoint)) {
+                // It stands at the point facing the way it came.
+                enemy.lookYaw = think.transform.yaw;
+                enemy.waitTick = tick + static_cast<TickIndex>(point->waitTicks);
+                fire(enemy.patrolPoint, LogicEvent::OnArrive, think.id);
+            } else {
+                enemy.lookYaw = enemy.homeYaw;
+            }
+        }
+    }
+    return BehaviourStatus::Running;
+}
+
 void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& settings,
                             NavQueries& queries) {
     CT_PROFILE_ZONE();
@@ -584,254 +1020,28 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
             alertEnemy(wiring, enemy, health->attacker);
         }
 
-        EnemyState state = enemyState(enemy);
-        const bool calm =
-            state == EnemyState::Idle || state == EnemyState::Patrol || state == EnemyState::Search;
-        if (calm) {
-            // Looks for the nearest player it can see.
-            EntityId seen;
-            float best = std::numeric_limits<float>::max();
-            for (const EntityId player : world.playerControls.entities()) {
-                if (!isLivingPlayer(world, player) ||
-                    !canSee(scene, world, settings, type, *transform, player, false)) {
-                    continue;
-                }
-                const Vec3 offset = world.transforms.get(player)->position - transform->position;
-                if (dot(offset, offset) < best) {
-                    best = dot(offset, offset);
-                    seen = player;
-                }
-            }
-            if (seen.isValid()) {
-                alertEnemy(wiring, enemy, seen);
-            }
+        // Its tree decides what it does.
+        EnemyBehaviour* behaviour = world.enemyBehaviours.get(id);
+        if (behaviour == nullptr) {
+            behaviour = &world.enemyBehaviours.add(id, {});
         }
-        if (calm || state == EnemyState::Lost) {
-            // Shots and running nearby wake it, or tell it where its lost target went.
-            if (const EntityId heard = hearPlayer(world, type, transform->position, tick);
-                heard.isValid() && (enemy.flags & kEnemyAmbush) == 0 &&
-                enemyState(enemy) == state) {
-                alertEnemy(wiring, enemy, heard);
-            }
-        }
-        state = enemyState(enemy);
-        if (state != EnemyState::Idle && state != EnemyState::Patrol &&
-            !isLivingPlayer(world, enemy.target)) {
-            // Its target died or left: back to its post or patrol, watching for others.
-            goBack(enemy);
-            state = enemyState(enemy);
-        }
-
         NavQuery& query = queries.forMesh(m_level.navMesh(navAgent(movement)));
-        UserCmd cmd{transform->yaw, transform->pitch, 0, 0, 0};
-        Vec3 heading;
-        float pace = 1.0f; // of its running speed
-        // The way it faces; with none, it turns to its look yaw.
-        Vec3 look;
-        bool shoot = false;
-
-        if (state == EnemyState::Idle) {
-            const GameLevel::Entity* point = m_level.entity(enemy.patrolPoint);
-            if (point != nullptr && point->next != kNoEntity && tick >= enemy.waitTick) {
-                // On to the next point of its patrol.
-                enemy.patrolPoint = point->next;
-                goBack(enemy);
-                state = enemyState(enemy);
-            }
-        }
-        if (state == EnemyState::Patrol) {
-            heading = steer(id, enemy, movement, query, filter).heading;
-            pace = type.speed > 0.0f ? std::min(type.walkSpeed / type.speed, 1.0f) : 1.0f;
-            if ((enemy.flags & kEnemyAtGoal) != 0) {
-                state = EnemyState::Idle;
-                enemy.state = static_cast<std::uint32_t>(state);
-                enemy.stateTick = tick;
-                if (const GameLevel::Entity* point = m_level.entity(enemy.patrolPoint)) {
-                    // It stands at the point facing the way it came.
-                    enemy.lookYaw = transform->yaw;
-                    enemy.waitTick = tick + static_cast<TickIndex>(point->waitTicks);
-                    fire(enemy.patrolPoint, LogicEvent::OnArrive, id);
-                } else {
-                    enemy.lookYaw = enemy.homeYaw;
-                }
-            }
-        } else if (state == EnemyState::Search) {
-            if (tick >= enemy.stateTick + secondsToTicks(type.searchTime)) {
-                goBack(enemy);
-            } else if ((enemy.flags & kEnemyAtGoal) != 0) {
-                if (tick >= enemy.waitTick) {
-                    const std::optional<Vec3> spot =
-                        findSearchSpot(query, filter, transform->position, enemy.lastSeen,
-                                       type.searchRadius, enemy.random);
-                    if (spot) {
-                        enemy.goal = *spot;
-                        enemy.flags &= ~(kEnemyAtGoal | kEnemyHasPath | kEnemyRideStart);
-                        enemy.pathTick = tick;
-                    } else {
-                        enemy.waitTick = tick + kPathInterval;
-                    }
-                }
-            } else {
-                heading = steer(id, enemy, movement, query, filter).heading;
-                if ((enemy.flags & kEnemyAtGoal) != 0) {
-                    enemy.waitTick = tick + searchPause(enemy.random);
-                    enemy.lookYaw = randomYaw(enemy.random);
-                }
-            }
-        } else if (state != EnemyState::Idle) {
-            const Transform& target = *world.transforms.get(enemy.target);
-            const MovementSettings& targetMovement = movementOf(world, enemy.target, settings);
-            const bool visible =
-                canSee(scene, world, settings, type, *transform, enemy.target, true);
-            const auto become = [&](EnemyState next) {
-                state = next;
-                enemy.state = static_cast<std::uint32_t>(next);
-                enemy.stateTick = tick;
-            };
-            if (visible) {
-                enemy.lastSeen = target.position;
-                enemy.seenTick = tick;
-                if (state == EnemyState::Lost ||
-                    (state == EnemyState::Cover && (enemy.flags & kEnemyAtGoal) != 0)) {
-                    // Found it again, or found out in its cover.
-                    become(EnemyState::Chase);
-                }
-            } else if (state == EnemyState::Chase) {
-                become(EnemyState::Lost);
-                enemy.flags &= ~kEnemyAtGoal;
-            } else if (state == EnemyState::Lost && tick < enemy.seenTick + kTrackTicks) {
-                enemy.lastSeen = target.position;
-            }
-            if (state == EnemyState::Lost &&
-                ((enemy.flags & kEnemyAtGoal) != 0 || tick >= enemy.seenTick + kGiveUpTicks)) {
-                startSearch(enemy, type);
-                state = enemyState(enemy);
-            }
-            if (state == EnemyState::Alerted &&
-                tick >= enemy.stateTick + secondsToTicks(type.reactionTime)) {
-                become(EnemyState::Chase);
-                enemy.pathTick = tick;
-            }
-            if (state == EnemyState::Cover && (enemy.flags & kEnemyAtGoal) != 0 &&
-                tick >= enemy.waitTick) {
-                become(EnemyState::Chase);
-                enemy.pathTick = tick;
-            }
-            if (state != EnemyState::Cover) {
-                enemy.goal = enemy.lastSeen;
-            }
-            if (state == EnemyState::Chase || state == EnemyState::Alerted ||
-                state == EnemyState::Attack) {
-                // The goal moves with the target, so it is never reached for good.
-                enemy.flags &= ~kEnemyAtGoal;
-            }
-            if (state == EnemyState::Chase && hurtInFight &&
-                takeCover(scene, settings, id, enemy, type, query, filter)) {
-                state = enemyState(enemy);
-            }
-
-            // The way to go: along its path to its goal.
-            bool level = false;
-            const float gap = groundGap(transform->position, movement.halfExtents, target.position,
-                                        targetMovement.halfExtents, level);
-            const bool inReach = type.meleeDamage > 0 && visible && level && gap <= type.meleeRange;
-            Weapons* weapons = world.weapons.get(id);
-            const float distance = length(target.position - transform->position);
-            const bool inRange = weapons != nullptr && weapons->current < settings.weapons.size() &&
-                                 visible && distance <= type.attackRange;
-            const bool hiding = state == EnemyState::Cover;
-            const bool inCover = hiding && (enemy.flags & kEnemyAtGoal) != 0;
-            // Just lost, it stands looking about; in cover, it waits.
-            if (state != EnemyState::Search && !inCover && state != EnemyState::Alerted &&
-                !inReach) {
-                const Steering steering = steer(id, enemy, movement, query, filter);
-                heading = steering.heading;
-                if (hiding && (enemy.flags & kEnemyAtGoal) != 0) {
-                    enemy.waitTick = tick + secondsToTicks(type.coverTime);
-                } else if (!hiding && !steering.waiting && dot(heading, heading) == 0.0f &&
-                           visible) {
-                    // Off the mesh, or no way round: straight at the target.
-                    heading = flat(target.position - transform->position);
-                }
-            }
-
-            // Shooting: it stops closing in at its distance, and sidesteps one way then the
-            // other, turning back where there is no floor to step on.
-            if (inRange && state == EnemyState::Chase) {
-                if (distance <= type.keepDistance) {
-                    heading = {};
-                }
-                if (type.strafeTime > 0.0f) {
-                    if (tick >= enemy.strafeTick) {
-                        enemy.strafeTick =
-                            tick + std::max(secondsToTicks(type.strafeTime *
-                                                           (0.5f + randomUnit(enemy.random))),
-                                            1u);
-                        if (randomUnit(enemy.random) < 0.5f) {
-                            enemy.flags ^= kEnemyStrafeLeft;
-                        }
-                    }
-                    const Vec3 toTarget = normalize(flat(target.position - transform->position));
-                    const float sign = (enemy.flags & kEnemyStrafeLeft) != 0 ? 1.0f : -1.0f;
-                    Vec3 side = Vec3{-toTarget.y, toTarget.x, 0.0f} * sign;
-                    const Vec3 reach{0.3f, 0.3f, movement.stepHeight + 0.1f};
-                    if (!query.nearestPoint(feetOf(*transform, movement) + side * kStrafeLook,
-                                            filter, reach)) {
-                        enemy.flags ^= kEnemyStrafeLeft;
-                        side = -side;
-                    }
-                    heading = dot(heading, heading) > 0.0f
-                                  ? normalize(heading) + side * kStrafeShare
-                                  : side;
-                }
-            }
-
-            // Faces the target while it can see it (except running for cover), else the way it
-            // is going, else where it last knew the target to be.
-            if (visible && !(hiding && dot(heading, heading) > 0.0f)) {
-                look = target.position - transform->position;
-            } else if (dot(heading, heading) > 0.0f) {
-                look = heading;
-            } else if (state != EnemyState::Search) {
-                look = enemy.lastSeen - transform->position;
-            }
-            if (visible) {
-                cmd.pitch = pitchToward(length(flat(look)), look.z);
-            }
-
-            // Melee: a swing starts when the target is in reach and in front, and lands after
-            // its wind-up if the target is still there.
-            const std::uint16_t towards =
-                directionToAngle(target.position.x - transform->position.x,
-                                 target.position.y - transform->position.y);
-            const std::uint16_t facing =
-                dot(flat(look), flat(look)) > 0.0f
-                    ? turnTowards(transform->yaw, directionToAngle(look.x, look.y), turnStep(type))
-                    : transform->yaw;
-            if (inReach && state == EnemyState::Chase && tick >= enemy.readyTick &&
-                angleBetween(facing, towards) <= kSwingAim) {
-                become(EnemyState::Attack);
-                enemy.attackTick = tick + secondsToTicks(type.meleeWindup);
-                enemy.readyTick = tick + std::max(secondsToTicks(type.meleeInterval), 1u);
-            }
-            shoot = inRange && state == EnemyState::Chase && tick >= enemy.readyTick &&
-                    angleBetween(facing, towards) <= kShotAim;
-            if (state == EnemyState::Attack && tick >= enemy.attackTick) {
-                if (level && gap <= type.meleeRange + kSwingSlack) {
-                    Vec3 away = flat(target.position - transform->position);
-                    away = dot(away, away) > 0.0f ? normalize(away) : Vec3{1.0f, 0.0f, 0.0f};
-                    Damage damage;
-                    damage.amount = type.meleeDamage;
-                    damage.kind = DamageKind::Melee;
-                    damage.attacker = id;
-                    damage.push = (away + Vec3{0.0f, 0.0f, kSwingLift}) * type.meleeKnockback;
-                    applyDamage(m_state, settings.rules, enemy.target, damage);
-                }
-                become(EnemyState::Chase);
-            }
-        }
+        EnemyTick think(id, enemy, *behaviour, type, *transform, *health, scene, settings, query,
+                        filter, behaviourOf(settings, enemy.type));
+        think.wiring = wiring;
+        think.wantsCover = hurtInFight || (enemy.flags & kEnemyBurstEnded) != 0;
+        enemy.flags &= ~kEnemyBurstEnded;
+        runNode(think, 0);
+        behaviour->reached = think.reached;
+        behaviour->active = think.active;
 
         // Turns, then moves the way it is going at its pace.
+        UserCmd cmd{transform->yaw, transform->pitch, 0, 0, 0};
+        const Vec3 look = think.look;
+        const Vec3 heading = think.heading;
+        if (think.aim) {
+            cmd.pitch = pitchToward(length(flat(look)), look.z);
+        }
         if (dot(flat(look), flat(look)) > 0.0f) {
             cmd.yaw = turnTowards(transform->yaw, directionToAngle(look.x, look.y), turnStep(type));
         } else if (dot(heading, heading) > 0.0f) {
@@ -842,7 +1052,7 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
                                   turnStep(type));
         }
         if (dot(heading, heading) > 0.0f) {
-            const Vec3 way = normalize(heading) * pace;
+            const Vec3 way = normalize(heading) * think.pace;
             const SinCos facing = sinCos(cmd.yaw);
             const float forward = way.x * facing.cos + way.y * facing.sin;
             const float side = way.x * facing.sin - way.y * facing.cos;
@@ -854,10 +1064,11 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
         if (transform->position.z - movement.halfExtents.z < m_level.killHeight()) {
             kill(m_state, id, DamageKind::OutOfWorld);
         }
-        if (shoot) {
+        Weapons* weapons = world.weapons.get(id);
+        if (think.shoot && weapons != nullptr && weapons->current < settings.weapons.size() &&
+            world.transforms.has(enemy.target)) {
             // Aimed at the target's middle from where it now stands, off by up to its aim error.
             // The aim stays in its transform for the tick, so clients draw the shot as fired.
-            Weapons& weapons = *world.weapons.get(id);
             const Vec3 aim =
                 world.transforms.get(enemy.target)->position - eyePosition(movement, *transform);
             const float error = type.aimError / 360.0f * static_cast<float>(kAngleUnitsPerTurn);
@@ -868,18 +1079,18 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
             transform->yaw = static_cast<std::uint16_t>(directionToAngle(aim.x, aim.y) + yawError);
             transform->pitch = static_cast<std::int16_t>(std::clamp<std::int32_t>(
                 pitchToward(length(flat(aim)), aim.z) + pitchError, -kMaxPitch, kMaxPitch));
-            fireWeapon(scene, settings, id, weapons, *transform, m_state);
-            weapons.ammo[weapons.current] = static_cast<std::int16_t>(kMaxAmmo);
+            fireWeapon(scene, settings, id, *weapons, *transform, m_state);
+            weapons->ammo[weapons->current] = static_cast<std::int16_t>(kMaxAmmo);
             if (enemy.burstLeft == 0) {
                 enemy.burstLeft = static_cast<std::uint32_t>(std::max(type.burst, 1));
             }
             --enemy.burstLeft;
-            const float wait = enemy.burstLeft > 0 ? settings.weapons[weapons.current].fireInterval
+            const float wait = enemy.burstLeft > 0 ? settings.weapons[weapons->current].fireInterval
                                                    : type.burstPause;
             enemy.readyTick = tick + std::max(secondsToTicks(wait), 1u);
             if (enemy.burstLeft == 0) {
-                // Between bursts it may duck out of sight.
-                takeCover(scene, settings, id, enemy, type, query, filter);
+                // Between bursts it may duck out of sight (take_cover, next tick).
+                enemy.flags |= kEnemyBurstEnded;
             }
         }
     }

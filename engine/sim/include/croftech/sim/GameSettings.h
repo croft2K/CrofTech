@@ -1,6 +1,7 @@
 #pragma once
 
 #include "croftech/core/Console.h"
+#include "croftech/sim/BehaviourTree.h"
 #include "croftech/sim/PlayerMovement.h"
 #include "croftech/sim/UserCmd.h"
 #include "croftech/sim/Weapons.h"
@@ -58,6 +59,7 @@ struct WeaponSettings {
 
 // Kinds of enemy a game can have.
 inline constexpr std::uint32_t kMaxEnemyTypes = 64;
+inline constexpr std::uint32_t kNoBehaviour = 0xFFFFFFFFu;
 
 // What an enemy plays by: the numbers of its type (EnemySettings), with any that the one enemy
 // has of its own (EnemyOverrides, sim/Enemy.h) in their place. Plain data, so working one out
@@ -118,6 +120,11 @@ struct EnemySettings : EnemyTuning {
     // nullopt picks one by its place in the game's list.
     std::optional<Vec3> colour;
     std::string weapon; // the name of its weapon (weaponIndex); empty has no ranged attack
+    // The tree it decides by, behaviours/<name>.behaviour; empty is the standard one. Found by
+    // loadBehaviourTrees, which sets its place in GameSettings::behaviours (kNoBehaviour for the
+    // standard tree).
+    std::string behaviour;
+    std::uint32_t behaviourIndex = kNoBehaviour;
 
     // The name its sound files start with.
     std::string_view soundSet() const { return sounds.empty() ? name : sounds; }
@@ -149,8 +156,9 @@ void setEnemySetting(EnemyTuning& tuning, std::uint32_t setting, float value);
 struct GameSettings {
     MovementSettings movement;
     RulesSettings rules;
-    std::vector<WeaponSettings> weapons; // at most kMaxWeapons, in number-key order
-    std::vector<EnemySettings> enemies;  // at most kMaxEnemyTypes
+    std::vector<WeaponSettings> weapons;   // at most kMaxWeapons, in number-key order
+    std::vector<EnemySettings> enemies;    // at most kMaxEnemyTypes
+    std::vector<BehaviourTree> behaviours; // the trees enemy types name (loadBehaviourTrees)
 };
 
 inline constexpr std::string_view kRulesCVarPrefix = "rules.";

@@ -1,4 +1,5 @@
 add_library(ct_sim STATIC
+    include/croftech/sim/BehaviourTree.h
     include/croftech/sim/CollisionScene.h
     include/croftech/sim/CollisionWorld.h
     include/croftech/sim/ComponentPool.h
@@ -21,11 +22,14 @@ add_library(ct_sim STATIC
     include/croftech/sim/UserCmd.h
     include/croftech/sim/Weapons.h
     include/croftech/sim/World.h
+    src/BehaviourTree.cpp
+    src/Behaviours.cpp
     src/CollisionScene.cpp
     src/CollisionWorld.cpp
     src/Damage.cpp
     src/Encounters.cpp
     src/Enemies.cpp
+    src/EnemyTick.h
     src/Firing.cpp
     src/GameLevel.cpp
     src/GameSettings.cpp

@@ -1,0 +1,21 @@
+# The standard enemy, which the charger and gunner both are: what each does comes from its
+# settings, as a swing needs melee_damage, shooting a weapon, and running for cover a cover_chance.
+sequence
+    # Calm, it watches and listens for players.
+    see
+    hear
+    fallback
+        sequence
+            has_target
+            fallback
+                react
+                take_cover
+                strike
+                # Fights at a distance with a weapon.
+                parallel
+                    chase
+                    keep_distance
+                    strafe
+                    fire_burst
+                search
+        patrol

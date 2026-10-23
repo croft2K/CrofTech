@@ -33,6 +33,7 @@ struct World {
     ComponentPool<Projectile, kMaxEntities> projectiles;
     ComponentPool<Enemy, kMaxEntities> enemies;
     ComponentPool<EnemyOverrides, kMaxEntities> enemyOverrides;
+    ComponentPool<EnemyBehaviour, kMaxEntities> enemyBehaviours;
     ComponentPool<LevelEntityRef, kMaxEntities> levelEntities;
     ComponentPool<Trigger, kMaxEntities> triggers;
     ComponentPool<Checkpoint, kMaxEntities> checkpoints;
@@ -62,6 +63,7 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.projectiles);
     fn(world.enemies);
     fn(world.enemyOverrides);
+    fn(world.enemyBehaviours);
     fn(world.levelEntities);
     fn(world.triggers);
     fn(world.checkpoints);

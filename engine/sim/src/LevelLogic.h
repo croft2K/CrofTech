@@ -12,6 +12,7 @@
 namespace ct {
 
 class CollisionScene;
+struct EnemyTick;
 class NavQueries;
 struct ScriptHost;
 class NavQuery;
@@ -46,8 +47,9 @@ public:
     // Taken pickups come back when their time is up, and living players take the ones they touch
     // and need, in input-slot order.
     void runPickups(const GameSettings& settings);
-    // Enemies look, think and move (Enemies.cpp): after players have moved, so they act on where
-    // players are now. The dead fall, and are taken away when their corpse time is up.
+    // Enemies look, think (each by its behaviour tree) and move (Enemies.cpp): after players have
+    // moved, so they act on where players are now. The dead fall, and are taken away when their
+    // corpse time is up.
     void runEnemies(const CollisionScene& scene, const GameSettings& settings, NavQueries& queries);
     // Encounters end waves whose enemies are dead (or nearly) and start the next after their
     // delay, and spawners send the enemies waiting, each when its spot is clear and its encounter
@@ -78,9 +80,8 @@ private:
     void alertEnemy(std::uint32_t index, Enemy& enemy, EntityId target);
     // Gives up its target and walks back to its patrol, or its post.
     void goBack(Enemy& enemy);
-    // Having lost its target and got to where it last knew it to be, it looks about there (or
-    // goes back, for kinds that don't search).
-    void startSearch(Enemy& enemy, const EnemyTuning& type);
+    // Having lost its target and got to where it last knew it to be, it looks about there.
+    void startSearch(Enemy& enemy);
     // As its kind's cover chance says, runs for a spot hidden from its target. Whether it does.
     bool takeCover(const CollisionScene& scene, const GameSettings& settings, EntityId id,
                    Enemy& enemy, const EnemyTuning& type, NavQuery& query, const NavFilter& filter);
@@ -94,6 +95,28 @@ private:
                    const NavFilter& filter);
     // The living player nearest the point, if any.
     EntityId nearestPlayer(Vec3 point) const;
+
+    // Behaviour trees (Behaviours.cpp): runs a node of the enemy's tree and what is under it.
+    BehaviourStatus runNode(EnemyTick& tick, std::uint32_t index);
+    // The enemy's conditions and actions (Enemies.cpp).
+    BehaviourStatus runEnemyNode(EnemyTick& tick, const BehaviourNode& node);
+    // Works out what the enemy makes of its target this tick, once (and again for a new target),
+    // remembering where it saw it.
+    void viewTarget(EnemyTick& tick);
+    // Faces the target while it can see it (unless hiding and on the move), else the way it is
+    // going, else where it last knew the target to be.
+    void faceTarget(EnemyTick& tick, bool hiding);
+    BehaviourStatus see(EnemyTick& tick);
+    BehaviourStatus hear(EnemyTick& tick);
+    BehaviourStatus react(EnemyTick& tick);
+    BehaviourStatus hide(EnemyTick& tick);
+    BehaviourStatus strike(EnemyTick& tick);
+    BehaviourStatus chase(EnemyTick& tick);
+    BehaviourStatus keepDistance(EnemyTick& tick);
+    BehaviourStatus strafe(EnemyTick& tick);
+    BehaviourStatus fireBurst(EnemyTick& tick);
+    BehaviourStatus search(EnemyTick& tick);
+    BehaviourStatus patrol(EnemyTick& tick);
 
     // Encounters (Encounters.cpp).
     // The encounter of the spawner that sent the enemy, if any.

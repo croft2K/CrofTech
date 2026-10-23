@@ -39,6 +39,10 @@ ct_add_fuzzer(ct_script_fuzz
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/script ${PROJECT_SOURCE_DIR}/content/scripts
     SOURCES ScriptFuzz.cpp
     LIBS ct::script)
+ct_add_fuzzer(ct_behaviour_fuzz
+    CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/behaviour ${PROJECT_SOURCE_DIR}/content/behaviours
+    SOURCES BehaviourTreeFuzz.cpp
+    LIBS ct::sim)
 ct_add_fuzzer(ct_protocol_fuzz
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/protocol
     SOURCES ProtocolFuzz.cpp

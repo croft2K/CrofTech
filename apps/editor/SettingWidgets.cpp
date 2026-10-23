@@ -10,6 +10,7 @@ namespace ct {
 namespace {
 
 constexpr std::string_view kLookKeys[] = {"description", "colour", "sounds"};
+constexpr std::string_view kBehaviourKeys[] = {"behaviour"};
 constexpr std::string_view kBodyKeys[] = {"health",       "width",      "height",
                                           "eye_height",   "speed",      "walk_speed",
                                           "acceleration", "turn_speed", "corpse_time"};
@@ -22,9 +23,10 @@ constexpr std::string_view kRangedKeys[] = {"weapon", "attack_range", "keep_dist
 constexpr std::string_view kSearchKeys[] = {"search_time", "search_radius", "cover_chance",
                                             "cover_time", "cover_range"};
 constexpr SettingGroup kEnemyGroups[] = {
-    {"Look and sound", kLookKeys},  {"Body and movement", kBodyKeys},
-    {"Senses", kSenseKeys},         {"Melee attack", kMeleeKeys},
-    {"Ranged attack", kRangedKeys}, {"Searching and cover", kSearchKeys},
+    {"Look and sound", kLookKeys},        {"Behaviour", kBehaviourKeys},
+    {"Body and movement", kBodyKeys},     {"Senses", kSenseKeys},
+    {"Melee attack", kMeleeKeys},         {"Ranged attack", kRangedKeys},
+    {"Searching and cover", kSearchKeys},
 };
 
 // Decimal places that give three significant figures, for a value of this size.

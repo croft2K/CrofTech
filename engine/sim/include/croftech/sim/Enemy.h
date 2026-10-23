@@ -3,6 +3,7 @@
 #include "croftech/core/Math.h"
 #include "croftech/core/Schema.h"
 #include "croftech/level/Level.h"
+#include "croftech/sim/BehaviourTree.h"
 #include "croftech/sim/EntityId.h"
 
 #include <array>
@@ -11,8 +12,9 @@
 
 namespace ct {
 
-// What an enemy is doing. Each tick its AI (runEnemies, sim/Enemies.h) reads the state, looks
-// around, and turns it into an input command that moves it with the player movement code.
+// What an enemy is doing. Each tick its behaviour tree (sim/BehaviourTree.h) decides, its actions
+// carrying on from what the state says, and runEnemies turns that into an input command that
+// moves it with the player movement code.
 enum class EnemyState : std::uint32_t {
     Idle,    // standing at its post or a patrol point, watching its view cone
     Alerted, // has noticed a player, and turns to them until its reaction time is up
@@ -33,6 +35,8 @@ enum EnemyFlags : std::uint32_t {
     kEnemyAmbush = 1u << 4,     // deaf: wakes only on seeing a player or being hurt
     kEnemyStrafeLeft = 1u << 5, // sidestepping to its left while it shoots
     kEnemyAtGoal = 1u << 6,     // standing at its goal, or as near as the mesh lets it get
+    kEnemyGaveUp = 1u << 7,     // lost its target and stopped chasing: it searches next
+    kEnemyBurstEnded = 1u << 8, // ended a burst last tick, so may run for cover
 };
 
 // An enemy's mind: its own body is the Transform, PlayerMotion and Health it also has. Enemies
@@ -72,8 +76,9 @@ struct Enemy {
 
 template <>
 struct Schema<Enemy> {
-    static constexpr std::array<std::string_view, 7> kFlagNames{
-        "alert_fired", "death_fired", "has_path", "ride_start", "ambush", "strafe_left", "at_goal"};
+    static constexpr std::array<std::string_view, 9> kFlagNames{
+        "alert_fired", "death_fired", "has_path", "ride_start", "ambush",
+        "strafe_left", "at_goal",     "gave_up",  "burst_ended"};
     static constexpr FieldInfo kFields[] = {
         CT_FIELD(Enemy, type).withDescription("Which of the game's enemies it is"),
         CT_FIELD(Enemy, state)
@@ -117,6 +122,38 @@ struct Schema<Enemy> {
     static constexpr TypeSchema value{"enemy", sizeof(Enemy), kFields};
 };
 static_assert(describesEveryByte(Schema<Enemy>::value));
+
+// An enemy's place in its behaviour tree: the nodes it reached last tick, so a node knows whether
+// it carries on or starts afresh, and the values nodes that remember keep (BehaviourNode::memory).
+// Every enemy has one.
+struct EnemyBehaviour {
+    // A bit for each node, by its index in the tree.
+    std::array<std::uint32_t, kMaxBehaviourNodes / 32> reached{};
+    std::array<std::uint32_t, kMaxBehaviourNodes / 32> active{}; // reached and didn't fail
+    std::array<std::uint32_t, kMaxBehaviourMemory> memory{};
+};
+
+template <>
+struct Schema<EnemyBehaviour> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD_ELEMENT(EnemyBehaviour, reached, 0), CT_FIELD_ELEMENT(EnemyBehaviour, reached, 1),
+        CT_FIELD_ELEMENT(EnemyBehaviour, reached, 2), CT_FIELD_ELEMENT(EnemyBehaviour, reached, 3),
+        CT_FIELD_ELEMENT(EnemyBehaviour, active, 0),  CT_FIELD_ELEMENT(EnemyBehaviour, active, 1),
+        CT_FIELD_ELEMENT(EnemyBehaviour, active, 2),  CT_FIELD_ELEMENT(EnemyBehaviour, active, 3),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 0),  CT_FIELD_ELEMENT(EnemyBehaviour, memory, 1),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 2),  CT_FIELD_ELEMENT(EnemyBehaviour, memory, 3),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 4),  CT_FIELD_ELEMENT(EnemyBehaviour, memory, 5),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 6),  CT_FIELD_ELEMENT(EnemyBehaviour, memory, 7),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 8),  CT_FIELD_ELEMENT(EnemyBehaviour, memory, 9),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 10), CT_FIELD_ELEMENT(EnemyBehaviour, memory, 11),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 12), CT_FIELD_ELEMENT(EnemyBehaviour, memory, 13),
+        CT_FIELD_ELEMENT(EnemyBehaviour, memory, 14), CT_FIELD_ELEMENT(EnemyBehaviour, memory, 15),
+    };
+    static constexpr TypeSchema value{"enemy_behaviour", sizeof(EnemyBehaviour), kFields};
+};
+static_assert(kMaxBehaviourNodes == 128 && kMaxBehaviourMemory == 16,
+              "one schema field per element");
+static_assert(describesEveryByte(Schema<EnemyBehaviour>::value));
 
 // Settings of its type that this one enemy has values of its own for, as the enemy or spawner in
 // the level sets them: a calmer gunner here, a faster charger there. An enemy with none has no

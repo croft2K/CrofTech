@@ -1,0 +1,9 @@
+# note
+fallback # here
+  invert
+    chance 0.3
+  parallel
+    chase
+    strafe
+  time_limit 4
+    search

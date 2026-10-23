@@ -241,13 +241,16 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    own settings". Each enemy keeps them in an `EnemyOverrides` component (up to 16), laid over its
    type's settings whenever they are read, so tuning the type still reaches the rest. The look
    (description, colour, sounds) stays the type's.
-3. **Behaviour runtime.** Behaviour trees (sequence, fallback, parallel, decorators, conditions,
-   actions) run in the simulation each tick, deterministic, with no per-tick allocation and each
-   enemy's running state in a fixed-size component. The nodes are the abilities enemies have now:
-   see, hear, notice; move to, patrol, chase, keep distance, take cover, search; strike, fire a
-   burst, strafe; health below, target visible, time in state, a random chance. A Luau script can
-   be a node for an odd custom decision. The charger and gunner are rebuilt as trees and must play
-   as they do now (checked by the existing enemy tests).
+3. **Behaviour runtime.** *Done (2026-10-23).* Behaviour trees (sequence, fallback, parallel;
+   invert, succeed, cooldown, time limit; has target, target visible, in reach, in range, within,
+   health below, chance; see, hear, react, take cover, strike, chase, keep distance, strafe, fire
+   a burst, search, patrol, wait) run in the simulation each tick, read again from the root,
+   deterministic, with no per-tick allocation and each enemy's running state in a fixed-size
+   component. Trees are text files, `behaviours/<name>.behaviour` (fuzzed), named by each enemy
+   type, and documented for designers in `docs/Behaviours.md`. The charger and gunner share one
+   standard tree, in which their settings decide what each does, and play as before (the
+   existing enemy tests pass unchanged). Still to come with step 4: a Luau script as a node, for
+   an odd custom decision.
 4. **Behaviour graph editor.** A node-graph window (imgui-node-editor, MIT, from vcpkg) to build
    and edit a type's tree, with problems shown on the nodes; in play, each enemy's running nodes
    light up (alongside "Show what enemies think").

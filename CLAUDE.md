@@ -70,7 +70,16 @@ its own: a property with the key of the kind's file (`speed 9`), read by `GameLe
 enemy's `EnemyOverrides` (`sim/Enemy.h`, up to 16, as places in `enemySettings()`), which
 `enemyTuning` lays over its kind's `EnemyTuning` each time it is asked, so tuning the kind still
 reaches it. Enemies are driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
-`sim/Enemy.h`). Each stands at its post, or walks its patrol (`patrol` names a `patrol_point`,
+`sim/Enemy.h`), which runs each type's behaviour tree every tick (`sim/BehaviourTree.h`, written
+for designers in `docs/Behaviours.md`): `behaviours/<name>.behaviour` through the content layers,
+named by the type's `behaviour` setting and read by `loadBehaviourTrees` (fuzzed), else the
+built-in standard tree (`content/behaviours/standard.behaviour`, the charger's and gunner's).
+`sim/src/Behaviours.cpp` walks composites, decorators and the generic conditions; the enemy's
+conditions and actions (see, hear, react, take_cover, strike, chase, keep_distance, strafe,
+fire_burst, search, patrol) are in `Enemies.cpp`, carrying on from tick to tick through the
+`Enemy` component's state, and `EnemyBehaviour` keeps the nodes reached last tick (a node not
+reached then starts afresh), those that didn't fail (for the editor to light up) and what nodes
+like `wait` and `cooldown` remember. With the standard tree, each stands at its post, or walks its patrol (`patrol` names a `patrol_point`,
 each point names its `next` and has a wait and on_arrive), until it sees a player in its view
 cone with nothing in between, hears one shoot or run nearby (unless it lies in ambush), is hurt,
 or gets the alert input (on_alert); then it reacts, chases along the navigation mesh (opening

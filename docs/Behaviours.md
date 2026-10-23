@@ -1,0 +1,140 @@
+# Behaviours
+
+An enemy decides what to do with a behaviour tree: a tree of small nodes, read from the top every
+tick (128 times a second). Each enemy type names its tree with the `behaviour` setting in its
+file (the Game data window shows it under Behaviour); a type that names none, or one that won't
+load, uses the standard tree, which the charger and gunner both use.
+
+Until the graph window comes (M4 step 4), trees are text files: `behaviours/<name>.behaviour`,
+through the content layers like everything else, so a game can have its own or replace the
+engine's.
+
+## How a tree runs
+
+Every node, when it runs, **succeeds**, **fails** or is still **running**.
+
+- **Composites** choose which of their children run:
+  - `sequence` runs its children in turn while each succeeds: "do this, then this".
+  - `fallback` tries its children in turn until one doesn't fail: "try this, or else this".
+  - `parallel` runs all its children every tick, and does what its first one does; the others
+    act beside it (chasing while shooting).
+- **Decorators** change what their one child does: `invert`, `succeed`, `cooldown`,
+  `time_limit`.
+- **Conditions** ask a question: `has_target`, `target_visible`, `health_below 0.3`...
+- **Actions** do something: `chase`, `strike`, `fire_burst`, `patrol`...
+
+The whole tree is read again from the top every tick. So a condition at the start of a sequence
+keeps being checked: the moment it stops holding, the sequence fails and something else takes
+over. An action carries on from tick to tick (a chase keeps its path, a search its spot) for as
+long as it keeps being reached.
+
+The settings of the enemy's type (and any it has of its own) say how well it does each thing:
+`strike` swings for `melee_damage`, `fire_burst` shoots in bursts of `burst`, `take_cover` goes
+by `cover_chance`. An action whose setting gives the enemy nothing to do fails: a type with no
+weapon never fires, one with no `melee_damage` never swings.
+
+## The file
+
+One node a line. A node's children are the lines under it indented further (with spaces, the same
+amount for each child). A node's setting, if it takes one, follows its name: `wait 2`. `#` starts
+a comment, which belongs to the node below it (or the one on its line).
+
+The standard tree, `content/behaviours/standard.behaviour`:
+
+```
+sequence
+    # Calm, it watches and listens for players.
+    see
+    hear
+    fallback
+        sequence
+            has_target
+            fallback
+                react
+                take_cover
+                strike
+                # Fights at a distance with a weapon.
+                parallel
+                    chase
+                    keep_distance
+                    strafe
+                    fire_burst
+                search
+        patrol
+```
+
+Read from the top: it always looks and listens. Then, if it is after a player, it reacts (for a
+moment after first noticing them), or hides (if it just took a hit or ended a burst and decides
+to), or swings (if the player is in reach), or chases them, keeping its distance, sidestepping and
+shooting as it goes; once it has lost them, it searches. With no one to fight, it patrols.
+
+A tree has at most 128 nodes, 32 deep, and 16 nodes that remember something (`cooldown`,
+`time_limit`, `chance`, `wait`). A tree that breaks a rule doesn't load, and a warning names the
+line.
+
+## Making a new one
+
+1. Copy `content/behaviours/standard.behaviour` to `games/<game>/content/behaviours/<name>.behaviour`
+   and change it.
+2. In the Game data window, set the enemy type's `behaviour` to `<name>` (or make a new type from
+   the gunner first, so the gunner stays as it is).
+3. Play. Problems with the file are in the console.
+
+Some ideas:
+
+```
+# A coward: fights until badly hurt, then runs back to its post.
+            sequence
+                has_target
+                invert
+                    health_below 0.3
+                ...
+```
+
+```
+# Hesitant: stands a second before every chase.
+            sequence
+                has_target
+                wait 1
+                chase
+```
+
+```
+# Gives up after ten seconds of chasing.
+                time_limit 10
+                    chase
+```
+
+## Nodes
+
+| Node | Setting | What it does |
+|---|---|---|
+| `sequence` | | Runs its children in turn while each succeeds: fails when one fails, runs while one runs, succeeds when all have |
+| `fallback` | | Tries its children in turn until one doesn't fail, and does what that one does; fails if all do |
+| `parallel` | | Runs all its children every tick and does what its first does |
+| `invert` | | Success is failure and failure success |
+| `succeed` | | Failure is success, so a sequence carries on past it |
+| `cooldown` | seconds (2) | After its child succeeds, fails for this long without running it |
+| `time_limit` | seconds (5) | Fails once its child has run this long without a break |
+| `has_target` | | Whether it is after a living player |
+| `target_visible` | | Whether it can see that player |
+| `target_in_reach` | | Whether that player is in reach of a swing, and in sight |
+| `target_in_range` | | Whether it has a weapon and that player is in sight within `attack_range` |
+| `target_within` | metres (5) | Whether that player is within this distance |
+| `health_below` | share (0.5) | Whether its health is below this share of its type's |
+| `chance` | share (0.5) | Succeeds with this chance, decided when first reached and kept while it keeps being reached |
+| `see` | | Calm or searching, notices the nearest player in its view cone. Always succeeds |
+| `hear` | | Calm, searching or having lost its target, notices players shooting or running nearby (unless it lies in ambush). Always succeeds |
+| `react` | | Just after noticing a player, stands and turns to them for `reaction_time`; fails otherwise |
+| `take_cover` | | Just hurt in a fight or done with a burst, may (`cover_chance`) run somewhere the target can't see and stay `cover_time`; fails when not hiding |
+| `strike` | | With the target in reach, swings at it; succeeds as a swing lands, fails out of reach |
+| `chase` | | Goes after the target, or to where it was last seen; fails once there (or long after) without finding it |
+| `keep_distance` | | Chasing with the target in range, stops closing in at `keep_distance` |
+| `strafe` | | Chasing with the target in range, sidesteps one way then the other (`strafe_time`) |
+| `fire_burst` | | Chasing with the target in range, shoots in bursts |
+| `search` | | Having lost its target, looks about where it was last seen for `search_time` |
+| `patrol` | | Forgets its target and walks its patrol, or back to its post; always running |
+| `wait` | seconds (1) | Stands still this long, then succeeds |
+
+`client.show_ai 1` (Play > Show what enemies think in the editor) labels each enemy with what it is
+doing. Each enemy also records which nodes ran each tick, for the graph window to light up.

@@ -159,6 +159,8 @@ void registerEnemyCVars(Console& console, std::string_view enemy) {
         }
     }
     console.add(CVar::makeString(prefix + "description", "", "a line for level designers"));
+    console.add(CVar::makeString(prefix + "behaviour", "standard",
+                                 "the tree it decides by, behaviours/<name>.behaviour"));
     console.add(CVar::makeString(
         prefix + "sounds", "",
         "the name its sound files start with (sounds/<name>_alert.wav); empty is its own"));
@@ -197,6 +199,7 @@ EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
         }
     }
     settings.description = findCVar(console, prefix + "description").text();
+    settings.behaviour = findCVar(console, prefix + "behaviour").text();
     // Ones that won't do are left to their defaults.
     if (const std::string& sounds = findCVar(console, prefix + "sounds").text();
         isContentName(sounds)) {

@@ -34,6 +34,7 @@ add_executable(ct_unit_tests
     unit/script/ScriptLibraryTests.cpp
     unit/script/ScriptProgramTests.cpp
     unit/script/ScriptRunnerTests.cpp
+    unit/sim/BehaviourTreeTests.cpp
     unit/sim/CollisionWorldTests.cpp
     unit/sim/GameSettingsTests.cpp
     unit/sim/LevelNavigationTests.cpp
@@ -56,6 +57,7 @@ ct_add_test(ct_unit_tests)
 # Headless simulation tests: whole-game behaviour with no window or GPU.
 add_executable(ct_sim_tests
     unit/Main.cpp
+    sim/BehaviourTests.cpp
     sim/DeterminismTests.cpp
     sim/EncounterTests.cpp
     sim/EnemyTests.cpp

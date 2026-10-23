@@ -1,0 +1,4 @@
+sequence
+    see
+    cooldown 2
+        wait 0.5
