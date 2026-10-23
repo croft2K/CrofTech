@@ -79,6 +79,11 @@ private:
     void drawScriptButtons(EditorDocument& document, std::size_t index);
     // An enemy's or a spawner's type, described, with a button to edit it in the Game data window.
     void drawEnemyType(const LevelEntity& entity);
+    // The settings of its type an enemy, or a spawner's enemies, have values of their own for,
+    // and a menu of the rest to add.
+    void drawOwnSettings(EditorDocument& document, std::size_t index);
+    // The game's type of an enemy or spawner, or nullptr if the game has no such type.
+    const EnemySettings* enemyTypeOf(const LevelEntity& entity) const;
     // The entity's outputs, as a table of event, target, input and delay.
     void drawEntityOutputs(EditorDocument& document, std::size_t index);
     void drawMultipleInspector(EditorDocument& document);
@@ -93,8 +98,9 @@ private:
     bool textField(const char* label, int field, const std::string& current, std::string& result,
                    const char* hint = nullptr);
 
-    // The brush as it was when an inspector drag began, so the drag undoes in one step.
+    // The brush or entity as it was when an inspector drag began, so the drag undoes in one step.
     std::optional<Brush> m_brushBefore;
+    std::optional<LevelEntity> m_entityBefore;
     std::vector<LevelItem> m_editing;
     int m_activeField = -1;
     std::string m_fieldText;

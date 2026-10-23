@@ -118,6 +118,60 @@ struct Schema<Enemy> {
 };
 static_assert(describesEveryByte(Schema<Enemy>::value));
 
+// Settings of its type that this one enemy has values of its own for, as the enemy or spawner in
+// the level sets them: a calmer gunner here, a faster charger there. An enemy with none has no
+// EnemyOverrides.
+inline constexpr std::uint32_t kMaxEnemyOverrides = 16;
+struct EnemyOverrides {
+    std::uint32_t count = 0;
+    std::array<std::uint8_t, kMaxEnemyOverrides> settings{}; // places in enemySettings()
+    std::array<float, kMaxEnemyOverrides> values{};          // as setEnemySetting takes them
+};
+
+template <>
+struct Schema<EnemyOverrides> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(EnemyOverrides, count)
+            .withRange(0, kMaxEnemyOverrides)
+            .withDescription("Settings of its type it has its own values for"),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 0),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 1),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 2),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 3),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 4),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 5),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 6),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 7),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 8),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 9),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 10),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 11),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 12),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 13),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 14),
+        CT_FIELD_ELEMENT(EnemyOverrides, settings, 15),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 0),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 1),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 2),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 3),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 4),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 5),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 6),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 7),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 8),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 9),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 10),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 11),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 12),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 13),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 14),
+        CT_FIELD_ELEMENT(EnemyOverrides, values, 15),
+    };
+    static constexpr TypeSchema value{"enemy_overrides", sizeof(EnemyOverrides), kFields};
+};
+static_assert(kMaxEnemyOverrides == 16, "one schema field per override");
+static_assert(describesEveryByte(Schema<EnemyOverrides>::value));
+
 inline EnemyState enemyState(const Enemy& enemy) {
     return enemy.state < kEnemyStateCount ? static_cast<EnemyState>(enemy.state) : EnemyState::Idle;
 }

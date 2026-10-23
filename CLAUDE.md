@@ -65,7 +65,11 @@ from the game's list: `enemies` in `game.cfg`, each kind a file `enemies/<name>.
 variables `enemy.<name>.<setting>`, which also give its description, the colour of its box and
 the sound set it uses, so a copy of the gunner sounds like one) are bodies moved by the player movement code at their kind's
 size and speed (`movementOf` in `sim/Enemies.h`; every system that touches bodies uses each one's
-own box), driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
+own box). One enemy or spawner can give any number setting of its kind, or its weapon, a value of
+its own: a property with the key of the kind's file (`speed 9`), read by `GameLevel` into the
+enemy's `EnemyOverrides` (`sim/Enemy.h`, up to 16, as places in `enemySettings()`), which
+`enemyTuning` lays over its kind's `EnemyTuning` each time it is asked, so tuning the kind still
+reaches it. Enemies are driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
 `sim/Enemy.h`). Each stands at its post, or walks its patrol (`patrol` names a `patrol_point`,
 each point names its `next` and has a wait and on_arrive), until it sees a player in its view
 cone with nothing in between, hears one shoot or run nearby (unless it lies in ambush), is hurt,
@@ -125,7 +129,8 @@ to markers and to play (Shift+F1 frees the mouse while playing), and saving writ
 game's content folder, where a file the engine's content also has holds just the settings the game
 changes (shown in gold, each with a Reset). "New type from this" copies an enemy type into a file
 of the game's own and adds it to `game.cfg`; Create > Enemy lists the types, and the inspector of
-an enemy or spawner has Edit type. `setConfigValue` (`core/ConfigFile.h`) changes a setting's
+an enemy or spawner has Edit type and its own settings (a menu of the type's, then a row each to
+drag or reset; `apps/editor/SettingWidgets` drags numbers in round steps for both windows). `setConfigValue` (`core/ConfigFile.h`) changes a setting's
 line and keeps the file's comments. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
 drags preview live and record one command when released, and edits of several selected items are

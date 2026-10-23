@@ -3,10 +3,12 @@
 #include "croftech/core/ConfigFile.h"
 #include "croftech/level/BrushGeometry.h"
 #include "croftech/level/EntityClasses.h"
+#include "croftech/sim/GameSettings.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <optional>
 
 namespace ct {
 namespace {
@@ -106,12 +108,31 @@ Vec3 BodySizes::halfExtents(const LevelEntity& entity) const {
         return player;
     }
     const std::string* type = findProperty(entity, "type");
+    Vec3 half = player;
     if (type == nullptr || type->empty()) {
-        return enemies.front().second;
+        half = enemies.front().second;
+    } else {
+        const auto found = std::find_if(enemies.begin(), enemies.end(),
+                                        [&](const auto& kind) { return kind.first == *type; });
+        if (found == enemies.end()) {
+            return player;
+        }
+        half = found->second;
     }
-    const auto found = std::find_if(enemies.begin(), enemies.end(),
-                                    [&](const auto& kind) { return kind.first == *type; });
-    return found != enemies.end() ? found->second : player;
+    // Its own size, if it has one, as the game reads it (GameLevel).
+    const auto own = [&](std::string_view key, float& halfSize) {
+        const std::string* text = findProperty(entity, key);
+        const std::optional<std::uint32_t> setting = findEnemySetting(key);
+        float value = 0.0f;
+        if (text != nullptr && setting && parseFloat(*text, value)) {
+            const EnemySetting& info = enemySettings()[*setting];
+            halfSize = std::clamp(value, info.minimum, info.maximum) * 0.5f;
+        }
+    };
+    own("width", half.x);
+    own("width", half.y);
+    own("height", half.z);
+    return half;
 }
 
 std::optional<Aabb> entityMarker(const LevelEntity& entity, const BodySizes& bodies) {

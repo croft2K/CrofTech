@@ -235,9 +235,12 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    already edits weapons, movement and rules (most of step 6). Pickup types wait: presets and each
    pickup's own properties cover them for now. Props wait for M5's models. A type's behaviour is
    step 3, and a script on a type comes with it, as a behaviour node.
-2. **Per-entity overrides.** Any property of a type can be set on one placed entity or spawner
-   (a calmer gunner here, a faster charger there) without a new type. Overrides are kept with
-   each entity in its components.
+2. **Per-entity overrides.** *Done (2026-10-23).* Any number setting of an enemy type, and its
+   weapon, can be set on one placed enemy or spawner (a calmer gunner here, a faster charger
+   there) without a new type: a property with the setting's key, edited in the inspector's "Its
+   own settings". Each enemy keeps them in an `EnemyOverrides` component (up to 16), laid over its
+   type's settings whenever they are read, so tuning the type still reaches the rest. The look
+   (description, colour, sounds) stays the type's.
 3. **Behaviour runtime.** Behaviour trees (sequence, fallback, parallel, decorators, conditions,
    actions) run in the simulation each tick, deterministic, with no per-tick allocation and each
    enemy's running state in a fixed-size component. The nodes are the abilities enemies have now:

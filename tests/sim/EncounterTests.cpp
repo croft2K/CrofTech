@@ -315,3 +315,21 @@ TEST_CASE("the encounter test level shuts the way in, and opens it and the way o
     CHECK(door("way_in") == ct::MoverPhase::AtEnd);
     CHECK(door("way_on") == ct::MoverPhase::AtEnd);
 }
+
+TEST_CASE("a spawner's own settings for its kind go to every enemy it sends") {
+    SimHarness sim(arenaLevel(arena({{"start_on", "1"}}), {spawnerAt(-5.0f, 0.0f,
+                                                                     {{"encounter", "arena"},
+                                                                      {"count", "2"},
+                                                                      {"health", "7"},
+                                                                      {"width", "1.5"}})}),
+                   withCharger());
+    CHECK(sim.level().warnings().empty());
+    sim.spawn({12.0f, 12.0f, 0.0f});
+    sim.run({}, kSecond);
+    const std::vector<ct::EntityId> sent = sentAlive(sim);
+    REQUIRE(sent.size() == 2);
+    for (const ct::EntityId id : sent) {
+        CHECK(sim.state().world.healths.get(id)->health == 7);
+        CHECK(ct::movementOf(sim.state().world, id, withCharger()).halfExtents.x == 0.75f);
+    }
+}

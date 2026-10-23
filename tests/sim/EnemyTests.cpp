@@ -618,3 +618,56 @@ TEST_CASE("enemies of kinds the game doesn't have are reported, and left out") {
     CHECK(good.warnings().empty());
     CHECK(good.startState().world.enemies.size() == 1);
 }
+
+TEST_CASE("an enemy can have settings of its own, and keeps its kind's for the rest") {
+    ct::GameSettings settings = withGunner();
+    ct::LevelEntity own = enemyAt(3.0f, 4.0f, 0.0f);
+    own.properties.push_back({"speed", "9"});
+    own.properties.push_back({"health", "250"});
+    own.properties.push_back({"height", "3"});
+    own.properties.push_back({"weapon", "gun"});
+    SimHarness sim(levelWith({arenaFloor()}, own), settings);
+    CHECK(sim.level().warnings().empty());
+    sim.run({}, 1);
+    const ct::World& world = sim.state().world;
+    const ct::EntityId id = sim.level().entity(0)->id;
+    REQUIRE(world.enemyOverrides.get(id) != nullptr);
+    CHECK(world.enemyOverrides.get(id)->count == 4);
+    CHECK(world.healths.get(id)->health == 250);
+    const ct::MovementSettings movement = ct::movementOf(world, id, settings);
+    CHECK(movement.maxGroundSpeed == 9.0f);
+    CHECK(movement.halfExtents.z == 1.5f);
+    CHECK(std::fabs(enemyTransform(sim).position.z - 1.5f) < 0.01f);
+    // The charger has no gun of its own; this one has the gunner's.
+    REQUIRE(world.weapons.get(id) != nullptr);
+    CHECK(world.weapons.get(id)->current == 0);
+
+    // Its kind changing changes the rest, but not its own.
+    settings.enemies[0].sightRange = 12.0f;
+    settings.enemies[0].speed = 3.0f;
+    const ct::EnemyTuning tuning = *ct::enemyTuning(world, id, settings);
+    CHECK(tuning.sightRange == 12.0f);
+    CHECK(tuning.speed == 9.0f);
+
+    // Others of its kind are as the kind says.
+    SimHarness plain(levelWith({arenaFloor()}, enemyAt(3.0f, 4.0f, 0.0f)), withGunner());
+    plain.run({}, 1);
+    CHECK(plain.state().world.enemyOverrides.size() == 0);
+    CHECK(plain.state().world.weapons.get(plain.level().entity(0)->id) == nullptr);
+}
+
+TEST_CASE("an enemy's own settings that won't do are reported, and out of range ones held in it") {
+    ct::LevelEntity own = enemyAt(0.0f, 0.0f, 0.0f);
+    own.properties.push_back({"speed", "fast"});
+    own.properties.push_back({"weapon", "laser"});
+    own.properties.push_back({"sight_range", "5000"});
+    const ct::GameLevel level(levelWith({arenaFloor()}, own), {}, withGunner());
+    REQUIRE(level.warnings().size() == 2);
+    CHECK(level.warnings()[0].find("speed 'fast'") != std::string::npos);
+    CHECK(level.warnings()[1].find("'laser'") != std::string::npos);
+    const ct::World& world = level.startState().world;
+    const ct::EntityId id = level.entity(0)->id;
+    REQUIRE(world.enemyOverrides.get(id) != nullptr);
+    CHECK(world.enemyOverrides.get(id)->count == 1);
+    CHECK(ct::enemyTuning(world, id, withGunner())->sightRange == 1000.0f);
+}

@@ -1,6 +1,7 @@
 #include "croftech/sim/GameLevel.h"
 
 #include "croftech/core/Angle.h"
+#include "croftech/core/ConfigFile.h"
 #include "croftech/level/EntityClasses.h"
 #include "croftech/sim/Enemies.h"
 
@@ -127,6 +128,51 @@ std::uint32_t clampedCount(const LevelEntity& entity, const EntityClassInfo& ent
     return std::clamp(countProperty(entity, entityClass, key),
                       static_cast<std::uint32_t>(property->minimum),
                       static_cast<std::uint32_t>(property->maximum));
+}
+
+// The settings of its type that an enemy or spawner changes: properties with the keys of the
+// type's file. Values outside a setting's range are brought into it.
+EnemyOverrides readEnemyOverrides(const LevelEntity& entity,
+                                  std::span<const WeaponSettings> weapons, std::string_view where,
+                                  std::vector<std::string>& warnings) {
+    EnemyOverrides overrides;
+    const std::span<const EnemySetting> known = enemySettings();
+    for (const EntityProperty& property : entity.properties) {
+        const std::optional<std::uint32_t> setting = findEnemySetting(property.key);
+        if (!setting) {
+            continue;
+        }
+        const EnemySetting& info = known[*setting];
+        float value = 0.0f;
+        if (info.wholeField == nullptr && info.numberField == nullptr) {
+            const auto found =
+                std::find_if(weapons.begin(), weapons.end(), [&](const WeaponSettings& weapon) {
+                    return weapon.name == property.value;
+                });
+            if (found == weapons.end()) {
+                warnings.push_back(
+                    std::format("{}: the game has no weapon '{}'", where, property.value));
+                continue;
+            }
+            value = static_cast<float>(found - weapons.begin());
+        } else if (!parseFloat(property.value, value)) {
+            warnings.push_back(
+                std::format("{}: {} '{}' is not a number", where, property.key, property.value));
+            continue;
+        } else {
+            value = std::clamp(value, info.minimum, info.maximum);
+        }
+        if (overrides.count == kMaxEnemyOverrides) {
+            warnings.push_back(std::format("{}: only {} settings of its type can be its own; {} "
+                                           "is left as the type's",
+                                           where, kMaxEnemyOverrides, property.key));
+            continue;
+        }
+        overrides.settings[overrides.count] = static_cast<std::uint8_t>(*setting);
+        overrides.values[overrides.count] = value;
+        ++overrides.count;
+    }
+    return overrides;
 }
 
 // A body placed with its feet a little inside the floor (on a floor off the editor's grid, say) is
@@ -299,7 +345,9 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
     for (const Entity& entity : m_entities) {
         if ((entity.logicClass == LogicClass::Enemy || entity.logicClass == LogicClass::Spawner) &&
             entity.enemyType < settings.enemies.size()) {
-            navMesh(navAgent(settings.enemies[entity.enemyType].movement));
+            navMesh(navAgent(
+                tunedEnemy(settings.enemies[entity.enemyType], &entity.overrides, settings.movement)
+                    .movement));
         }
     }
 }
@@ -534,7 +582,11 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
                 std::format("{}: the game has no enemy '{}'", describeEntity(level, index), type));
             break;
         }
-        const MovementSettings& movement = settings.enemies[entity.enemyType].movement;
+        entity.overrides =
+            readEnemyOverrides(levelEntity, weapons, describeEntity(level, index), m_warnings);
+        const MovementSettings movement =
+            tunedEnemy(settings.enemies[entity.enemyType], &entity.overrides, settings.movement)
+                .movement;
         entity.position =
             liftOutOfFloor(m_collision, entity.position, movement.halfExtents, movement.stepHeight);
         break;
@@ -768,8 +820,8 @@ void GameLevel::spawnLogic(const GameSettings& settings) {
             break;
         case LogicClass::Enemy:
             if (entity.enemyType < settings.enemies.size()) {
-                makeEnemy(world, entity.id, settings, entity.enemyType, entity.position,
-                          entity.yaw);
+                makeEnemy(world, entity.id, settings, entity.enemyType, entity.position, entity.yaw,
+                          entity.overrides);
                 Enemy& enemy = *world.enemies.get(entity.id);
                 if (entity.ambush) {
                     enemy.flags |= kEnemyAmbush;

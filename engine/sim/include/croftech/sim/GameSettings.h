@@ -59,19 +59,10 @@ struct WeaponSettings {
 // Kinds of enemy a game can have.
 inline constexpr std::uint32_t kMaxEnemyTypes = 64;
 
-// One kind of enemy. Each is a file, enemies/<name>.cfg, whose lines are the variables
-// "enemy.<name>.<key>"; a game lists its enemies in its game.cfg. Enemies move with the player
-// movement code, using the game's movement settings with their own size and speed.
-struct EnemySettings {
-    std::string name; // its file's name, as game.cfg lists it and levels name it
-    // How it looks and sounds, for the client and the editor; the simulation ignores them.
-    std::string description; // a line for level designers
-    // Its sounds are sounds/<set>_alert.wav and the like; empty is its own name. A type made from
-    // another keeps the other's sounds this way.
-    std::string sounds;
-    // The colour of its box, red, green and blue from 0 to 1 as a colour picker shows them (sRGB);
-    // nullopt picks one by its place in the game's list.
-    std::optional<Vec3> colour;
+// What an enemy plays by: the numbers of its type (EnemySettings), with any that the one enemy
+// has of its own (EnemyOverrides, sim/Enemy.h) in their place. Plain data, so working one out
+// each tick allocates nothing.
+struct EnemyTuning {
     std::int32_t health = 100;
     float width = 0.8f;           // of its box, m
     float height = 1.8f;          // m
@@ -91,8 +82,7 @@ struct EnemySettings {
     float meleeKnockback = 3.0f;  // m/s a swing that lands adds to the target, away from it
     // A ranged attack with one of the game's weapons, which never runs out: it shoots in bursts,
     // with its aim off by up to aimError degrees, at targets it can see within attackRange.
-    std::string weapon;                      // the weapon's name; empty has no ranged attack
-    std::uint32_t weaponIndex = 0xFFFFFFFFu; // in GameSettings::weapons, found from the name
+    std::uint32_t weaponIndex = 0xFFFFFFFFu; // in GameSettings::weapons; none past the end
     float attackRange = 25.0f;               // m
     float keepDistance = 8.0f;               // m it stops closing in at while it can shoot
     float aimError = 3.0f;                   // degrees
@@ -112,10 +102,48 @@ struct EnemySettings {
     float corpseTime = 10.0f; // seconds its body stays after death; -1 stays for good
     // The game's movement with the size, eye height, speed and acceleration above.
     MovementSettings movement;
+};
+
+// One kind of enemy. Each is a file, enemies/<name>.cfg, whose lines are the variables
+// "enemy.<name>.<key>"; a game lists its enemies in its game.cfg. Enemies move with the player
+// movement code, using the game's movement settings with their own size and speed.
+struct EnemySettings : EnemyTuning {
+    std::string name; // its file's name, as game.cfg lists it and levels name it
+    // How it looks and sounds, for the client and the editor; the simulation ignores them.
+    std::string description; // a line for level designers
+    // Its sounds are sounds/<set>_alert.wav and the like; empty is its own name. A type made from
+    // another keeps the other's sounds this way.
+    std::string sounds;
+    // The colour of its box, red, green and blue from 0 to 1 as a colour picker shows them (sRGB);
+    // nullopt picks one by its place in the game's list.
+    std::optional<Vec3> colour;
+    std::string weapon; // the name of its weapon (weaponIndex); empty has no ranged attack
 
     // The name its sound files start with.
     std::string_view soundSet() const { return sounds.empty() ? name : sounds; }
 };
+
+// A setting of an enemy type that one enemy may have a value of its own for: a whole number, a
+// number, or (with neither field) its weapon. An enemy or spawner in a level sets it as a
+// property with the same key as the type's file.
+struct EnemySetting {
+    std::string_view key;
+    std::int32_t EnemyTuning::* wholeField = nullptr;
+    float EnemyTuning::* numberField = nullptr;
+    float minimum = 0.0f;
+    float maximum = 0.0f;
+    std::string_view description;
+};
+
+// Every one, in an order that only grows at the end: EnemyOverrides holds places in it.
+std::span<const EnemySetting> enemySettings();
+// Its place in enemySettings(), or nullopt.
+std::optional<std::uint32_t> findEnemySetting(std::string_view key);
+// The setting's value as a float (the weapon as its index), and setting it; a whole number is
+// rounded and every value is clamped to the setting's range. Setting the weapon to an index past
+// the game's weapons takes the ranged attack away.
+float enemySettingValue(const EnemyTuning& tuning, std::uint32_t setting);
+void setEnemySetting(EnemyTuning& tuning, std::uint32_t setting, float value);
 
 // Everything a game tunes that the simulation reads. It may only change between ticks.
 struct GameSettings {
@@ -133,7 +161,7 @@ std::string weaponCVarPrefix(std::string_view weapon);
 std::string enemyCVarPrefix(std::string_view enemy);
 // The game's movement with the enemy's size, eye height, speed and acceleration
 // (EnemySettings::movement); for enemies set up in code, such as in tests.
-MovementSettings enemyMovement(const EnemySettings& enemy, const MovementSettings& movement);
+MovementSettings enemyMovement(const EnemyTuning& enemy, const MovementSettings& movement);
 
 // A file of game settings, relative to the content folders, and the variables it sets.
 struct GameConfigFile {

@@ -147,7 +147,9 @@ void LevelLogic::runEncounters(const GameSettings& settings) {
             alive[encounter->id.index] >= encounter->maxAlive) {
             continue;
         }
-        const MovementSettings& movement = settings.enemies[entity->enemyType].movement;
+        const MovementSettings movement =
+            tunedEnemy(settings.enemies[entity->enemyType], &entity->overrides, settings.movement)
+                .movement;
         const Vec3 centre =
             entity->position +
             Vec3{0.0f, 0.0f, movement.halfExtents.z + CollisionWorld::kSurfaceEpsilon};
@@ -158,7 +160,8 @@ void LevelLogic::runEncounters(const GameSettings& settings) {
         if (!id.isValid()) {
             break; // the world is full; they wait until there is room
         }
-        makeEnemy(world, id, settings, entity->enemyType, entity->position, entity->yaw);
+        makeEnemy(world, id, settings, entity->enemyType, entity->position, entity->yaw,
+                  entity->overrides);
         Enemy& enemy = *world.enemies.get(id);
         enemy.spawner = index;
         --spawner.waiting;

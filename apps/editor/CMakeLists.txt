@@ -16,6 +16,8 @@ add_executable(croftech_editor
     PlaySession.h
     ScriptPanel.cpp
     ScriptPanel.h
+    SettingWidgets.cpp
+    SettingWidgets.h
 )
 target_link_libraries(croftech_editor PRIVATE ct_app_common ct::client ct::editor ct::devui ct::render
                                               ct::sim ct::level imgui::imgui SDL3::SDL3)

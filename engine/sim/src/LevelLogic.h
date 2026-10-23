@@ -80,11 +80,10 @@ private:
     void goBack(Enemy& enemy);
     // Having lost its target and got to where it last knew it to be, it looks about there (or
     // goes back, for kinds that don't search).
-    void startSearch(Enemy& enemy, const EnemySettings& type);
+    void startSearch(Enemy& enemy, const EnemyTuning& type);
     // As its kind's cover chance says, runs for a spot hidden from its target. Whether it does.
     bool takeCover(const CollisionScene& scene, const GameSettings& settings, EntityId id,
-                   Enemy& enemy, const EnemySettings& type, NavQuery& query,
-                   const NavFilter& filter);
+                   Enemy& enemy, const EnemyTuning& type, NavQuery& query, const NavFilter& filter);
     struct Steering {
         Vec3 heading;         // the way to go across the ground; zero to stand
         bool waiting = false; // for a lift, or riding one

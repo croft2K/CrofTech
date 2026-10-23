@@ -131,7 +131,7 @@ bool isLivingPlayer(const World& world, EntityId id) {
 // Whether an enemy sees the target: within its sight range, inside its view cone unless it is
 // already hunting, and with nothing solid between its eye and the target's eye or middle.
 bool canSee(const CollisionScene& scene, const World& world, const GameSettings& settings,
-            const EnemySettings& type, const Transform& self, EntityId target, bool hunting) {
+            const EnemyTuning& type, const Transform& self, EntityId target, bool hunting) {
     const Transform* other = world.transforms.get(target);
     if (other == nullptr) {
         return false;
@@ -159,7 +159,7 @@ bool canSee(const CollisionScene& scene, const World& world, const GameSettings&
 
 // The nearest living player it hears: shooting within its hearing range, or running within its
 // footstep range. Walls don't stop sound.
-EntityId hearPlayer(const World& world, const EnemySettings& type, Vec3 position, TickIndex tick) {
+EntityId hearPlayer(const World& world, const EnemyTuning& type, Vec3 position, TickIndex tick) {
     EntityId heard;
     float best = std::numeric_limits<float>::max();
     for (const EntityId player : world.playerControls.entities()) {
@@ -189,7 +189,7 @@ EntityId hearPlayer(const World& world, const EnemySettings& type, Vec3 position
 }
 
 // The angle units a type turns in one tick.
-std::int32_t turnStep(const EnemySettings& type) {
+std::int32_t turnStep(const EnemyTuning& type) {
     return std::max(
         static_cast<std::int32_t>(type.turnSpeed / 360.0f * static_cast<float>(kAngleUnitsPerTurn) *
                                   kTickSeconds),
@@ -218,7 +218,7 @@ std::optional<Vec3> findSearchSpot(NavQuery& query, const NavFilter& filter, Vec
 // an eye at targetEye, and that it can run to without going far round. Spots much nearer the
 // target than it is now aren't cover.
 std::optional<Vec3> findCover(const CollisionScene& scene, NavQuery& query, const NavFilter& filter,
-                              const EnemySettings& type, Vec3 position, Vec3 targetEye) {
+                              const EnemyTuning& type, Vec3 position, Vec3 targetEye) {
     const MovementSettings& movement = type.movement;
     const Vec3 feet = position - Vec3{0.0f, 0.0f, movement.halfExtents.z};
     const float away = length(flat(feet - targetEye));
@@ -270,17 +270,46 @@ std::optional<Vec3> findCover(const CollisionScene& scene, NavQuery& query, cons
 
 } // namespace
 
-const MovementSettings& movementOf(const World& world, EntityId id, const GameSettings& settings) {
-    if (const Enemy* enemy = world.enemies.get(id);
-        enemy != nullptr && enemy->type < settings.enemies.size()) {
-        return settings.enemies[enemy->type].movement;
+EnemyTuning tunedEnemy(const EnemySettings& type, const EnemyOverrides* overrides,
+                       const MovementSettings& movement) {
+    EnemyTuning tuning = type;
+    if (overrides == nullptr || overrides->count == 0) {
+        return tuning;
+    }
+    const std::size_t known = enemySettings().size();
+    for (std::uint32_t i = 0; i < std::min(overrides->count, kMaxEnemyOverrides); ++i) {
+        if (overrides->settings[i] < known) {
+            setEnemySetting(tuning, overrides->settings[i], overrides->values[i]);
+        }
+    }
+    tuning.movement = enemyMovement(tuning, movement);
+    return tuning;
+}
+
+std::optional<EnemyTuning> enemyTuning(const World& world, EntityId id,
+                                       const GameSettings& settings) {
+    const Enemy* enemy = world.enemies.get(id);
+    if (enemy == nullptr || enemy->type >= settings.enemies.size()) {
+        return std::nullopt;
+    }
+    return tunedEnemy(settings.enemies[enemy->type], world.enemyOverrides.get(id),
+                      settings.movement);
+}
+
+MovementSettings movementOf(const World& world, EntityId id, const GameSettings& settings) {
+    if (const std::optional<EnemyTuning> tuning = enemyTuning(world, id, settings)) {
+        return tuning->movement;
     }
     return settings.movement;
 }
 
 void makeEnemy(World& world, EntityId id, const GameSettings& settings, std::uint32_t type,
-               Vec3 feet, std::uint16_t yaw) {
-    const EnemySettings& enemySettings = settings.enemies[type];
+               Vec3 feet, std::uint16_t yaw, const EnemyOverrides& overrides) {
+    const EnemyTuning enemySettings =
+        tunedEnemy(settings.enemies[type], &overrides, settings.movement);
+    if (overrides.count > 0) {
+        world.enemyOverrides.add(id, overrides);
+    }
     const Vec3 centre =
         feet +
         Vec3{0.0f, 0.0f, enemySettings.movement.halfExtents.z + CollisionWorld::kSurfaceEpsilon};
@@ -364,7 +393,7 @@ void LevelLogic::goBack(Enemy& enemy) {
     enemy.goal = point != nullptr ? point->position : enemy.home;
 }
 
-void LevelLogic::startSearch(Enemy& enemy, const EnemySettings& type) {
+void LevelLogic::startSearch(Enemy& enemy, const EnemyTuning& type) {
     if (type.searchTime <= 0.0f) {
         goBack(enemy);
         return;
@@ -378,7 +407,7 @@ void LevelLogic::startSearch(Enemy& enemy, const EnemySettings& type) {
 }
 
 bool LevelLogic::takeCover(const CollisionScene& scene, const GameSettings& settings, EntityId id,
-                           Enemy& enemy, const EnemySettings& type, NavQuery& query,
+                           Enemy& enemy, const EnemyTuning& type, NavQuery& query,
                            const NavFilter& filter) {
     const World& world = m_state.world;
     const TickIndex tick = m_state.tick;
@@ -525,7 +554,8 @@ void LevelLogic::runEnemies(const CollisionScene& scene, const GameSettings& set
             enemy.type >= settings.enemies.size()) {
             continue;
         }
-        const EnemySettings& type = settings.enemies[enemy.type];
+        const EnemyTuning type = tunedEnemy(settings.enemies[enemy.type],
+                                            world.enemyOverrides.get(id), settings.movement);
         const MovementSettings& movement = type.movement;
         // Where its events go: its own wiring if placed in the level, its spawner's if sent.
         const LevelEntityRef* ref = world.levelEntities.get(id);

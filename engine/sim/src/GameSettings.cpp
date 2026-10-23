@@ -7,6 +7,8 @@
 #include "croftech/sim/World.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <string>
 
 namespace ct {
@@ -67,76 +69,61 @@ constexpr WeaponFloat kWeaponFloats[] = {
      "share of its splash damage the shooter takes"},
 };
 
-struct EnemyInt {
-    std::string_view key;
-    std::int32_t EnemySettings::* field;
-    int min;
-    int max;
-    std::string_view description;
-};
-
-struct EnemyFloat {
-    std::string_view key;
-    float EnemySettings::* field;
-    float min;
-    float max;
-    std::string_view description;
-};
-
-constexpr EnemyInt kEnemyInts[] = {
-    {"health", &EnemySettings::health, 1, kMaxHealthSetting, "health it starts with"},
-    {"melee_damage", &EnemySettings::meleeDamage, 0, kMaxHealthSetting,
+// Append new ones at the end: enemies' overrides hold places in this list.
+constexpr EnemySetting kEnemySettings[] = {
+    {"health", &EnemyTuning::health, nullptr, 1, kMaxHealthSetting, "health it starts with"},
+    {"melee_damage", &EnemyTuning::meleeDamage, nullptr, 0, kMaxHealthSetting,
      "each swing that lands; 0 has no melee attack"},
-    {"burst", &EnemySettings::burst, 1, 100,
+    {"burst", &EnemyTuning::burst, nullptr, 1, 100,
      "shots in a row, each after its weapon's fire_interval"},
-};
-
-constexpr EnemyFloat kEnemyFloats[] = {
-    {"width", &EnemySettings::width, 0.2f, 8.0f, "of its box, m"},
-    {"height", &EnemySettings::height, 0.2f, 8.0f, "of its box, m"},
-    {"eye_height", &EnemySettings::eyeHeight, 0.0f, 8.0f, "above its feet, where it sees from"},
-    {"speed", &EnemySettings::speed, 0.0f, 50.0f, "m/s running"},
-    {"acceleration", &EnemySettings::acceleration, 0.0f, 100.0f,
+    {"width", nullptr, &EnemyTuning::width, 0.2f, 8.0f, "of its box, m"},
+    {"height", nullptr, &EnemyTuning::height, 0.2f, 8.0f, "of its box, m"},
+    {"eye_height", nullptr, &EnemyTuning::eyeHeight, 0.0f, 8.0f,
+     "above its feet, where it sees from"},
+    {"speed", nullptr, &EnemyTuning::speed, 0.0f, 50.0f, "m/s running"},
+    {"acceleration", nullptr, &EnemyTuning::acceleration, 0.0f, 100.0f,
      "as movement's ground_acceleration"},
-    {"turn_speed", &EnemySettings::turnSpeed, 10.0f, 3600.0f, "degrees a second"},
-    {"sight_range", &EnemySettings::sightRange, 0.0f, 1000.0f, "m"},
-    {"sight_angle", &EnemySettings::sightAngle, 1.0f, 360.0f,
+    {"turn_speed", nullptr, &EnemyTuning::turnSpeed, 10.0f, 3600.0f, "degrees a second"},
+    {"sight_range", nullptr, &EnemyTuning::sightRange, 0.0f, 1000.0f, "m"},
+    {"sight_angle", nullptr, &EnemyTuning::sightAngle, 1.0f, 360.0f,
      "degrees across its view, until it is alerted"},
-    {"reaction_time", &EnemySettings::reactionTime, 0.0f, 10.0f,
+    {"reaction_time", nullptr, &EnemyTuning::reactionTime, 0.0f, 10.0f,
      "seconds from noticing a player to going after them"},
-    {"hearing_range", &EnemySettings::hearingRange, 0.0f, 1000.0f,
+    {"hearing_range", nullptr, &EnemyTuning::hearingRange, 0.0f, 1000.0f,
      "m within which it hears a player's shots"},
-    {"footstep_range", &EnemySettings::footstepRange, 0.0f, 1000.0f,
+    {"footstep_range", nullptr, &EnemyTuning::footstepRange, 0.0f, 1000.0f,
      "m within which it hears a player running"},
-    {"attack_range", &EnemySettings::attackRange, 0.0f, 1000.0f,
+    {"attack_range", nullptr, &EnemyTuning::attackRange, 0.0f, 1000.0f,
      "m within which it shoots at targets it can see"},
-    {"keep_distance", &EnemySettings::keepDistance, 0.0f, 1000.0f,
+    {"keep_distance", nullptr, &EnemyTuning::keepDistance, 0.0f, 1000.0f,
      "m it stops closing in at while it can shoot"},
-    {"aim_error", &EnemySettings::aimError, 0.0f, 45.0f, "degrees its aim may be off by"},
-    {"burst_pause", &EnemySettings::burstPause, 0.0f, 30.0f, "seconds between bursts"},
-    {"strafe_time", &EnemySettings::strafeTime, 0.0f, 10.0f,
+    {"aim_error", nullptr, &EnemyTuning::aimError, 0.0f, 45.0f, "degrees its aim may be off by"},
+    {"burst_pause", nullptr, &EnemyTuning::burstPause, 0.0f, 30.0f, "seconds between bursts"},
+    {"strafe_time", nullptr, &EnemyTuning::strafeTime, 0.0f, 10.0f,
      "seconds it sidesteps one way while shooting; 0 stands still"},
-    {"melee_range", &EnemySettings::meleeRange, 0.0f, 10.0f,
+    {"melee_range", nullptr, &EnemyTuning::meleeRange, 0.0f, 10.0f,
      "m from its box to the target's that a swing reaches"},
-    {"melee_windup", &EnemySettings::meleeWindup, 0.0f, 5.0f,
+    {"melee_windup", nullptr, &EnemyTuning::meleeWindup, 0.0f, 5.0f,
      "seconds from starting a swing to the hit"},
-    {"melee_interval", &EnemySettings::meleeInterval, kTickSeconds, 10.0f,
+    {"melee_interval", nullptr, &EnemyTuning::meleeInterval, kTickSeconds, 10.0f,
      "seconds between the starts of swings"},
-    {"melee_knockback", &EnemySettings::meleeKnockback, 0.0f, 100.0f,
+    {"melee_knockback", nullptr, &EnemyTuning::meleeKnockback, 0.0f, 100.0f,
      "m/s a swing that lands adds to the target, away from it"},
-    {"walk_speed", &EnemySettings::walkSpeed, 0.0f, 50.0f,
+    {"walk_speed", nullptr, &EnemyTuning::walkSpeed, 0.0f, 50.0f,
      "m/s on patrol and going back to its post"},
-    {"search_time", &EnemySettings::searchTime, 0.0f, 600.0f,
+    {"search_time", nullptr, &EnemyTuning::searchTime, 0.0f, 600.0f,
      "seconds it searches where it lost its target before going back; 0 goes straight back"},
-    {"search_radius", &EnemySettings::searchRadius, 0.0f, 100.0f,
+    {"search_radius", nullptr, &EnemyTuning::searchRadius, 0.0f, 100.0f,
      "m around where it lost its target that it searches"},
-    {"cover_chance", &EnemySettings::coverChance, 0.0f, 1.0f,
+    {"cover_chance", nullptr, &EnemyTuning::coverChance, 0.0f, 1.0f,
      "chance it runs for cover each time it is hurt or ends a burst; 0 never does"},
-    {"cover_time", &EnemySettings::coverTime, 0.0f, 30.0f,
+    {"cover_time", nullptr, &EnemyTuning::coverTime, 0.0f, 30.0f,
      "seconds it stays in cover before coming out again"},
-    {"cover_range", &EnemySettings::coverRange, 0.0f, 50.0f, "m it looks for cover within"},
-    {"corpse_time", &EnemySettings::corpseTime, -1.0f, 600.0f,
+    {"cover_range", nullptr, &EnemyTuning::coverRange, 0.0f, 50.0f, "m it looks for cover within"},
+    {"corpse_time", nullptr, &EnemyTuning::corpseTime, -1.0f, 600.0f,
      "seconds its body stays after death; -1 stays for good"},
+    {"weapon", nullptr, nullptr, 0.0f, static_cast<float>(kMaxWeapons),
+     "the game's weapon it shoots; empty has no ranged attack"},
 };
 
 std::string cvarName(std::string_view key) { return std::string(kRulesCVarPrefix).append(key); }
@@ -158,16 +145,19 @@ std::span<const std::string> usableEnemies(std::span<const std::string> enemies)
 void registerEnemyCVars(Console& console, std::string_view enemy) {
     const std::string prefix = enemyCVarPrefix(enemy);
     const EnemySettings defaults;
-    for (const EnemyInt& setting : kEnemyInts) {
-        console.add(CVar::makeInt(prefix + std::string(setting.key), defaults.*setting.field,
-                                  setting.min, setting.max, std::string(setting.description)));
+    for (const EnemySetting& setting : kEnemySettings) {
+        const std::string name = prefix + std::string(setting.key);
+        if (setting.wholeField != nullptr) {
+            console.add(
+                CVar::makeInt(name, defaults.*setting.wholeField, static_cast<int>(setting.minimum),
+                              static_cast<int>(setting.maximum), std::string(setting.description)));
+        } else if (setting.numberField != nullptr) {
+            console.add(CVar::makeFloat(name, defaults.*setting.numberField, setting.minimum,
+                                        setting.maximum, std::string(setting.description)));
+        } else {
+            console.add(CVar::makeString(name, defaults.weapon, std::string(setting.description)));
+        }
     }
-    for (const EnemyFloat& setting : kEnemyFloats) {
-        console.add(CVar::makeFloat(prefix + std::string(setting.key), defaults.*setting.field,
-                                    setting.min, setting.max, std::string(setting.description)));
-    }
-    console.add(CVar::makeString(prefix + "weapon", defaults.weapon,
-                                 "the game's weapon it shoots; empty has no ranged attack"));
     console.add(CVar::makeString(prefix + "description", "", "a line for level designers"));
     console.add(CVar::makeString(
         prefix + "sounds", "",
@@ -196,13 +186,16 @@ EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
     const std::string prefix = enemyCVarPrefix(enemy);
     EnemySettings settings;
     settings.name = std::string(enemy);
-    for (const EnemyInt& setting : kEnemyInts) {
-        settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asInt();
+    for (const EnemySetting& setting : kEnemySettings) {
+        const CVar& variable = findCVar(console, prefix + std::string(setting.key));
+        if (setting.wholeField != nullptr) {
+            settings.*setting.wholeField = variable.asInt();
+        } else if (setting.numberField != nullptr) {
+            settings.*setting.numberField = variable.asFloat();
+        } else {
+            settings.weapon = variable.text();
+        }
     }
-    for (const EnemyFloat& setting : kEnemyFloats) {
-        settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asFloat();
-    }
-    settings.weapon = findCVar(console, prefix + "weapon").text();
     settings.description = findCVar(console, prefix + "description").text();
     // Ones that won't do are left to their defaults.
     if (const std::string& sounds = findCVar(console, prefix + "sounds").text();
@@ -257,7 +250,46 @@ std::string enemyCVarPrefix(std::string_view enemy) {
     return std::string("enemy.").append(enemy).append(".");
 }
 
-MovementSettings enemyMovement(const EnemySettings& enemy, const MovementSettings& movement) {
+std::span<const EnemySetting> enemySettings() { return kEnemySettings; }
+
+std::optional<std::uint32_t> findEnemySetting(std::string_view key) {
+    for (std::uint32_t i = 0; i < std::size(kEnemySettings); ++i) {
+        if (kEnemySettings[i].key == key) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+float enemySettingValue(const EnemyTuning& tuning, std::uint32_t setting) {
+    CT_ASSERT(setting < std::size(kEnemySettings));
+    const EnemySetting& info = kEnemySettings[setting];
+    if (info.wholeField != nullptr) {
+        return static_cast<float>(tuning.*info.wholeField);
+    }
+    if (info.numberField != nullptr) {
+        return tuning.*info.numberField;
+    }
+    return static_cast<float>(std::min<std::uint32_t>(tuning.weaponIndex, kMaxWeapons));
+}
+
+void setEnemySetting(EnemyTuning& tuning, std::uint32_t setting, float value) {
+    CT_ASSERT(setting < std::size(kEnemySettings));
+    const EnemySetting& info = kEnemySettings[setting];
+    // NaN fails both comparisons and becomes the minimum.
+    const float clamped =
+        value <= info.maximum ? (value >= info.minimum ? value : info.minimum) : info.maximum;
+    if (info.wholeField != nullptr) {
+        tuning.*info.wholeField = static_cast<std::int32_t>(std::lround(clamped));
+    } else if (info.numberField != nullptr) {
+        tuning.*info.numberField = clamped;
+    } else {
+        const auto index = static_cast<std::uint32_t>(clamped);
+        tuning.weaponIndex = index < kMaxWeapons ? index : 0xFFFFFFFFu;
+    }
+}
+
+MovementSettings enemyMovement(const EnemyTuning& enemy, const MovementSettings& movement) {
     MovementSettings result = movement;
     result.halfExtents = {enemy.width * 0.5f, enemy.width * 0.5f, enemy.height * 0.5f};
     result.eyeHeight = std::min(enemy.eyeHeight, enemy.height);

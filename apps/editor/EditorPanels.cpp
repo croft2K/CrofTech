@@ -1,16 +1,20 @@
 #include "EditorPanels.h"
 
+#include "SettingWidgets.h"
+
 #include "croftech/core/ConfigFile.h"
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EntityLinks.h"
 #include "croftech/editor/LevelCommands.h"
 #include "croftech/editor/ScriptLinks.h"
+#include "croftech/sim/Enemy.h"
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <optional>
 #include <span>
@@ -55,6 +59,39 @@ void tooltip(std::string_view text) {
     if (!text.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
         ImGui::SetTooltip("%s", std::string(text).c_str());
     }
+}
+
+// Enemy settings in the order the inspector lists them: by group, as the Game data window does.
+std::vector<std::uint32_t> enemySettingOrder() {
+    std::vector<std::uint32_t> order;
+    for (const SettingGroup& group : enemySettingGroups()) {
+        for (const std::string_view key : group.keys) {
+            if (const std::optional<std::uint32_t> setting = findEnemySetting(key)) {
+                order.push_back(*setting);
+            }
+        }
+    }
+    for (std::uint32_t i = 0; i < enemySettings().size(); ++i) {
+        if (std::find(order.begin(), order.end(), i) == order.end()) {
+            order.push_back(i);
+        }
+    }
+    return order;
+}
+
+bool isWeaponSetting(const EnemySetting& setting) {
+    return setting.wholeField == nullptr && setting.numberField == nullptr;
+}
+
+// A type's value of a setting as text, as an entity's property would give it.
+std::string enemySettingText(const EnemySettings& type, std::uint32_t setting) {
+    const EnemySetting& info = enemySettings()[setting];
+    if (isWeaponSetting(info)) {
+        return type.weapon;
+    }
+    const float value = enemySettingValue(type, setting);
+    return info.wholeField != nullptr ? std::format("{}", static_cast<int>(value))
+                                      : formatFloat(value);
 }
 
 // The names outputs can target (or, given classes, only those of entities of the classes),
@@ -1136,6 +1173,7 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
     }
     if (entity.className == kEnemyClass || entity.className == kSpawnerClass) {
         drawEnemyType(document.level().entities[index]);
+        drawOwnSettings(document, index);
     }
     if (entity.className == kEnemyClass || entity.className == kPatrolPointClass) {
         // index is still this entity: properties that change apply on a later frame.
@@ -1319,9 +1357,14 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
             ImGui::PopID();
         }
         // Properties the class doesn't define, or all of them for a class the engine doesn't know.
+        // An enemy's own settings have a section of their own.
+        const bool ownSettings =
+            entity.className == kEnemyClass || entity.className == kSpawnerClass;
         for (std::size_t i = 0; i < entity.properties.size(); ++i) {
             const EntityProperty& property = entity.properties[i];
-            if (entityClass != nullptr && findPropertyInfo(*entityClass, property.key) != nullptr) {
+            if ((entityClass != nullptr &&
+                 findPropertyInfo(*entityClass, property.key) != nullptr) ||
+                (ownSettings && findEnemySetting(property.key))) {
                 continue;
             }
             ImGui::PushID(static_cast<int>(i));
@@ -1503,22 +1546,32 @@ void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index
     }
 }
 
+const EnemySettings* EditorPanels::enemyTypeOf(const LevelEntity& entity) const {
+    if (m_gameData == nullptr) {
+        return nullptr;
+    }
+    const std::vector<EnemySettings>& enemies = m_gameData->settings().enemies;
+    const std::string* named = findProperty(entity, "type");
+    if (named == nullptr || named->empty()) {
+        return enemies.empty() ? nullptr : &enemies.front();
+    }
+    const auto found = std::find_if(enemies.begin(), enemies.end(),
+                                    [&](const EnemySettings& each) { return each.name == *named; });
+    return found != enemies.end() ? &*found : nullptr;
+}
+
 void EditorPanels::drawEnemyType(const LevelEntity& entity) {
     if (m_gameData == nullptr || m_gameDataPanel == nullptr) {
         return;
     }
-    const std::vector<std::string>& types = m_gameData->manifest().enemies;
-    const std::string* named = findProperty(entity, "type");
-    const std::string type =
-        named != nullptr && !named->empty() ? *named : (types.empty() ? "" : types.front());
-    const std::vector<EnemySettings>& enemies = m_gameData->settings().enemies;
-    const auto found = std::find_if(enemies.begin(), enemies.end(),
-                                    [&](const EnemySettings& each) { return each.name == type; });
-    if (found == enemies.end()) {
+    const EnemySettings* found = enemyTypeOf(entity);
+    if (found == nullptr) {
+        const std::string* named = findProperty(entity, "type");
         ImGui::TextColored({1.0f, 0.47f, 0.4f, 1.0f}, "The game has no enemy type '%s'",
-                           type.c_str());
+                           named != nullptr ? named->c_str() : "");
         return;
     }
+    const std::string& type = found->name;
     if (!found->description.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s: %s", type.c_str(), found->description.c_str());
@@ -1535,6 +1588,146 @@ void EditorPanels::drawEnemyType(const LevelEntity& entity) {
     }
     ImGui::SetItemTooltip("A copy of the %s to change as you like, in the Game data window",
                           type.c_str());
+}
+
+void EditorPanels::drawOwnSettings(EditorDocument& document, std::size_t index) {
+    const EnemySettings* type = enemyTypeOf(document.level().entities[index]);
+    if (type == nullptr) {
+        return;
+    }
+    const LevelEntity& entity = document.level().entities[index];
+    const bool spawner = entity.className == kSpawnerClass;
+    const std::span<const EnemySetting> known = enemySettings();
+    const std::vector<std::uint32_t> order = enemySettingOrder();
+    std::vector<std::uint32_t> own;
+    for (const std::uint32_t setting : order) {
+        if (findProperty(entity, known[setting].key) != nullptr) {
+            own.push_back(setting);
+        }
+    }
+
+    ImGui::SeparatorText(spawner ? "Its enemies' own settings" : "Its own settings");
+    if (own.empty()) {
+        ImGui::TextDisabled("None: %s as the %s's settings say", spawner ? "they play" : "it plays",
+                            type->name.c_str());
+    }
+    std::optional<LevelEntity> edited;
+    const char* editName = "Change enemy's own setting";
+    if (!own.empty() && ImGui::BeginTable("own", 3, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("reset", ImGuiTableColumnFlags_WidthFixed);
+        for (const std::uint32_t setting : own) {
+            const EnemySetting& info = known[setting];
+            const std::string key(info.key);
+            const std::string& text = *findProperty(entity, key);
+            const std::string typeText = enemySettingText(*type, setting);
+            ImGui::PushID(key.c_str());
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(key.c_str());
+            tooltip(std::format("{}\nThe {}'s: {}", info.description, type->name,
+                                typeText.empty() ? "none" : typeText));
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (isWeaponSetting(info)) {
+                if (ImGui::BeginCombo("##value", text.c_str())) {
+                    for (const WeaponSettings& weapon : m_gameData->settings().weapons) {
+                        if (ImGui::Selectable(weapon.name.c_str(), weapon.name == text)) {
+                            edited = entity;
+                            setProperty(*edited, key, weapon.name);
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            } else {
+                // Drags change the level live, and are one command when let go.
+                float value = enemySettingValue(*type, setting);
+                parseFloat(text, value);
+                bool changed = false;
+                std::string dragged;
+                if (info.wholeField != nullptr) {
+                    int whole = static_cast<int>(std::lround(value));
+                    changed = dragWholeNumber("##value", whole, static_cast<int>(info.minimum),
+                                              static_cast<int>(info.maximum));
+                    dragged = std::format("{}", whole);
+                } else {
+                    changed = dragNumber("##value", value, info.minimum, info.maximum);
+                    dragged = formatFloat(value);
+                }
+                if (ImGui::IsItemActivated()) {
+                    m_entityBefore = entity;
+                }
+                if (changed) {
+                    LevelEntity preview = entity;
+                    setProperty(preview, key, dragged);
+                    document.previewEntity(index, preview);
+                }
+                if (ImGui::IsItemDeactivated() && m_entityBefore) {
+                    const LevelEntity after = document.level().entities[index];
+                    if (after != *m_entityBefore) {
+                        document.execute(makeSetEntity(editName, index, *m_entityBefore, after));
+                    }
+                    m_entityBefore.reset();
+                }
+            }
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("x")) {
+                edited = entity;
+                std::erase_if(edited->properties,
+                              [&](const EntityProperty& property) { return property.key == key; });
+                editName = "Reset enemy's own setting";
+            }
+            ImGui::SetItemTooltip("Back to the %s's: %s", type->name.c_str(),
+                                  typeText.empty() ? "none" : typeText.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    if (own.size() >= kMaxEnemyOverrides) {
+        ImGui::TextDisabled("%u is the most an enemy can have", kMaxEnemyOverrides);
+    } else {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::BeginCombo("##addOwn", "Change a setting for just this one...",
+                              ImGuiComboFlags_HeightLarge)) {
+            std::string_view group;
+            for (const std::uint32_t setting : order) {
+                const EnemySetting& info = known[setting];
+                if (std::find(own.begin(), own.end(), setting) != own.end()) {
+                    continue;
+                }
+                if (const std::string_view title = enemySettingGroup(info.key); title != group) {
+                    group = title;
+                    ImGui::SeparatorText(std::string(group).c_str());
+                }
+                const std::string typeText = enemySettingText(*type, setting);
+                const std::string label =
+                    std::format("{}  ({})", info.key, typeText.empty() ? "none" : typeText);
+                if (ImGui::Selectable(label.c_str())) {
+                    // A weapon starts as the first, for one the type has none of.
+                    const std::vector<WeaponSettings>& weapons = m_gameData->settings().weapons;
+                    std::string value = typeText;
+                    if (value.empty() && !weapons.empty()) {
+                        value = weapons.front().name;
+                    }
+                    if (!value.empty()) {
+                        edited = entity;
+                        setProperty(*edited, info.key, std::move(value));
+                        editName = "Give enemy a setting of its own";
+                    }
+                }
+                tooltip(info.description);
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("Starts at the %s's value; every other %s keeps the type's",
+                              type->name.c_str(), spawner ? "spawner" : "enemy");
+    }
+    if (edited) {
+        commitEntity(document, index, *edited, editName);
+    }
 }
 
 void EditorPanels::drawScriptButtons(EditorDocument& document, std::size_t index) {

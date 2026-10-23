@@ -144,10 +144,11 @@ void addEnemyThoughts(std::vector<EffectVertex>& out, const LocalGame& game,
     for (std::size_t i = 0; i < world.enemies.size(); ++i) {
         const EntityId id = world.enemies.entities()[i];
         const Enemy& enemy = world.enemies.components()[i];
-        const EnemySettings* type = typeOf(game, enemy);
+        // Its type's settings with its own.
+        const std::optional<EnemyTuning> type = enemyTuning(world, id, game.settings());
         const std::optional<Transform> transform = game.transform(id, now);
         const Health* health = world.healths.get(id);
-        if (type == nullptr || !transform || (health != nullptr && isDead(*health))) {
+        if (!type || !transform || (health != nullptr && isDead(*health))) {
             continue;
         }
         const MovementSettings& movement = type->movement;
@@ -213,7 +214,8 @@ void drawEnemyLabels(const LocalGame& game, LocalGame::Clock::time_point now, co
             continue;
         }
         const Vec3 head =
-            transform->position + Vec3{0.0f, 0.0f, type->movement.halfExtents.z + kLabelRise};
+            transform->position +
+            Vec3{0.0f, 0.0f, movementOf(world, id, game.settings()).halfExtents.z + kLabelRise};
         const Vec3 offset = head - camera.position;
         if (dot(offset, offset) > kLabelRange * kLabelRange) {
             continue;
@@ -251,6 +253,9 @@ void drawEnemyLabels(const LocalGame& game, LocalGame::Clock::time_point now, co
             }
             if ((enemy.flags & kEnemyAmbush) != 0) {
                 details += "  ambush";
+            }
+            if (world.enemyOverrides.get(id) != nullptr) {
+                details += "  own settings";
             }
         }
         const ImVec2 titleSize = ImGui::CalcTextSize(title.c_str());

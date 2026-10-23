@@ -1,9 +1,11 @@
 #include "croftech/core/ConfigFile.h"
+#include "croftech/level/EntityClasses.h"
 #include "croftech/sim/GameSettings.h"
 
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <ostream> // doctest prints string_view through operator<<
 #include <string>
 #include <vector>
 
@@ -163,10 +165,9 @@ TEST_CASE("an enemy type's look and sounds are read, and ones that won't do are 
     const std::vector<std::string> enemies{"grunt", "brute"};
     ct::Console console;
     ct::registerGameCVars(console, {}, enemies);
-    console.applyConfig(ct::enemyCVarPrefix("grunt"),
-                        oneLayer("description Walks at you slowly\n"
-                                 "sounds charger\n"
-                                 "colour 0.5 0.25 1\n"));
+    console.applyConfig(ct::enemyCVarPrefix("grunt"), oneLayer("description Walks at you slowly\n"
+                                                               "sounds charger\n"
+                                                               "colour 0.5 0.25 1\n"));
     console.applyConfig(ct::enemyCVarPrefix("brute"), oneLayer("sounds ../secret\n"
                                                                "colour 0.5 2 1\n"));
     const ct::GameSettings settings = ct::gameSettingsFromCVars(console, {}, enemies);
@@ -178,4 +179,49 @@ TEST_CASE("an enemy type's look and sounds are read, and ones that won't do are 
     const ct::EnemySettings& brute = settings.enemies.at(1);
     CHECK(brute.soundSet() == "brute");
     CHECK_FALSE(brute.colour.has_value());
+}
+
+TEST_CASE("every enemy setting one enemy may change is a setting of its type's file") {
+    ct::Console console;
+    const std::vector<std::string> enemies{"charger"};
+    ct::registerGameCVars(console, {}, enemies);
+    for (const ct::EnemySetting& setting : ct::enemySettings()) {
+        INFO(setting.key);
+        CHECK(console.find("enemy.charger." + std::string(setting.key)) != nullptr);
+        CHECK(ct::findEnemySetting(setting.key).has_value());
+    }
+    CHECK_FALSE(ct::findEnemySetting("description").has_value());
+    CHECK_FALSE(ct::findEnemySetting("colour").has_value());
+    // A level's enemies and spawners set them as properties, so none may be one of theirs.
+    for (const std::string_view className : {ct::kEnemyClass, ct::kSpawnerClass}) {
+        const ct::EntityClassInfo* entityClass = ct::findEntityClass(className);
+        REQUIRE(entityClass != nullptr);
+        for (const ct::PropertyInfo& property : entityClass->properties) {
+            INFO(property.key);
+            CHECK_FALSE(ct::findEnemySetting(property.key).has_value());
+        }
+    }
+}
+
+TEST_CASE("an enemy setting is set within its range, and a weapon past the game's is none") {
+    ct::EnemyTuning tuning;
+    const std::uint32_t speed = *ct::findEnemySetting("speed");
+    ct::setEnemySetting(tuning, speed, 9.5f);
+    CHECK(tuning.speed == 9.5f);
+    CHECK(ct::enemySettingValue(tuning, speed) == 9.5f);
+    ct::setEnemySetting(tuning, speed, 1000.0f);
+    CHECK(tuning.speed == 50.0f);
+
+    const std::uint32_t health = *ct::findEnemySetting("health");
+    ct::setEnemySetting(tuning, health, 41.6f);
+    CHECK(tuning.health == 42);
+    ct::setEnemySetting(tuning, health, -5.0f);
+    CHECK(tuning.health == 1);
+
+    const std::uint32_t weapon = *ct::findEnemySetting("weapon");
+    ct::setEnemySetting(tuning, weapon, 2.0f);
+    CHECK(tuning.weaponIndex == 2);
+    CHECK(ct::enemySettingValue(tuning, weapon) == 2.0f);
+    ct::setEnemySetting(tuning, weapon, static_cast<float>(ct::kMaxWeapons));
+    CHECK(tuning.weaponIndex == 0xFFFFFFFFu);
 }

@@ -1,5 +1,7 @@
 #include "GameDataPanel.h"
 
+#include "SettingWidgets.h"
+
 #include "croftech/core/ConfigFile.h"
 #include "croftech/core/Log.h"
 #include "croftech/level/EntityClasses.h"
@@ -19,30 +21,6 @@ namespace {
 constexpr ImVec4 kGameColour{0.92f, 0.78f, 0.38f, 1.0f};
 constexpr ImVec4 kProblemColour{1.0f, 0.47f, 0.4f, 1.0f};
 constexpr float kListWidth = 190.0f;
-
-// An enemy type's settings, in the groups the window shows them in.
-struct SettingGroup {
-    std::string_view title;
-    std::span<const std::string_view> keys;
-};
-
-constexpr std::string_view kLookKeys[] = {"description", "colour", "sounds"};
-constexpr std::string_view kBodyKeys[] = {"health",       "width",      "height",
-                                          "eye_height",   "speed",      "walk_speed",
-                                          "acceleration", "turn_speed", "corpse_time"};
-constexpr std::string_view kSenseKeys[] = {"sight_range", "sight_angle", "reaction_time",
-                                           "hearing_range", "footstep_range"};
-constexpr std::string_view kMeleeKeys[] = {"melee_damage", "melee_range", "melee_windup",
-                                           "melee_interval", "melee_knockback"};
-constexpr std::string_view kRangedKeys[] = {"weapon", "attack_range", "keep_distance", "aim_error",
-                                            "burst",  "burst_pause",  "strafe_time"};
-constexpr std::string_view kSearchKeys[] = {"search_time", "search_radius", "cover_chance",
-                                            "cover_time", "cover_range"};
-constexpr SettingGroup kEnemyGroups[] = {
-    {"Look and sound", kLookKeys},  {"Body and movement", kBodyKeys},
-    {"Senses", kSenseKeys},         {"Melee attack", kMeleeKeys},
-    {"Ranged attack", kRangedKeys}, {"Searching and cover", kSearchKeys},
-};
 
 bool isEnemyFile(const GameConfigFile& file) { return file.path.starts_with("enemies/"); }
 
@@ -350,7 +328,7 @@ void GameDataPanel::drawFile(const GameConfigFile& file, const EditorDocument& d
             }
         });
     };
-    for (const SettingGroup& group : kEnemyGroups) {
+    for (const SettingGroup& group : enemySettingGroups()) {
         drawGroup(group.title, [&](std::string_view key) {
             return std::find(group.keys.begin(), group.keys.end(), key) != group.keys.end();
         });
@@ -406,11 +384,8 @@ bool GameDataPanel::drawValue(const GameConfigFile& file, const GameDataSetting&
     }
     case CVar::Type::Int: {
         int number = variable.asInt();
-        const float speed = std::max(std::fabs(static_cast<float>(number)) * 0.005f, 0.05f);
-        if (ImGui::DragInt("##value", &number, speed,
-                           limited ? static_cast<int>(variable.minimum()) : 0,
-                           limited ? static_cast<int>(variable.maximum()) : 0, "%d",
-                           ImGuiSliderFlags_AlwaysClamp)) {
+        if (dragWholeNumber("##value", number, limited ? static_cast<int>(variable.minimum()) : 0,
+                            limited ? static_cast<int>(variable.maximum()) : 0)) {
             value = std::format("{}", number);
             return true;
         }
@@ -418,10 +393,8 @@ bool GameDataPanel::drawValue(const GameConfigFile& file, const GameDataSetting&
     }
     case CVar::Type::Float: {
         float number = variable.asFloat();
-        const float speed = std::max(std::fabs(number) * 0.005f, 0.005f);
-        if (ImGui::DragFloat("##value", &number, speed, limited ? variable.minimum() : 0.0f,
-                             limited ? variable.maximum() : 0.0f, "%g",
-                             ImGuiSliderFlags_AlwaysClamp)) {
+        if (dragNumber("##value", number, limited ? variable.minimum() : 0.0f,
+                       limited ? variable.maximum() : 0.0f)) {
             value = formatFloat(number);
             return true;
         }

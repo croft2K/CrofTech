@@ -204,6 +204,11 @@ TEST_CASE("enemy and spawner markers are the size of their kind") {
     const ct::LevelEntity spawner{std::string(ct::kSpawnerClass),
                                   {{"origin", "0 0 0"}, {"type", "gunner"}}};
     CHECK(ct::entityMarker(spawner, bodies)->max == ct::Vec3{0.3f, 0.3f, 2.2f});
+    // A size of its own wins, held within the setting's range.
+    ct::LevelEntity big = spawner;
+    big.properties.push_back({"width", "2"});
+    big.properties.push_back({"height", "50"});
+    CHECK(ct::entityMarker(big, bodies)->max == ct::Vec3{1.0f, 1.0f, 8.0f});
 }
 
 TEST_CASE("entities with a yaw face that way, or their class's default") {

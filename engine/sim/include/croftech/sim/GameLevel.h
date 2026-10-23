@@ -186,6 +186,7 @@ public:
 
         // Enemies, spawners, and patrol points (position is where their enemies' feet go).
         std::uint32_t enemyType = kNoEnemyType; // GameSettings::enemies index
+        EnemyOverrides overrides; // settings of its type an enemy or a spawner's enemies change
         std::uint16_t yaw = 0;
         bool ambush = false;
         // The patrol point an enemy walks to first, or the one after a patrol point; kNoEntity
