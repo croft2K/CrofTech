@@ -77,6 +77,9 @@ LogicClass logicClassOf(std::string_view className) {
     if (className == kEncounterClass) {
         return LogicClass::Encounter;
     }
+    if (className == kScriptClass) {
+        return LogicClass::Script;
+    }
     return LogicClass::None;
 }
 
@@ -161,7 +164,7 @@ NameTable::const_iterator firstNamed(const NameTable& names, std::string_view na
         [](const auto& entry, std::string_view wanted) { return entry.first < wanted; });
 }
 
-std::string describe(const Level& level, std::uint32_t index) {
+std::string describeEntity(const Level& level, std::uint32_t index) {
     const LevelEntity& entity = level.entities[index];
     const std::string* name = findProperty(entity, "name");
     if (name != nullptr && !name->empty()) {
@@ -237,17 +240,23 @@ NavInput navInput(const Level& level) {
 }
 
 std::string_view logicEventName(LogicEvent event) {
-    return kEventNames[static_cast<std::size_t>(event)];
+    const auto index = static_cast<std::size_t>(event);
+    return index < std::size(kEventNames) ? kEventNames[index] : "script event";
 }
 
 std::string_view logicInputName(LogicInput input) {
-    return kInputNames[static_cast<std::size_t>(input)];
+    const auto index = static_cast<std::size_t>(input);
+    return index < std::size(kInputNames) ? kInputNames[index] : "script input";
 }
 
 GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
-                     const GameSettings& settings)
+                     const GameSettings& settings, std::span<const ScriptSource> scripts)
     : m_collision(staticBrushes(level)), m_entities(level.entities.size()),
       m_navInput(navInput(level)), m_navAgent(navAgent(settings.movement)) {
+    for (const auto& [name, index] : sortedNames(level)) {
+        m_names.push_back({std::string(name), index});
+    }
+    loadScripts(scripts);
     std::string error;
     if (start) {
         m_spawns.push_back(*start);
@@ -273,7 +282,7 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         readEntity(level, i, settings);
         if (hasModel(m_entities[i].logicClass)) {
             if (owned[i].empty()) {
-                m_warnings.push_back(std::format("{} has no brushes", describe(level, i)));
+                m_warnings.push_back(std::format("{} has no brushes", describeEntity(level, i)));
             } else {
                 m_models.push_back(std::make_unique<CollisionWorld>(owned[i]));
                 m_entities[i].model = m_models.back().get();
@@ -292,6 +301,58 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
             navMesh(navAgent(settings.enemies[entity.enemyType].movement));
         }
     }
+}
+
+void GameLevel::loadScripts(std::span<const ScriptSource> scripts) {
+    for (const ScriptSource& source : scripts) {
+        std::string error;
+        std::optional<ScriptProgram> program = ScriptProgram::load(source.name, source.text, error);
+        if (program) {
+            m_scripts.push_back(std::make_unique<ScriptProgram>(std::move(*program)));
+        } else {
+            m_warnings.push_back(std::format("scripts/{}.luau: {}", source.name, error));
+        }
+    }
+}
+
+std::span<const GameLevel::NamedEntity> GameLevel::entitiesNamed(std::string_view name) const {
+    const auto first = std::lower_bound(
+        m_names.begin(), m_names.end(), name,
+        [](const NamedEntity& entry, std::string_view wanted) { return entry.name < wanted; });
+    auto last = first;
+    while (last != m_names.end() && last->name == name) {
+        ++last;
+    }
+    return {first, last};
+}
+
+std::optional<LogicInput> GameLevel::findInput(std::uint32_t index, std::string_view input) const {
+    const Entity* target = entity(index);
+    if (target == nullptr || target->logicClass == LogicClass::None ||
+        target->classInfo == nullptr) {
+        return std::nullopt;
+    }
+    if (target->classInfo->scripted) {
+        if (target->script == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<std::uint32_t> found = target->script->findInput(input);
+        return found ? std::optional(scriptInput(*found)) : std::nullopt;
+    }
+    if (findSignal(target->classInfo->inputs, input) == nullptr) {
+        return std::nullopt;
+    }
+    return findByName<LogicInput>(kInputNames, input);
+}
+
+std::string GameLevel::describe(std::uint32_t index) const {
+    const Entity* found = entity(index);
+    const std::string_view className =
+        found != nullptr && found->classInfo != nullptr ? found->classInfo->name : "entity";
+    if (found != nullptr && !found->name.empty()) {
+        return std::format("{} '{}' (entity {})", className, found->name, index);
+    }
+    return std::format("{} (entity {})", className, index);
 }
 
 const NavMesh& GameLevel::navMesh(const NavAgent& agent) const {
@@ -334,6 +395,10 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
     Entity& entity = m_entities[index];
     entity.logicClass = logicClassOf(levelEntity.className);
     const EntityClassInfo* entityClass = findEntityClass(levelEntity.className);
+    entity.classInfo = entityClass;
+    if (const std::string* name = findProperty(levelEntity, "name")) {
+        entity.name = *name;
+    }
     if (entity.logicClass == LogicClass::None || entityClass == nullptr) {
         return;
     }
@@ -341,7 +406,7 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
     for (const PropertyInfo& property : entityClass->properties) {
         std::string problem;
         if (!checkPropertyValue(property, propertyValue(levelEntity, property), problem)) {
-            m_warnings.push_back(std::format("{}: {}", describe(level, index), problem));
+            m_warnings.push_back(std::format("{}: {}", describeEntity(level, index), problem));
         }
     }
     switch (entity.logicClass) {
@@ -404,11 +469,11 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
             entity.item == PickupItem::Ammo || entity.item == PickupItem::Weapon;
         if (needsWeapon && weapon.empty()) {
             m_warnings.push_back(std::format("{}: an {} pickup needs a weapon",
-                                             describe(level, index),
+                                             describeEntity(level, index),
                                              entity.item == PickupItem::Ammo ? "ammo" : "weapon"));
         } else if (needsWeapon && entity.weapon == kNoWeapon) {
-            m_warnings.push_back(
-                std::format("{}: the game has no weapon '{}'", describe(level, index), weapon));
+            m_warnings.push_back(std::format("{}: the game has no weapon '{}'",
+                                             describeEntity(level, index), weapon));
         }
         break;
     }
@@ -429,7 +494,7 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
         const std::string_view type = textProperty(levelEntity, *entityClass, "type");
         if (settings.enemies.empty()) {
             m_warnings.push_back(std::format("{}: the game has no enemies (enemies in game.cfg)",
-                                             describe(level, index)));
+                                             describeEntity(level, index)));
             break;
         }
         if (type.empty()) {
@@ -442,7 +507,7 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
         }
         if (entity.enemyType == kNoEnemyType) {
             m_warnings.push_back(
-                std::format("{}: the game has no enemy '{}'", describe(level, index), type));
+                std::format("{}: the game has no enemy '{}'", describeEntity(level, index), type));
             break;
         }
         const MovementSettings& movement = settings.enemies[entity.enemyType].movement;
@@ -462,6 +527,24 @@ void GameLevel::readEntity(const Level& level, std::uint32_t index, const GameSe
             secondsToTicks(clampedNumber(levelEntity, *entityClass, "wave_delay"));
         entity.startOn = flagProperty(levelEntity, *entityClass, "start_on");
         break;
+    case LogicClass::Script: {
+        const std::string_view script = textProperty(levelEntity, *entityClass, "script");
+        if (script.empty()) {
+            m_warnings.push_back(std::format("{}: names no script", describeEntity(level, index)));
+            break;
+        }
+        for (const std::unique_ptr<ScriptProgram>& program : m_scripts) {
+            if (program->name() == script) {
+                entity.script = program.get();
+            }
+        }
+        // One that was given but failed to compile has been warned about already.
+        if (entity.script == nullptr) {
+            m_warnings.push_back(std::format("{}: script '{}' isn't loaded (scripts/{}.luau)",
+                                             describeEntity(level, index), script, script));
+        }
+        break;
+    }
     case LogicClass::None:
         break;
     }
@@ -487,31 +570,34 @@ void GameLevel::resolveOutputs(const Level& level) {
         }
         outputRanges[source].first = m_outputs.size();
         for (const EntityOutput& levelOutput : levelEntity.outputs) {
-            const std::optional<LogicEvent> event =
-                findByName<LogicEvent>(kEventNames, levelOutput.event);
-            if (!event || findSignal(entityClass->events, levelOutput.event) == nullptr) {
-                m_warnings.push_back(std::format("{} has no event '{}'", describe(level, source),
-                                                 levelOutput.event));
+            std::optional<LogicEvent> event;
+            if (!entityClass->scripted) {
+                event = findSignal(entityClass->events, levelOutput.event) != nullptr
+                            ? findByName<LogicEvent>(kEventNames, levelOutput.event)
+                            : std::nullopt;
+            } else if (const ScriptProgram* script = m_entities[source].script) {
+                const std::optional<std::uint32_t> found = script->findEvent(levelOutput.event);
+                event = found ? std::optional(scriptEvent(*found)) : std::nullopt;
+            }
+            if (!event) {
+                m_warnings.push_back(std::format("{} has no event '{}'",
+                                                 describeEntity(level, source), levelOutput.event));
                 continue;
             }
             Range targets{m_targets.size(), 0};
             auto it = firstNamed(names, levelOutput.target);
             if (it == names.end() || it->first != levelOutput.target) {
                 m_warnings.push_back(std::format("{} {}: no entity is named '{}'",
-                                                 describe(level, source), levelOutput.event,
+                                                 describeEntity(level, source), levelOutput.event,
                                                  levelOutput.target));
             }
             for (; it != names.end() && it->first == levelOutput.target; ++it) {
                 const std::uint32_t target = it->second;
-                const EntityClassInfo* targetClass =
-                    findEntityClass(level.entities[target].className);
-                const std::optional<LogicInput> input =
-                    findByName<LogicInput>(kInputNames, levelOutput.input);
-                if (m_entities[target].logicClass == LogicClass::None || targetClass == nullptr ||
-                    !input || findSignal(targetClass->inputs, levelOutput.input) == nullptr) {
-                    m_warnings.push_back(std::format("{} {}: {} has no input '{}'",
-                                                     describe(level, source), levelOutput.event,
-                                                     describe(level, target), levelOutput.input));
+                const std::optional<LogicInput> input = findInput(target, levelOutput.input);
+                if (!input) {
+                    m_warnings.push_back(std::format(
+                        "{} {}: {} has no input '{}'", describeEntity(level, source),
+                        levelOutput.event, describeEntity(level, target), levelOutput.input));
                     continue;
                 }
                 m_targets.push_back({target, *input});
@@ -559,12 +645,13 @@ void GameLevel::resolveReferences(const Level& level) {
         // Of several points with the name, the first.
         const auto it = firstNamed(names, name);
         if (it == names.end() || it->first != name) {
-            m_warnings.push_back(
-                std::format("{} {}: no entity is named '{}'", describe(level, index), key, name));
+            m_warnings.push_back(std::format("{} {}: no entity is named '{}'",
+                                             describeEntity(level, index), key, name));
         } else if (m_entities[it->second].logicClass != named) {
-            m_warnings.push_back(std::format(
-                "{} {}: {} is not {}", describe(level, index), key, describe(level, it->second),
-                named == LogicClass::Encounter ? "an encounter" : "a patrol point"));
+            m_warnings.push_back(
+                std::format("{} {}: {} is not {}", describeEntity(level, index), key,
+                            describeEntity(level, it->second),
+                            named == LogicClass::Encounter ? "an encounter" : "a patrol point"));
         } else if (named == LogicClass::Encounter) {
             entity.encounter = it->second;
         } else {
@@ -589,8 +676,8 @@ void GameLevel::numberWaves(const Level& level) {
         waves.erase(std::unique(waves.begin(), waves.end()), waves.end());
         encounter.waveCount = static_cast<std::uint32_t>(waves.size());
         if (waves.empty()) {
-            m_warnings.push_back(
-                std::format("{}: no spawner names it, so it has no waves", describe(level, index)));
+            m_warnings.push_back(std::format("{}: no spawner names it, so it has no waves",
+                                             describeEntity(level, index)));
         }
         for (Entity& spawner : m_entities) {
             if (spawner.logicClass == LogicClass::Spawner && spawner.encounter == index) {
@@ -681,10 +768,43 @@ void GameLevel::spawnLogic(const GameSettings& settings) {
             world.encounters.add(entity.id, encounter);
             break;
         }
+        case LogicClass::Script: {
+            Script script;
+            if (entity.script != nullptr) {
+                const std::vector<ScriptVariable>& state = entity.script->declarations().state;
+                for (std::size_t i = 0; i < state.size(); ++i) {
+                    script.values[i] = state[i].initial;
+                }
+            }
+            world.scripts.add(entity.id, script);
+            break;
+        }
         case LogicClass::PatrolPoint:
         case LogicClass::None:
             break;
         }
+    }
+
+    // Start functions, called on the first tick, in level order.
+    std::uint32_t sent = 0;
+    for (std::uint32_t index = 0; index < m_entities.size(); ++index) {
+        const Entity& entity = m_entities[index];
+        if (!entity.id.isValid() || entity.script == nullptr ||
+            !entity.script->declarations().start) {
+            continue;
+        }
+        const EntityId id = world.entities.create();
+        if (!id.isValid()) {
+            break;
+        }
+        world.pendingInputs.add(id, {0,
+                                     0,
+                                     sent++,
+                                     index,
+                                     kDirectInput,
+                                     {},
+                                     index,
+                                     static_cast<std::uint32_t>(kScriptStartInput)});
     }
 }
 

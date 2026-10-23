@@ -1,6 +1,7 @@
 #include "croftech/server/Server.h"
 
 #include "croftech/core/Assert.h"
+#include "croftech/core/Log.h"
 #include "croftech/core/Profile.h"
 #include "croftech/net/Protocol.h"
 #include "croftech/sim/Firing.h"
@@ -13,8 +14,9 @@
 
 namespace ct {
 
-Server::Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start)
-    : m_level(level, start, settings), m_simulation(m_level, settings),
+Server::Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start,
+               std::span<const ScriptSource> scripts)
+    : m_level(level, start, settings, scripts), m_simulation(m_level, settings),
       m_current(std::make_unique<State>(m_level.startState())), m_next(std::make_unique<State>()) {
     CT_ASSERT(!m_level.spawns().empty());
 }
@@ -196,6 +198,13 @@ void Server::tick(Transport::Clock::time_point now) {
     }
     m_simulation.step(*m_current, inputs, *m_next);
     std::swap(m_current, m_next);
+    for (const ScriptMessage& message : m_simulation.takeScriptMessages()) {
+        if (message.error) {
+            logWarning("{}", message.text);
+        } else {
+            logInfo("{}", message.text);
+        }
+    }
     for (const Checkpoint& checkpoint : m_current->world.checkpoints.components()) {
         if ((checkpoint.flags & kCheckpointReached) != 0 &&
             checkpoint.reachedTick == m_current->tick) {

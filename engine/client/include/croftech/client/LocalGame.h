@@ -23,9 +23,11 @@ class LocalGame {
 public:
     using Clock = std::chrono::steady_clock;
 
-    // The player starts at the start point if given, otherwise at the level's player spawn.
+    // The player starts at the start point if given, otherwise at the level's player spawn. The
+    // level's script entities run the scripts given (loadLevelScripts in script/ScriptFiles.h).
     LocalGame(const Level& level, const GameSettings& settings,
-              const LinkConditions& conditions = {}, std::optional<SpawnPoint> start = {});
+              const LinkConditions& conditions = {}, std::optional<SpawnPoint> start = {},
+              std::span<const ScriptSource> scripts = {});
     ~LocalGame();
     LocalGame(const LocalGame&) = delete;
     LocalGame& operator=(const LocalGame&) = delete;

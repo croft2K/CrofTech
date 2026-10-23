@@ -17,7 +17,8 @@ namespace ct {
 // outside the struct's own file names its fields.
 
 // Entity is a reference to an entity: its index then its generation, two u32s (sim's EntityId).
-enum class FieldType : std::uint8_t { Float, Vec3, U8, U16, U32, I16, I32, Entity };
+// Saves record types by number, so new types go at the end.
+enum class FieldType : std::uint8_t { Float, Vec3, U8, U16, U32, I16, I32, Entity, Double };
 
 // How tools show a field; storage is the same either way.
 enum class FieldHint : std::uint8_t {
@@ -86,6 +87,8 @@ struct FieldTypeOf;
 template <>
 struct FieldTypeOf<float> : std::integral_constant<FieldType, FieldType::Float> {};
 template <>
+struct FieldTypeOf<double> : std::integral_constant<FieldType, FieldType::Double> {};
+template <>
 struct FieldTypeOf<Vec3> : std::integral_constant<FieldType, FieldType::Vec3> {};
 template <>
 struct FieldTypeOf<std::uint8_t> : std::integral_constant<FieldType, FieldType::U8> {};
@@ -110,6 +113,7 @@ constexpr std::uint32_t fieldSize(FieldType type) noexcept {
     case FieldType::I32:
         return 4;
     case FieldType::Entity:
+    case FieldType::Double:
         return 8;
     case FieldType::Vec3:
         return 12;
@@ -152,9 +156,11 @@ bool isValidFieldValue(const FieldInfo& field, std::span<const std::byte> object
 
 // Values copied in and out of an object's bytes by field, so generic code never casts a struct.
 float readFloat(std::span<const std::byte> object, std::uint32_t offset);
+double readDouble(std::span<const std::byte> object, std::uint32_t offset);
 Vec3 readVec3(std::span<const std::byte> object, std::uint32_t offset);
 std::int64_t readInteger(const FieldInfo& field, std::span<const std::byte> object);
 void writeFloat(std::span<std::byte> object, std::uint32_t offset, float value);
+void writeDouble(std::span<std::byte> object, std::uint32_t offset, double value);
 void writeVec3(std::span<std::byte> object, std::uint32_t offset, Vec3 value);
 void writeInteger(const FieldInfo& field, std::span<std::byte> object, std::int64_t value);
 
@@ -168,7 +174,8 @@ void writeEntityRef(std::span<std::byte> object, std::uint32_t offset, EntityRef
 class ByteWriter;
 class ByteReader;
 
-// Binary encoding of one field's value: little-endian, fieldSize(type) bytes, floats as their bits.
+// Binary encoding of one field's value: little-endian, fieldSize(type) bytes, floats and doubles as
+// their bits.
 void encodeField(ByteWriter& writer, const FieldInfo& field, std::span<const std::byte> object);
 void decodeField(ByteReader& reader, const FieldInfo& field, std::span<std::byte> object);
 

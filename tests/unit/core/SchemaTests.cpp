@@ -106,6 +106,29 @@ TEST_CASE("entity references encode as index then generation, and any value load
     CHECK(ct::isValidFieldValue(field, out));
 }
 
+TEST_CASE("doubles keep every bit through encoding, and must be finite") {
+    struct Exact {
+        double value = 0.0;
+    };
+    constexpr ct::FieldInfo field = CT_FIELD(Exact, value);
+    static_assert(field.type == ct::FieldType::Double);
+    static_assert(ct::fieldSize(ct::FieldType::Double) == sizeof(double));
+
+    const Exact exact{0.1 + 0.2};
+    ct::ByteWriter writer;
+    ct::encodeField(writer, field, std::as_bytes(std::span{&exact, 1}));
+    REQUIRE(writer.bytes().size() == 8);
+
+    Exact copy;
+    const auto out = std::as_writable_bytes(std::span{&copy, 1});
+    ct::ByteReader reader(writer.bytes());
+    ct::decodeField(reader, field, out);
+    CHECK(copy.value == exact.value);
+    CHECK(ct::isValidFieldValue(field, out));
+    copy.value = std::numeric_limits<double>::infinity();
+    CHECK_FALSE(ct::isValidFieldValue(field, out));
+}
+
 TEST_CASE("loaded values must be finite and inside the field's range") {
     Sample sample;
     const auto bytes = std::as_writable_bytes(std::span{&sample, 1});

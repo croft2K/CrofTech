@@ -30,6 +30,8 @@ enum class PropertyType : std::uint8_t {
     // The name of another entity this one uses (a patrol's next point), or empty; its choices are
     // the classes that entity may be of.
     Reference,
+    // The name of a script, scripts/<name>.luau in the content layers, or empty.
+    Script,
 };
 
 // Enemies placed in a level, standing where their origin is.
@@ -40,6 +42,8 @@ inline constexpr std::string_view kPatrolPointClass = "patrol_point";
 inline constexpr std::string_view kSpawnerClass = "spawner";
 // A fight in waves, each sent by the spawners that name the encounter and that wave.
 inline constexpr std::string_view kEncounterClass = "encounter";
+// Runs a Luau script (script/ScriptProgram.h), whose inputs and events are the ones it declares.
+inline constexpr std::string_view kScriptClass = "script";
 
 // Items players pick up by walking into them. The origin is where one rests; it is taken by
 // touching this box above it.
@@ -75,6 +79,9 @@ struct EntityClassInfo {
     std::span<const PropertyInfo> properties;
     std::span<const SignalInfo> events;
     std::span<const SignalInfo> inputs;
+    // Its events and inputs are declared by its script rather than listed here, so only something
+    // that has read the script can check them.
+    bool scripted = false;
 };
 
 // Every class, in the order the editor lists them.
@@ -90,7 +97,8 @@ std::string_view propertyValue(const LevelEntity& entity, const PropertyInfo& pr
 bool checkPropertyValue(const PropertyInfo& property, std::string_view value, std::string& problem);
 
 // Checks every property the class defines (set or defaulted) and that every output names an
-// event of the class and a valid target. Inputs are checked by the game, which knows the targets.
+// event of the class (unless its script declares them) and a valid target. Inputs are checked by
+// the game, which knows the targets.
 bool checkEntityClassProperties(const LevelEntity& entity, const EntityClassInfo& entityClass,
                                 std::string& problem);
 
@@ -110,7 +118,7 @@ Vec3 vectorProperty(const LevelEntity& entity, const EntityClassInfo& entityClas
 // The index of the value in the property's choices.
 std::size_t choiceProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                            std::string_view key);
-// Text, names, weapons, enemies and references.
+// Text, names, weapons, enemies, references and scripts.
 std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& entityClass,
                               std::string_view key);
 

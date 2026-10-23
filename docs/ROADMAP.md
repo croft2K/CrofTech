@@ -197,8 +197,21 @@ snapshots like the logic of M2, and every tuning value is game data layered over
 8. **Script entity (Luau).** Takes inputs and fires outputs through the same wiring, and keeps its
    state in components, so it is saved and rewound. It is sandboxed for maps downloaded from
    servers: no I/O, an instruction and memory budget per call, and deterministic maths only.
+   *Done (2026-10-23): `engine/script` (Luau 0.741 from vcpkg), the `script` class naming
+   `scripts/<name>.luau`, scripts that declare state, events, inputs and a start function, and a
+   `game` table to fire events, send inputs by name, call themselves later and draw random
+   numbers. Each call runs in a fresh state in a 4 GB-aligned arena, so the same calls allocate at
+   the same offsets and tables iterate in the same order on every machine, with 200,000 steps and
+   4 MB per call; the `^` operator, inexact maths functions and the optimize comments are
+   rejected when a script loads. State is kept as doubles in the `Script` component (the schema
+   gained a double type), and a call's effects happen only if it finishes. The editor's inspector
+   offers each script's events and inputs for wiring, `docs/Scripting.md` describes scripts for
+   level designers, a fuzz target runs scripts, and `levels/script_test.level` is a combination
+   lock. Left for later: trigonometry with results of our own making, so scripts can turn and
+   aim; queries of the game (who is where, what is alive), when a level needs them.*
 9. **First playable arena.** Built in the editor, with weapons and pickups, waves of both enemy
-   kinds, arena locks, music and one scripted moment. M3 is done when it has been played through.
+   kinds, arena locks and one scripted moment (music waits for the audio middleware). M3 is done
+   when it has been played through.
 
 ## Decisions
 

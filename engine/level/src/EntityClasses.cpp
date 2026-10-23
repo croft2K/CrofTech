@@ -251,6 +251,13 @@ constexpr SignalInfo kEncounterInputs[] = {
     {"stop", "Send no more enemies; those already sent stay"},
 };
 
+constexpr PropertyInfo kScriptProperties[] = {
+    kOrigin,
+    kName,
+    {"script", Script, "",
+     "The script it runs: scripts/<name>.luau, whose inputs and events this entity has"},
+};
+
 constexpr EntityClassInfo kClasses[] = {
     {kPlayerSpawnClass, "Where a player starts", EntityShape::Point, kSpawnProperties, {}, {}},
     {"trigger", "An invisible volume that fires events when players go in and out",
@@ -289,6 +296,14 @@ constexpr EntityClassInfo kClasses[] = {
      "A fight in waves of enemies from the spawners that name it; wire its events to doors to "
      "lock the arena",
      EntityShape::Point, kEncounterProperties, kEncounterEvents, kEncounterInputs},
+    {kScriptClass,
+     "Runs a Luau script, which keeps its own state and is wired by the inputs and events it "
+     "declares",
+     EntityShape::Point,
+     kScriptProperties,
+     {},
+     {},
+     true},
 };
 
 constexpr PresetProperty kDoorPreset[] = {{"activate", "touch"}, {"speed", "3"}, {"wait", "3"}};
@@ -415,6 +430,13 @@ constexpr EntityPreset kPresets[] = {
      {},
      false,
      {}},
+    {"Script",
+     "Runs a script from the scripts folder (name it in the inspector), wired like any entity",
+     kScriptClass,
+     {},
+     {},
+     false,
+     {}},
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,
@@ -525,12 +547,16 @@ bool checkPropertyValue(const PropertyInfo& property, std::string_view value,
         return true;
     case Weapon:
     case Enemy:
-        if (!value.empty() && !std::all_of(value.begin(), value.end(), [](char c) {
-                return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
-            })) {
-            problem =
-                std::format("{} must be {} name: lowercase letters, digits, '-' or '_'",
-                            property.key, property.type == Weapon ? "a weapon's" : "an enemy's");
+    case Script:
+        if (!value.empty() &&
+            (value.size() > kMaxNameLength || !std::all_of(value.begin(), value.end(), [](char c) {
+                 return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+             }))) {
+            problem = std::format("{} must be {} name: lowercase letters, digits, '-' or '_'",
+                                  property.key,
+                                  property.type == Weapon  ? "a weapon's"
+                                  : property.type == Enemy ? "an enemy's"
+                                                           : "a script's");
             return false;
         }
         return true;
@@ -554,7 +580,7 @@ bool checkEntityClassProperties(const LevelEntity& entity, const EntityClassInfo
         }
     }
     for (const EntityOutput& output : entity.outputs) {
-        if (findSignal(entityClass.events, output.event) == nullptr) {
+        if (!entityClass.scripted && findSignal(entityClass.events, output.event) == nullptr) {
             problem = std::format("{} has no event '{}'", entityClass.name, output.event);
             return false;
         }
@@ -613,7 +639,7 @@ std::string_view textProperty(const LevelEntity& entity, const EntityClassInfo& 
     const PropertyInfo* property = findPropertyInfo(entityClass, key);
     CT_ASSERT(property != nullptr &&
               (property->type == Text || property->type == Name || property->type == Weapon ||
-               property->type == Enemy || property->type == Reference));
+               property->type == Enemy || property->type == Reference || property->type == Script));
     return propertyValue(entity, *property);
 }
 

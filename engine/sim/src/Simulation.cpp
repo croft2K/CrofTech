@@ -2,6 +2,7 @@
 
 #include "LevelLogic.h"
 #include "NavQueries.h"
+#include "ScriptHost.h"
 
 #include "croftech/core/Assert.h"
 #include "croftech/core/Hash.h"
@@ -15,6 +16,7 @@
 #include <cstddef>
 #include <limits>
 #include <span>
+#include <utility>
 
 namespace ct {
 namespace {
@@ -38,7 +40,8 @@ void placePlayer(World& world, const GameSettings& settings, const SpawnPoint& s
 } // namespace
 
 Simulation::Simulation(const GameLevel& level, const GameSettings& settings)
-    : m_level(&level), m_settings(settings), m_navQueries(std::make_unique<NavQueries>()) {}
+    : m_level(&level), m_settings(settings), m_navQueries(std::make_unique<NavQueries>()),
+      m_scripts(std::make_unique<ScriptHost>()) {}
 
 Simulation::~Simulation() = default;
 
@@ -50,7 +53,7 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     World& world = next.world;
 
     // Systems run in a fixed order every tick.
-    LevelLogic logic(*m_level, next);
+    LevelLogic logic(*m_level, next, m_scripts.get());
     logic.deliverPendingInputs();
     logic.runTimers();
     logic.runMovers(m_settings);
@@ -65,6 +68,16 @@ void Simulation::step(const State& prev, const InputSet& inputs, State& next) co
     logic.runPickups(m_settings);
     logic.runHurtVolumes(m_settings);
     drainOvercharge(next, m_settings.rules);
+}
+
+std::vector<ScriptMessage> Simulation::takeScriptMessages() {
+    return std::exchange(m_scripts->messages, {});
+}
+
+void ScriptHost::report(bool error, std::string text) {
+    if (messages.size() < kMaxScriptMessages) {
+        messages.push_back({error, std::move(text)});
+    }
 }
 
 void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs,

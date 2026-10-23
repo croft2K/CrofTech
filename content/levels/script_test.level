@@ -1,0 +1,366 @@
+croftech_level 4
+# Made by make_script_test.py.
+
+brush
+    vertex -10 -8 -1
+    vertex 10 -8 -1
+    vertex -10 8 -1
+    vertex 10 8 -1
+    vertex -10 -8 0
+    vertex 10 -8 0
+    vertex -10 8 0
+    vertex 10 8 0
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -11 -9 0
+    vertex 11 -9 0
+    vertex -11 -8 0
+    vertex 11 -8 0
+    vertex -11 -9 5
+    vertex 11 -9 5
+    vertex -11 -8 5
+    vertex 11 -8 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -11 -8 0
+    vertex -10 -8 0
+    vertex -11 8 0
+    vertex -10 8 0
+    vertex -11 -8 5
+    vertex -10 -8 5
+    vertex -11 8 5
+    vertex -10 8 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex 10 -8 0
+    vertex 11 -8 0
+    vertex 10 8 0
+    vertex 11 8 0
+    vertex 10 -8 5
+    vertex 11 -8 5
+    vertex 10 8 5
+    vertex 11 8 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -11 8 0
+    vertex -2 8 0
+    vertex -11 9 0
+    vertex -2 9 0
+    vertex -11 8 5
+    vertex -2 8 5
+    vertex -11 9 5
+    vertex -2 9 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex 2 8 0
+    vertex 11 8 0
+    vertex 2 9 0
+    vertex 11 9 0
+    vertex 2 8 5
+    vertex 11 8 5
+    vertex 2 9 5
+    vertex 11 9 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -2 8 3
+    vertex 2 8 3
+    vertex -2 9 3
+    vertex 2 9 3
+    vertex -2 8 5
+    vertex 2 8 5
+    vertex -2 9 5
+    vertex 2 9 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -4 9 -1
+    vertex 4 9 -1
+    vertex -4 15 -1
+    vertex 4 15 -1
+    vertex -4 9 0
+    vertex 4 9 0
+    vertex -4 15 0
+    vertex 4 15 0
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -5 15 0
+    vertex 5 15 0
+    vertex -5 16 0
+    vertex 5 16 0
+    vertex -5 15 5
+    vertex 5 15 5
+    vertex -5 16 5
+    vertex 5 16 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -5 9 0
+    vertex -4 9 0
+    vertex -5 15 0
+    vertex -4 15 0
+    vertex -5 9 5
+    vertex -4 9 5
+    vertex -5 15 5
+    vertex -4 15 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex 4 9 0
+    vertex 5 9 0
+    vertex 4 15 0
+    vertex 5 15 0
+    vertex 4 9 5
+    vertex 5 9 5
+    vertex 4 15 5
+    vertex 5 15 5
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -6 -1 0
+    vertex -4 -1 0
+    vertex -6 1 0
+    vertex -4 1 0
+    vertex -6 -1 0.1
+    vertex -4 -1 0.1
+    vertex -6 1 0.1
+    vertex -4 1 0.1
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex -1 -1 0
+    vertex 1 -1 0
+    vertex -1 1 0
+    vertex 1 1 0
+    vertex -1 -1 0.1
+    vertex 1 -1 0.1
+    vertex -1 1 0.1
+    vertex 1 1 0.1
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+brush
+    vertex 4 -1 0
+    vertex 6 -1 0
+    vertex 4 1 0
+    vertex 6 1 0
+    vertex 4 -1 0.1
+    vertex 6 -1 0.1
+    vertex 4 1 0.1
+    vertex 6 1 0.1
+    face 0 4 6 2
+    face 1 3 7 5
+    face 0 1 5 4
+    face 2 6 7 3
+    face 0 2 3 1
+    face 4 5 7 6
+end
+
+entity player_spawn
+    origin 0 -6 0
+    yaw 90
+end
+
+entity pickup
+    origin -3 -6 0
+    item weapon
+    weapon shotgun
+end
+
+entity pickup
+    origin 3 -6 0
+    item weapon
+    weapon machinegun
+end
+
+entity pickup
+    origin 0 13 0
+    item health
+    amount 100
+    limit 200
+end
+
+entity trigger
+    name plate_left
+    output on_enter lock left 0
+    brush
+        vertex -6 -1 0.1
+        vertex -4 -1 0.1
+        vertex -6 1 0.1
+        vertex -4 1 0.1
+        vertex -6 -1 2
+        vertex -4 -1 2
+        vertex -6 1 2
+        vertex -4 1 2
+        face 0 4 6 2
+        face 1 3 7 5
+        face 0 1 5 4
+        face 2 6 7 3
+        face 0 2 3 1
+        face 4 5 7 6
+    end
+end
+
+entity trigger
+    name plate_middle
+    output on_enter lock middle 0
+    brush
+        vertex -1 -1 0.1
+        vertex 1 -1 0.1
+        vertex -1 1 0.1
+        vertex 1 1 0.1
+        vertex -1 -1 2
+        vertex 1 -1 2
+        vertex -1 1 2
+        vertex 1 1 2
+        face 0 4 6 2
+        face 1 3 7 5
+        face 0 1 5 4
+        face 2 6 7 3
+        face 0 2 3 1
+        face 4 5 7 6
+    end
+end
+
+entity trigger
+    name plate_right
+    output on_enter lock right 0
+    brush
+        vertex 4 -1 0.1
+        vertex 6 -1 0.1
+        vertex 4 1 0.1
+        vertex 6 1 0.1
+        vertex 4 -1 2
+        vertex 6 -1 2
+        vertex 4 1 2
+        vertex 6 1 2
+        face 0 4 6 2
+        face 1 3 7 5
+        face 0 1 5 4
+        face 2 6 7 3
+        face 0 2 3 1
+        face 4 5 7 6
+    end
+end
+
+entity script
+    origin 0 4 1
+    name lock
+    script combination
+    output on_solved vault move_to_end 0
+    output on_wrong guard spawn 0.5
+end
+
+entity mover
+    name vault
+    move 0 0 3
+    speed 1.5
+    wait -1
+    nav door
+    brush
+        vertex -2 8.25 0
+        vertex 2 8.25 0
+        vertex -2 8.75 0
+        vertex 2 8.75 0
+        vertex -2 8.25 3
+        vertex 2 8.25 3
+        vertex -2 8.75 3
+        vertex 2 8.75 3
+        face 0 4 6 2
+        face 1 3 7 5
+        face 0 1 5 4
+        face 2 6 7 3
+        face 0 2 3 1
+        face 4 5 7 6
+    end
+end
+
+entity spawner
+    origin 8 6 0
+    yaw -135
+    name guard
+    type charger
+end

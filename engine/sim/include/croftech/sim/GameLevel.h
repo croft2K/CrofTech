@@ -2,6 +2,7 @@
 
 #include "croftech/level/Level.h"
 #include "croftech/nav/NavMesh.h"
+#include "croftech/script/ScriptProgram.h"
 #include "croftech/sim/CollisionWorld.h"
 #include "croftech/sim/GameSettings.h"
 #include "croftech/sim/World.h"
@@ -16,6 +17,8 @@
 #include <vector>
 
 namespace ct {
+
+struct EntityClassInfo;
 
 // The logic classes the simulation runs (level/EntityClasses.h describes them for editors).
 enum class LogicClass : std::uint8_t {
@@ -32,6 +35,7 @@ enum class LogicClass : std::uint8_t {
     PatrolPoint,
     Spawner,
     Encounter,
+    Script,
 };
 
 // Every event and input of those classes, so the wiring is resolved from names once, when the
@@ -72,6 +76,20 @@ enum class LogicInput : std::uint8_t {
     Spawn,
 };
 
+// Scripts name their own events and inputs, numbered from here in the order their declarations
+// list them (script/ScriptProgram.h): a script's third input is scriptInput(2).
+inline constexpr std::uint32_t kFirstScriptSignal = 128;
+static_assert(kFirstScriptSignal + kMaxScriptEvents <= 255 &&
+              kFirstScriptSignal + kMaxScriptInputs <= 255);
+constexpr LogicEvent scriptEvent(std::uint32_t index) {
+    return static_cast<LogicEvent>(kFirstScriptSignal + index);
+}
+constexpr LogicInput scriptInput(std::uint32_t index) {
+    return static_cast<LogicInput>(kFirstScriptSignal + index);
+}
+// Sent to each script with a start function as play begins, to call it.
+inline constexpr LogicInput kScriptStartInput = static_cast<LogicInput>(255);
+
 // What sets a mover going besides its inputs (the mover class's "activate").
 enum class MoverActivation : std::uint8_t { Input, Touch, Stand };
 
@@ -85,6 +103,7 @@ inline constexpr std::uint32_t kNoEnemyType = 0xFFFFFFFFu;
 inline constexpr std::int32_t kUsualPickupHealth = 25;
 inline constexpr std::int32_t kUsualPickupArmour = 50;
 
+// The names of the built-in events and inputs; "script event" and "script input" for scripts'.
 std::string_view logicEventName(LogicEvent event);
 std::string_view logicInputName(LogicInput input);
 LogicClass logicClassOf(std::string_view className);
@@ -127,9 +146,12 @@ public:
 
     struct Entity {
         LogicClass logicClass = LogicClass::None;
+        const EntityClassInfo* classInfo = nullptr; // null for classes the engine doesn't know
+        std::string name;                           // its "name", which may be empty
         EntityId id; // in the starting state; invalid if the entity isn't simulated
         std::span<const Output> outputs;
         const CollisionWorld* model = nullptr; // its brushes: volumes and movers
+        const ScriptProgram* script = nullptr; // a script entity's, if it loaded
 
         // Settings, read from the level through EntityClasses with every value clamped to its
         // range, so play never sees one the editor wouldn't allow.
@@ -187,10 +209,18 @@ public:
         }
     };
 
+    // An entity with a name, for finding the entities a name stands for.
+    struct NamedEntity {
+        std::string name;
+        std::uint32_t index = 0;
+    };
+
     // Pickups name weapons, which are found among the game's weapons by name; the navigation mesh
-    // is built for the player's size.
+    // is built for the player's size. Script entities run the scripts given, by name
+    // (loadLevelScripts in script/ScriptFiles.h reads them), each compiled once here.
     explicit GameLevel(const Level& level, std::optional<SpawnPoint> start = {},
-                       const GameSettings& settings = {});
+                       const GameSettings& settings = {},
+                       std::span<const ScriptSource> scripts = {});
     GameLevel(const GameLevel&) = delete;
     GameLevel& operator=(const GameLevel&) = delete;
 
@@ -205,6 +235,12 @@ public:
         return index < m_entities.size() ? &m_entities[index] : nullptr;
     }
     std::size_t entityCount() const { return m_entities.size(); }
+    // The entities with the name, in level order.
+    std::span<const NamedEntity> entitiesNamed(std::string_view name) const;
+    // The input of that name, if the entity accepts it: one of its class's, or of its script's.
+    std::optional<LogicInput> findInput(std::uint32_t index, std::string_view input) const;
+    // The class, name and index of an entity, for messages.
+    std::string describe(std::uint32_t index) const;
     // Before any player joins: the logic entities with their starting values.
     const State& startState() const { return *m_start; }
     // What was wrong with the level's logic (unknown inputs, targets that don't exist, values out
@@ -219,6 +255,7 @@ public:
 
 private:
     void readEntity(const Level& level, std::uint32_t index, const GameSettings& settings);
+    void loadScripts(std::span<const ScriptSource> scripts);
     void resolveOutputs(const Level& level);
     void resolveReferences(const Level& level);
     // Numbers each encounter's waves from 0 in the order of the spawners' wave settings, so a
@@ -236,6 +273,8 @@ private:
     std::vector<Target> m_targets;
     std::unique_ptr<State> m_start;
     std::vector<std::string> m_warnings;
+    std::vector<NamedEntity> m_names; // sorted by name, then level order
+    std::vector<std::unique_ptr<ScriptProgram>> m_scripts;
     NavInput m_navInput;
     NavAgent m_navAgent;
     mutable std::mutex m_navMutex;

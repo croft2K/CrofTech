@@ -5,6 +5,7 @@
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
 #include "croftech/level/EntityClasses.h"
+#include "croftech/script/ScriptLibrary.h"
 
 #include <cstddef>
 #include <optional>
@@ -38,6 +39,9 @@ public:
     // The game's weapons, which pickups choose from.
     void setWeaponNames(std::vector<std::string> names) { m_weaponNames = std::move(names); }
     void setEnemyNames(std::vector<std::string> names) { m_enemyNames = std::move(names); }
+    // The scripts the script property offers, whose events and inputs script entities have. It
+    // must outlive the panels.
+    void setScripts(const ScriptLibrary* scripts) { m_scripts = scripts; }
 
 private:
     // Sides, steps, thickness and facing for the shape being drawn.
@@ -86,6 +90,7 @@ private:
     std::string m_problem;
     std::vector<std::string> m_weaponNames;
     std::vector<std::string> m_enemyNames;
+    const ScriptLibrary* m_scripts = nullptr;
 
     // The rows shown in the hierarchy, in order, for Shift-click ranges: this frame's so far and
     // last frame's, which every click sees in full.

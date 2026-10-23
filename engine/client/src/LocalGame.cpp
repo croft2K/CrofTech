@@ -15,8 +15,9 @@ constexpr float kDeathSinkSeconds = 0.4f;
 } // namespace
 
 LocalGame::LocalGame(const Level& level, const GameSettings& settings,
-                     const LinkConditions& conditions, std::optional<SpawnPoint> start)
-    : m_settings(settings), m_link(conditions), m_server(level, settings, start),
+                     const LinkConditions& conditions, std::optional<SpawnPoint> start,
+                     std::span<const ScriptSource> scripts)
+    : m_settings(settings), m_link(conditions), m_server(level, settings, start, scripts),
       m_thread(m_server), m_client(m_link.clientEnd()) {
     m_server.addConnection(m_link.serverEnd());
     m_thread.start();

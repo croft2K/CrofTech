@@ -19,8 +19,9 @@ public:
                         RulesSettings rules = {})
         : SimHarness(level, GameSettings{movement, rules, {}, {}}) {}
 
-    SimHarness(const Level& level, const GameSettings& settings)
-        : m_level(level, {}, settings), m_simulation(m_level, settings),
+    SimHarness(const Level& level, const GameSettings& settings,
+               std::span<const ScriptSource> scripts = {})
+        : m_level(level, {}, settings, scripts), m_simulation(m_level, settings),
           m_current(std::make_unique<State>(m_level.startState())),
           m_next(std::make_unique<State>()) {}
 
@@ -67,6 +68,7 @@ public:
     bool onGround() const { return (motion().flags & kPlayerOnGround) != 0; }
     float feetZ() const { return transform().position.z - movement().halfExtents.z; }
     const GameSettings& settings() const { return m_simulation.settings(); }
+    std::vector<ScriptMessage> takeScriptMessages() { return m_simulation.takeScriptMessages(); }
     const MovementSettings& movement() const { return settings().movement; }
 
 private:

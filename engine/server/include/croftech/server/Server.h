@@ -25,8 +25,10 @@ namespace ct {
 class Server {
 public:
     // Players start at the start point if there is one (play from here, in the editor), and
-    // otherwise at the level's spawns, so then the level must have one.
-    Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start = {});
+    // otherwise at the level's spawns, so then the level must have one. Script entities run the
+    // scripts given; what they print and their errors go to the log.
+    Server(const Level& level, const GameSettings& settings, std::optional<SpawnPoint> start = {},
+           std::span<const ScriptSource> scripts = {});
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
 

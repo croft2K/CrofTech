@@ -30,6 +30,8 @@
 #include "croftech/editor/EditorActions.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
+#include "croftech/script/ScriptFiles.h"
+#include "croftech/script/ScriptLibrary.h"
 #include "croftech/sim/GameLevel.h"
 #include "croftech/sim/GameSettings.h"
 #include "croftech/sim/MovementConfig.h"
@@ -321,6 +323,11 @@ int main(int argc, char** argv) {
     ct::EditorPanels panels;
     panels.setWeaponNames(game->weapons);
     panels.setEnemyNames(game->enemies);
+    // Looked at again every second, so scripts written alongside the editor show up as saved.
+    ct::ScriptLibrary scripts(content);
+    scripts.refresh();
+    auto scriptsRefreshed = std::chrono::steady_clock::now();
+    panels.setScripts(&scripts);
     bool running = true;
     bool quitRequested = false;
     bool flying = false;
@@ -371,8 +378,15 @@ int main(int argc, char** argv) {
             }
             from = *camera;
         }
+        // Read each time, so edits to scripts play at once.
+        std::vector<std::string> scriptWarnings;
+        const std::vector<ct::ScriptSource> scripts =
+            ct::loadLevelScripts(content, document.level(), scriptWarnings);
+        for (const std::string& warning : scriptWarnings) {
+            ct::logWarning("{}", warning);
+        }
         play = ct::PlaySession::start(document.level(), gameSettings, settings.playConditions, from,
-                                      playError);
+                                      scripts, playError);
         if (!play) {
             ct::logError("Can't play: {}", playError);
             return;
@@ -386,6 +400,11 @@ int main(int argc, char** argv) {
     };
 
     while (running) {
+        if (const auto now = std::chrono::steady_clock::now();
+            now - scriptsRefreshed > std::chrono::seconds(1)) {
+            scripts.refresh();
+            scriptsRefreshed = now;
+        }
         ct::FlyInput flyInput;
         bool stopPlay = false;
         SDL_Event event;

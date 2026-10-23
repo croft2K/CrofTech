@@ -2,6 +2,7 @@
 
 #include "croftech/core/Math.h"
 #include "croftech/core/Schema.h"
+#include "croftech/script/ScriptProgram.h"
 #include "croftech/sim/EntityId.h"
 
 #include <array>
@@ -12,8 +13,8 @@
 namespace ct {
 
 // Components of the logic entities placed in levels (triggers, checkpoints, hurt volumes, relays,
-// counters, timers, movers, pickups, spawners, encounters) and of the inputs on their way between
-// them. What a level sets (a
+// counters, timers, movers, pickups, spawners, encounters, scripts) and of the inputs on their way
+// between them. What a level sets (a
 // counter's target, a timer's interval, the wiring) is static and stays in the GameLevel; only what
 // changes during play is here, so it is saved, rewound and sent like any other state.
 
@@ -168,16 +169,22 @@ struct Schema<Mover> {
 };
 static_assert(describesEveryByte(Schema<Mover>::value));
 
+// PendingInput::output of an input a script sent to one entity rather than through an output.
+inline constexpr std::uint32_t kDirectInput = 0xFFFFFFFFu;
+
 // An output with a delay, waiting to be delivered: an entity of its own, destroyed once delivered.
-// The source entity and output number find the targets and input in the GameLevel. Inputs due on
-// the same tick are delivered in the order they were sent.
+// The source entity and output number find the targets and input in the GameLevel; an input a
+// script sent (output kDirectInput) names its target and input itself. Inputs due on the same tick
+// are delivered in the order they were sent.
 struct PendingInput {
     std::uint32_t deliverTick = 0;
     std::uint32_t sentTick = 0;
     std::uint32_t sentOrder = 0; // among those sent on the same tick
     std::uint32_t source = 0;    // level entity index
-    std::uint32_t output = 0;    // index into the source's outputs
+    std::uint32_t output = 0;    // index into the source's outputs, or kDirectInput
     EntityId activator;          // the player who set the chain off, if any
+    std::uint32_t target = 0;    // kDirectInput: the level entity index...
+    std::uint32_t input = 0;     // ...and the LogicInput it is sent
 };
 
 template <>
@@ -189,6 +196,10 @@ struct Schema<PendingInput> {
         CT_FIELD(PendingInput, source).withDescription("Level entity whose output this is"),
         CT_FIELD(PendingInput, output).withDescription("Which of its outputs"),
         CT_FIELD(PendingInput, activator).withDescription("Who set the chain of events off"),
+        CT_FIELD(PendingInput, target).withDescription("Sent by a script: the entity it goes to"),
+        CT_FIELD(PendingInput, input)
+            .withRange(0, 255)
+            .withDescription("Sent by a script: the input it is"),
     };
     static constexpr TypeSchema value{"pending_input", sizeof(PendingInput), kFields};
 };
@@ -270,6 +281,41 @@ struct Schema<Encounter> {
     static constexpr TypeSchema value{"encounter", sizeof(Encounter), kFields};
 };
 static_assert(describesEveryByte(Schema<Encounter>::value));
+
+// A script entity's values: the state its script declares, in the script's order (sorted by name),
+// kept as Luau numbers so each comes back exactly as the script left it. Booleans are 1 or 0.
+struct Script {
+    std::uint32_t random = 0; // counter for game:random
+    std::uint32_t calls = 0;  // that finished
+    std::array<double, kMaxScriptState> values{};
+};
+
+template <>
+struct Schema<Script> {
+    static constexpr FieldInfo kFields[] = {
+        CT_FIELD(Script, random).withDescription("Counter for game:random"),
+        CT_FIELD(Script, calls).withDescription("Calls of its inputs that finished"),
+        CT_FIELD_ELEMENT(Script, values, 0),
+        CT_FIELD_ELEMENT(Script, values, 1),
+        CT_FIELD_ELEMENT(Script, values, 2),
+        CT_FIELD_ELEMENT(Script, values, 3),
+        CT_FIELD_ELEMENT(Script, values, 4),
+        CT_FIELD_ELEMENT(Script, values, 5),
+        CT_FIELD_ELEMENT(Script, values, 6),
+        CT_FIELD_ELEMENT(Script, values, 7),
+        CT_FIELD_ELEMENT(Script, values, 8),
+        CT_FIELD_ELEMENT(Script, values, 9),
+        CT_FIELD_ELEMENT(Script, values, 10),
+        CT_FIELD_ELEMENT(Script, values, 11),
+        CT_FIELD_ELEMENT(Script, values, 12),
+        CT_FIELD_ELEMENT(Script, values, 13),
+        CT_FIELD_ELEMENT(Script, values, 14),
+        CT_FIELD_ELEMENT(Script, values, 15),
+    };
+    static constexpr TypeSchema value{"script", sizeof(Script), kFields};
+};
+static_assert(kMaxScriptState == 16, "one schema field per value");
+static_assert(describesEveryByte(Schema<Script>::value));
 
 inline EncounterPhase encounterPhase(const Encounter& encounter) {
     return encounter.phase < kEncounterPhaseCount ? static_cast<EncounterPhase>(encounter.phase)

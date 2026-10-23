@@ -13,6 +13,7 @@ namespace ct {
 
 class CollisionScene;
 class NavQueries;
+struct ScriptHost;
 class NavQuery;
 struct NavFilter;
 
@@ -23,9 +24,12 @@ struct NavFilter;
 // Outputs without a delay are delivered within the tick, in the order they were sent; each phase
 // below delivers everything its events set off before returning. Delayed outputs become
 // PendingInput entities. A tick delivers at most kMaxInputDeliveriesPerTick inputs.
+//
+// Script entities run their scripts' calls in the runner given; without one, they ignore inputs.
 class LevelLogic {
 public:
-    LevelLogic(const GameLevel& level, State& state) : m_level(level), m_state(state) {}
+    LevelLogic(const GameLevel& level, State& state, ScriptHost* scripts = nullptr)
+        : m_level(level), m_state(state), m_scripts(scripts) {}
 
     // Inputs whose delay ends this tick, oldest first.
     void deliverPendingInputs();
@@ -63,6 +67,7 @@ private:
     void fire(std::uint32_t source, LogicEvent event, EntityId activator);
     void send(std::uint32_t source, std::uint32_t output, EntityId activator);
     void queue(const GameLevel::Output& output, EntityId activator);
+    void queueInput(std::uint32_t target, LogicInput input, EntityId activator);
     void deliverQueued();
     void apply(const Queued& input);
     // What the pickup gives, if the player needs it; whether it was taken.
@@ -99,6 +104,15 @@ private:
     // No more waves, and its spawners forget the enemies they had waiting.
     void stopEncounter(std::uint32_t index, Encounter& encounter);
 
+    // Scripts (Scripts.cpp).
+    // Calls the script's function for the input (or its start function), and then does what the
+    // call asked for, if it finished.
+    void runScript(std::uint32_t index, const GameLevel::Entity& entity, LogicInput input,
+                   EntityId activator);
+    // An input to one entity, from a script: now, or as a PendingInput after the delay.
+    void sendDirect(std::uint32_t source, std::uint32_t target, LogicInput input,
+                    std::uint32_t delayTicks, EntityId activator);
+
     // Movers (Movers.cpp).
     void applyMoverInput(std::uint32_t index, const GameLevel::Entity& entity, Mover& mover,
                          LogicInput input, EntityId activator);
@@ -112,6 +126,7 @@ private:
 
     const GameLevel& m_level;
     State& m_state;
+    ScriptHost* m_scripts;
     std::array<Queued, 1024> m_queue{}; // a ring
     std::uint32_t m_queueHead = 0;
     std::uint32_t m_queueCount = 0;

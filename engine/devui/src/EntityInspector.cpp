@@ -42,6 +42,9 @@ void drawValue(const FieldInfo& field, std::span<const std::byte> bytes) {
     case FieldType::Float:
         ImGui::Text("%.3f%s", static_cast<double>(readFloat(bytes, field.offset)), suffix);
         return;
+    case FieldType::Double:
+        ImGui::Text("%.17g%s", readDouble(bytes, field.offset), suffix);
+        return;
     case FieldType::Vec3: {
         const Vec3 v = readVec3(bytes, field.offset);
         ImGui::Text("%.3f  %.3f  %.3f%s", static_cast<double>(v.x), static_cast<double>(v.y),

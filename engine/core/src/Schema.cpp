@@ -3,6 +3,7 @@
 #include "croftech/core/Assert.h"
 #include "croftech/core/ByteStream.h"
 
+#include <bit>
 #include <cmath>
 #include <cstring>
 
@@ -43,6 +44,8 @@ std::string_view fieldTypeName(FieldType type) noexcept {
         return "i32";
     case FieldType::Entity:
         return "entity";
+    case FieldType::Double:
+        return "double";
     }
     return "unknown";
 }
@@ -51,6 +54,8 @@ bool isValidFieldValue(const FieldInfo& field, std::span<const std::byte> object
     switch (field.type) {
     case FieldType::Float:
         return std::isfinite(readFloat(object, field.offset));
+    case FieldType::Double:
+        return std::isfinite(readDouble(object, field.offset));
     case FieldType::Vec3: {
         const Vec3 v = readVec3(object, field.offset);
         return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
@@ -66,6 +71,10 @@ bool isValidFieldValue(const FieldInfo& field, std::span<const std::byte> object
 
 float readFloat(std::span<const std::byte> object, std::uint32_t offset) {
     return load<float>(object, offset);
+}
+
+double readDouble(std::span<const std::byte> object, std::uint32_t offset) {
+    return load<double>(object, offset);
 }
 
 Vec3 readVec3(std::span<const std::byte> object, std::uint32_t offset) {
@@ -88,6 +97,7 @@ std::int64_t readInteger(const FieldInfo& field, std::span<const std::byte> obje
     case FieldType::Float:
     case FieldType::Vec3:
     case FieldType::Entity:
+    case FieldType::Double:
         break;
     }
     CT_ASSERT(false && "not an integer field");
@@ -95,6 +105,10 @@ std::int64_t readInteger(const FieldInfo& field, std::span<const std::byte> obje
 }
 
 void writeFloat(std::span<std::byte> object, std::uint32_t offset, float value) {
+    store(object, offset, value);
+}
+
+void writeDouble(std::span<std::byte> object, std::uint32_t offset, double value) {
     store(object, offset, value);
 }
 
@@ -125,6 +139,7 @@ void writeInteger(const FieldInfo& field, std::span<std::byte> object, std::int6
     case FieldType::Float:
     case FieldType::Vec3:
     case FieldType::Entity:
+    case FieldType::Double:
         break;
     }
     CT_ASSERT(false && "not an integer field");
@@ -168,6 +183,9 @@ void encodeField(ByteWriter& writer, const FieldInfo& field, std::span<const std
         writer.writeU32(entity.generation);
         return;
     }
+    case FieldType::Double:
+        writer.writeU64(std::bit_cast<std::uint64_t>(readDouble(object, field.offset)));
+        return;
     }
 }
 
@@ -204,6 +222,9 @@ void decodeField(ByteReader& reader, const FieldInfo& field, std::span<std::byte
         writeEntityRef(object, field.offset, {index, generation});
         return;
     }
+    case FieldType::Double:
+        writeDouble(object, field.offset, std::bit_cast<double>(reader.readU64()));
+        return;
     }
 }
 

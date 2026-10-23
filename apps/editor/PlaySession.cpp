@@ -30,9 +30,10 @@ std::optional<SpawnPoint> spawnAt(const std::optional<Camera>& camera,
 std::unique_ptr<PlaySession> PlaySession::start(const Level& level, const GameSettings& settings,
                                                 const LinkConditions& conditions,
                                                 const std::optional<Camera>& from,
+                                                std::span<const ScriptSource> scripts,
                                                 std::string& error) {
     if (from) {
-        return std::make_unique<PlaySession>(level, settings, conditions, from);
+        return std::make_unique<PlaySession>(level, settings, conditions, from, scripts);
     }
     std::optional<std::vector<SpawnPoint>> spawns = readSpawnPoints(level, error);
     if (!spawns) {
@@ -43,12 +44,14 @@ std::unique_ptr<PlaySession> PlaySession::start(const Level& level, const GameSe
                             kPlayerSpawnClass);
         return nullptr;
     }
-    return std::make_unique<PlaySession>(level, settings, conditions, std::nullopt);
+    return std::make_unique<PlaySession>(level, settings, conditions, std::nullopt, scripts);
 }
 
 PlaySession::PlaySession(const Level& level, const GameSettings& settings,
-                         const LinkConditions& conditions, const std::optional<Camera>& from)
-    : m_settings(settings), m_game(level, settings, conditions, spawnAt(from, settings.movement)),
+                         const LinkConditions& conditions, const std::optional<Camera>& from,
+                         std::span<const ScriptSource> scripts)
+    : m_settings(settings),
+      m_game(level, settings, conditions, spawnAt(from, settings.movement), scripts),
       m_look{from ? PlayerLook{from->yawRadians, from->pitchRadians}
                   : PlayerLook{angleToRadians(m_game.level().spawns().front().yaw), 0.0f}} {}
 

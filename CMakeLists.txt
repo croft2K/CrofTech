@@ -29,6 +29,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(CompilerOptions)
 
 find_package(recastnavigation CONFIG REQUIRED)
+find_package(unofficial-luau CONFIG REQUIRED)
 
 if(CROFTECH_PROFILE)
     find_package(Tracy CONFIG REQUIRED)

@@ -165,3 +165,22 @@ TEST_CASE("spawners name their encounter, and encounters run waves") {
         CHECK(ct::findSignal(encounter->inputs, input) != nullptr);
     }
 }
+
+TEST_CASE("script entities name a script, whose own events their outputs may use") {
+    const ct::EntityClassInfo* script = ct::findEntityClass(ct::kScriptClass);
+    REQUIRE(script != nullptr);
+    CHECK(script->scripted);
+    const ct::PropertyInfo* name = ct::findPropertyInfo(*script, "script");
+    REQUIRE(name != nullptr);
+    CHECK(name->type == ct::PropertyType::Script);
+
+    ct::LevelEntity entity = ct::makeEntity(*script);
+    ct::setProperty(entity, "origin", "0 0 0");
+    ct::setProperty(entity, "script", "door_puzzle");
+    entity.outputs.push_back({"on_anything", "door", "open", 0.0f});
+    std::string problem;
+    CHECK_MESSAGE(ct::checkEntityClassProperties(entity, *script, problem), problem);
+    ct::setProperty(entity, "script", "../door");
+    CHECK_FALSE(ct::checkEntityClassProperties(entity, *script, problem));
+    CHECK(problem == "script must be a script's name: lowercase letters, digits, '-' or '_'");
+}

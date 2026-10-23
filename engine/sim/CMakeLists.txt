@@ -36,12 +36,14 @@ add_library(ct_sim STATIC
     src/NavQueries.h
     src/PlayerMovement.cpp
     src/SaveGame.cpp
+    src/ScriptHost.h
+    src/Scripts.cpp
     src/Simulation.cpp
     src/StateSave.cpp
 )
 add_library(ct::sim ALIAS ct_sim)
 
 target_include_directories(ct_sim PUBLIC include)
-target_link_libraries(ct_sim PUBLIC ct::core ct::level ct::nav)
+target_link_libraries(ct_sim PUBLIC ct::core ct::level ct::nav ct::script)
 
 ct_apply_defaults(ct_sim)

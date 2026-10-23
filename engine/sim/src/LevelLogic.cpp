@@ -53,7 +53,11 @@ void LevelLogic::deliverPendingInputs() {
         const PendingInput input = *world.pendingInputs.get(due[i].id);
         world.destroy(due[i].id);
         const GameLevel::Entity* source = m_level.entity(input.source);
-        if (source != nullptr && input.output < source->outputs.size()) {
+        if (input.output == kDirectInput) {
+            if (m_level.entity(input.target) != nullptr && input.input <= 0xFF) {
+                queueInput(input.target, static_cast<LogicInput>(input.input), input.activator);
+            }
+        } else if (source != nullptr && input.output < source->outputs.size()) {
             queue(source->outputs[input.output], input.activator);
         }
     }
@@ -305,11 +309,13 @@ void LevelLogic::send(std::uint32_t source, std::uint32_t output, EntityId activ
 
 void LevelLogic::queue(const GameLevel::Output& output, EntityId activator) {
     for (const GameLevel::Target& target : output.targets) {
-        if (m_queueCount == m_queue.size()) {
-            return;
-        }
-        m_queue[(m_queueHead + m_queueCount++) % m_queue.size()] = {target.entity, target.input,
-                                                                    activator};
+        queueInput(target.entity, target.input, activator);
+    }
+}
+
+void LevelLogic::queueInput(std::uint32_t target, LogicInput input, EntityId activator) {
+    if (m_queueCount < m_queue.size()) {
+        m_queue[(m_queueHead + m_queueCount++) % m_queue.size()] = {target, input, activator};
     }
 }
 
@@ -449,6 +455,9 @@ void LevelLogic::apply(const Queued& input) {
                 stopEncounter(input.target, *encounter);
             }
         }
+        return;
+    case LogicClass::Script:
+        runScript(input.target, *entity, input.input, input.activator);
         return;
     case LogicClass::PatrolPoint:
     case LogicClass::None:

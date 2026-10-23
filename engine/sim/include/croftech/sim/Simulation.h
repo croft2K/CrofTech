@@ -7,12 +7,25 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace ct {
 
 class CollisionScene;
 class GameLevel;
 class NavQueries;
+struct ScriptHost;
+
+// A line a script printed, or why a call of one failed; the text starts with the entity
+// (GameLevel::describe).
+struct ScriptMessage {
+    bool error = false;
+    std::string text;
+};
+
+// Messages kept between takeScriptMessages calls; later ones are dropped.
+inline constexpr std::size_t kMaxScriptMessages = 64;
 
 // The game simulation. step() is a pure function of the previous state, the inputs and the static
 // level: no clock, no I/O, no globals. The same code runs on the server, in client prediction and
@@ -34,6 +47,10 @@ public:
 
     const GameLevel& level() const { return *m_level; }
 
+    // What scripts printed, and why calls failed, since the last time, oldest first. Kept outside
+    // the state: a tick stepped twice reports twice.
+    std::vector<ScriptMessage> takeScriptMessages();
+
 private:
     // Players move by their commands, or, once dead, lie still until fire respawns them.
     // Weapons fire afterwards (runWeapons, sim/Firing.h).
@@ -43,6 +60,8 @@ private:
     GameSettings m_settings;
     // Working memory for enemies' path searches, which leaves no trace in the results.
     std::unique_ptr<NavQueries> m_navQueries;
+    // Likewise for scripts' calls, which each start afresh.
+    std::unique_ptr<ScriptHost> m_scripts;
 };
 
 // Spawns a player standing on the spawn point with the starting health, armour and weapons (raised

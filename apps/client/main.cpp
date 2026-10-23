@@ -42,6 +42,7 @@
 #include "croftech/level/LevelFile.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
+#include "croftech/script/ScriptFiles.h"
 #include "croftech/sim/GameSettings.h"
 #include "croftech/sim/MovementConfig.h"
 
@@ -208,12 +209,18 @@ std::vector<ct::EntityInspector::Entity> inspectEntities(const ct::World& world)
     return entities;
 }
 
-// A level read, checked and ready to play.
+// A level read, checked and ready to play, with the scripts its script entities run.
 struct PreparedLevel {
     std::string name;
     ct::Level level;
     std::vector<ct::SpawnPoint> spawns;
+    std::vector<ct::ScriptSource> scripts;
 };
+
+// What a save records to show which level (and scripts) its state belongs to.
+std::uint64_t contentHash(const PreparedLevel& prepared) {
+    return ct::scriptSourcesHash(prepared.scripts, ct::levelContentHash(prepared.level));
+}
 
 std::optional<PreparedLevel> prepareLevel(const ct::ContentPaths& content, const std::string& name,
                                           std::string& error) {
@@ -237,7 +244,12 @@ std::optional<PreparedLevel> prepareLevel(const ct::ContentPaths& content, const
         error = std::format("level '{}' has no {}", name, ct::kPlayerSpawnClass);
         return std::nullopt;
     }
-    return PreparedLevel{name, std::move(*level), std::move(*spawns)};
+    std::vector<std::string> scriptWarnings;
+    std::vector<ct::ScriptSource> scripts = ct::loadLevelScripts(content, *level, scriptWarnings);
+    for (const std::string& warning : scriptWarnings) {
+        ct::logWarning("{}: {}", name, warning);
+    }
+    return PreparedLevel{name, std::move(*level), std::move(*spawns), std::move(scripts)};
 }
 
 } // namespace
@@ -334,8 +346,9 @@ int main(int argc, char** argv) {
                                ct::logError("load {}: {}", *name, loadError);
                                return;
                            }
-                           if (ct::levelContentHash(level->level) != save->levelHash) {
-                               ct::logError("load {}: level '{}' has changed since it was saved",
+                           if (contentHash(*level) != save->levelHash) {
+                               ct::logError("load {}: level '{}' or its scripts have changed "
+                                            "since it was saved",
                                             *name, save->level);
                                return;
                            }
@@ -420,12 +433,12 @@ int main(int argc, char** argv) {
         renderer->setWorldMesh(mesh.vertices, mesh.indices, mesh.parts);
         moverParts = mesh.partEntities;
         moverOffsets.assign(moverParts.size(), {});
-        localGame =
-            std::make_unique<ct::LocalGame>(prepared.level, settings, client.linkConditions());
+        localGame = std::make_unique<ct::LocalGame>(
+            prepared.level, settings, client.linkConditions(), std::nullopt, prepared.scripts);
         hud = {};
         hud.setWeaponNames(game->weapons);
         seenTimeline = 0;
-        currentLevelHash = ct::levelContentHash(prepared.level);
+        currentLevelHash = contentHash(prepared);
         for (const std::string& warning : localGame->level().warnings()) {
             ct::logWarning("{}: {}", prepared.name, warning);
         }

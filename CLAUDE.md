@@ -93,7 +93,22 @@ input; the encounter starts on its start input (or with the level), keeps to `ma
 starts the next wave once `next_wave_at` are left and `wave_delay` has passed, and fires
 on_start, on_wave and on_cleared, which lock and unlock the arena through the wiring. A sent
 enemy's `Enemy::spawner` names its spawner, whose wiring gets its events. `--map
-encounter_test` is a hall of weapons leading into a three-wave arena.
+encounter_test` is a hall of weapons leading into a three-wave arena. Script entities (the
+`script` class) run Luau scripts, `scripts/<name>.luau` through the content layers (written for
+level designers in `docs/Scripting.md`): a script returns a table declaring its state (numbers and
+booleans), events, inputs and an optional start function, and the wiring reaches its inputs and
+its events like any entity's (`scriptInput`/`scriptEvent` in `sim/GameLevel.h` number them from
+128). `engine/script` compiles (`ScriptProgram`) and runs them (`ScriptRunner`): every call is a
+fresh Luau state in a 4 GB-aligned arena (`ScriptArena`; Luau hashes pointers by their low 32
+bits, so table order is the same everywhere), held to a step and a memory budget, with no I/O and a
+library cut to what is exact on every platform (no `^`, only exact `math` functions, no
+`--!optimize`); `tostring` shows references by their place in the arena. The declared state lives
+in the `Script` component as doubles, so scripts save, rewind and replicate; a call's effects
+(`game:fire`, `game:after`, `game:send`) are applied only if it finishes. The client and editor
+read a level's scripts with `loadLevelScripts` (the editor each time play starts, and its
+inspector through `ScriptLibrary`, which offers a script entity's events and inputs for wiring);
+saves record the level's hash continued with its scripts'. What scripts print and their errors
+reach the log through `Simulation::takeScriptMessages`. `--map script_test` is a combination lock.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
@@ -183,9 +198,12 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/nav       navigation meshes built from brushes (Recast) and path queries (Detour);
                      knows nothing of the simulation, so the editor can build one too
                      (core, level)
+    engine/script    Luau scripts: compiling and checking them, the sandbox that runs their
+                     calls, reading a level's scripts from content; knows nothing of the
+                     simulation (core, level)
     engine/sim       ECS world, components, collision, movement, level logic and gameplay
-                     (health, damage, weapons, pickups, enemies; later encounters)
-                     (core, level, nav)
+                     (health, damage, weapons, pickups, enemies, encounters, script entities)
+                     (core, level, nav, script)
     engine/platform  precise timers; later sockets                     (core)
     engine/client    client connection, LocalGame (server thread + client over an in-memory
                      link), GameEvents worked out from snapshots, view smoothing; later

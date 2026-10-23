@@ -74,22 +74,79 @@ std::vector<std::string> entityNames(const Level& level,
     return names;
 }
 
+// The program a script entity runs, if it names one that loaded.
+const ScriptProgram* scriptOf(const LevelEntity& entity, const ScriptLibrary* scripts) {
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    if (scripts == nullptr || entityClass == nullptr || !entityClass->scripted ||
+        findPropertyInfo(*entityClass, "script") == nullptr) {
+        return nullptr;
+    }
+    return scripts->find(textProperty(entity, *entityClass, "script"));
+}
+
+// The events (or inputs) of an entity: its class's, or a script entity's script's. The names of
+// a script's stay valid until the library next refreshes.
+std::vector<SignalInfo> signalsOf(const LevelEntity& entity, const ScriptLibrary* scripts,
+                                  bool events) {
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    if (entityClass == nullptr) {
+        return {};
+    }
+    if (!entityClass->scripted) {
+        const std::span<const SignalInfo> signals =
+            events ? entityClass->events : entityClass->inputs;
+        return {signals.begin(), signals.end()};
+    }
+    std::vector<SignalInfo> signals;
+    if (const ScriptProgram* program = scriptOf(entity, scripts)) {
+        const ScriptDeclarations& declared = program->declarations();
+        for (const std::string& name : events ? declared.events : declared.inputs) {
+            signals.push_back({name, events ? "Fired by its script" : "Calls its script"});
+        }
+    }
+    return signals;
+}
+
 // The inputs of the entities with the name, each once.
-std::vector<SignalInfo> inputsOf(const Level& level, std::string_view name) {
+std::vector<SignalInfo> inputsOf(const Level& level, std::string_view name,
+                                 const ScriptLibrary* scripts) {
     std::vector<SignalInfo> inputs;
     for (const LevelEntity& entity : level.entities) {
         const std::string* entityName = findProperty(entity, "name");
-        const EntityClassInfo* entityClass = findEntityClass(entity.className);
-        if (entityName == nullptr || *entityName != name || entityClass == nullptr) {
+        if (entityName == nullptr || *entityName != name) {
             continue;
         }
-        for (const SignalInfo& input : entityClass->inputs) {
+        for (const SignalInfo& input : signalsOf(entity, scripts, false)) {
             if (findSignal(inputs, input.name) == nullptr) {
                 inputs.push_back(input);
             }
         }
     }
     return inputs;
+}
+
+// Why a script entity won't play as set, beyond what its class checks: its script doesn't load,
+// or an output names an event the script doesn't declare. Empty if nothing is wrong, or there are
+// no scripts to check against.
+std::string scriptProblem(const LevelEntity& entity, const ScriptLibrary* scripts) {
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    if (scripts == nullptr || entityClass == nullptr || !entityClass->scripted) {
+        return {};
+    }
+    const std::string_view name = textProperty(entity, *entityClass, "script");
+    if (name.empty()) {
+        return "it names no script";
+    }
+    const ScriptProgram* program = scripts->find(name);
+    if (program == nullptr) {
+        return std::format("scripts/{}.luau: {}", name, scripts->error(name));
+    }
+    for (const EntityOutput& output : entity.outputs) {
+        if (!program->findEvent(output.event)) {
+            return std::format("its script has no event '{}'", output.event);
+        }
+    }
+    return {};
 }
 
 // A combo of signals (events or inputs); true with the chosen name when one is picked.
@@ -1064,7 +1121,8 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
 
     std::string problem;
     if (entityClass != nullptr &&
-        !checkEntityClassProperties(document.level().entities[index], *entityClass, problem)) {
+        (!checkEntityClassProperties(document.level().entities[index], *entityClass, problem) ||
+         !(problem = scriptProblem(document.level().entities[index], m_scripts)).empty())) {
         ImGui::Spacing();
         ImGui::TextColored({1.0f, 0.45f, 0.35f, 1.0f}, "Won't play: %s", problem.c_str());
     }
@@ -1137,6 +1195,25 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
                         if (ImGui::Selectable(name.c_str(), name == current)) {
                             setValue(key, name);
                         }
+                    }
+                    ImGui::EndCombo();
+                }
+            } else if (property.type == PropertyType::Script) {
+                const std::string current(propertyValue(entity, property));
+                if (ImGui::BeginCombo("##value", current.empty() ? "(none)" : current.c_str())) {
+                    if (ImGui::Selectable("(none)", current.empty())) {
+                        setValue(key, "");
+                    }
+                    const std::vector<std::string_view> names =
+                        m_scripts != nullptr ? m_scripts->names() : std::vector<std::string_view>{};
+                    for (const std::string_view name : names) {
+                        const std::string label(name);
+                        if (ImGui::Selectable(label.c_str(), name == current)) {
+                            setValue(key, label);
+                        }
+                    }
+                    if (names.empty()) {
+                        ImGui::TextDisabled("No scripts in the scripts folders");
                     }
                     ImGui::EndCombo();
                 }
@@ -1260,9 +1337,7 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
 void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index) {
     const Level& level = document.level();
     const LevelEntity& entity = level.entities[index];
-    const EntityClassInfo* entityClass = findEntityClass(entity.className);
-    const std::span<const SignalInfo> events =
-        entityClass != nullptr ? entityClass->events : std::span<const SignalInfo>{};
+    const std::vector<SignalInfo> events = signalsOf(entity, m_scripts, true);
     if (events.empty() && entity.outputs.empty()) {
         return;
     }
@@ -1293,7 +1368,7 @@ void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index
     // The inputs the target's entities accept, or free text when no entity has its name.
     const auto inputField = [&](int field, const std::string& target, const std::string& current,
                                 std::string& chosen) {
-        const std::vector<SignalInfo> inputs = inputsOf(level, target);
+        const std::vector<SignalInfo> inputs = inputsOf(level, target, m_scripts);
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (inputs.empty()) {
             return textField("##input", field, current, chosen, "input");

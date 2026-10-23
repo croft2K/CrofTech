@@ -28,15 +28,16 @@ public:
 
     // Starts at the level's player spawn, or with from, where that camera is (play from here).
     // Null, with error saying why, if the level can't be played: without from, it needs a player
-    // spawn.
+    // spawn. Script entities run the scripts given.
     static std::unique_ptr<PlaySession> start(const Level& level, const GameSettings& settings,
                                               const LinkConditions& conditions,
                                               const std::optional<Camera>& from,
+                                              std::span<const ScriptSource> scripts,
                                               std::string& error);
 
     // Without from, the level must have a player spawn.
     PlaySession(const Level& level, const GameSettings& settings, const LinkConditions& conditions,
-                const std::optional<Camera>& from);
+                const std::optional<Camera>& from, std::span<const ScriptSource> scripts);
 
     // The game's weapon names, in the order of GameSettings::weapons, for the HUD.
     void setWeaponNames(std::vector<std::string> names) { m_hud.setWeaponNames(std::move(names)); }

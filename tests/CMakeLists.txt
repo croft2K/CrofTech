@@ -26,6 +26,9 @@ add_executable(ct_unit_tests
     unit/level/MapImportTests.cpp
     unit/net/LoopbackLinkTests.cpp
     unit/net/ProtocolTests.cpp
+    unit/script/ScriptLibraryTests.cpp
+    unit/script/ScriptProgramTests.cpp
+    unit/script/ScriptRunnerTests.cpp
     unit/sim/CollisionWorldTests.cpp
     unit/sim/GameSettingsTests.cpp
     unit/sim/LevelNavigationTests.cpp
@@ -58,6 +61,7 @@ add_executable(ct_sim_tests
     sim/MovementTests.cpp
     sim/NavigationTests.cpp
     sim/PickupTests.cpp
+    sim/ScriptTests.cpp
     sim/ServerTests.cpp
     sim/SimHarness.h
     sim/SlidingTests.cpp

@@ -35,6 +35,10 @@ ct_add_fuzzer(ct_wav_fuzz
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/wav ${PROJECT_SOURCE_DIR}/content/sounds
     SOURCES WavFileFuzz.cpp
     LIBS ct::audio)
+ct_add_fuzzer(ct_script_fuzz
+    CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/script ${PROJECT_SOURCE_DIR}/content/scripts
+    SOURCES ScriptFuzz.cpp
+    LIBS ct::script)
 ct_add_fuzzer(ct_protocol_fuzz
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/protocol
     SOURCES ProtocolFuzz.cpp

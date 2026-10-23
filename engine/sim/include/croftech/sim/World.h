@@ -43,6 +43,7 @@ struct World {
     ComponentPool<Pickup, kMaxEntities> pickups;
     ComponentPool<Spawner, kMaxEntities> spawners;
     ComponentPool<Encounter, kMaxEntities> encounters;
+    ComponentPool<Script, kMaxEntities> scripts;
     ComponentPool<PendingInput, kMaxEntities> pendingInputs;
 
     void destroy(EntityId id) noexcept;
@@ -70,6 +71,7 @@ void forEachPool(WorldT& world, Fn&& fn) {
     fn(world.pickups);
     fn(world.spawners);
     fn(world.encounters);
+    fn(world.scripts);
     fn(world.pendingInputs);
 }
 
