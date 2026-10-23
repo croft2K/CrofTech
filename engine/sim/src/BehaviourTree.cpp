@@ -308,6 +308,11 @@ std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::stri
             }
             node.memory = static_cast<std::uint8_t>(memory++);
         }
+        // Blank comment lines separate a note's paragraphs; at its end they mean nothing (leading
+        // ones never get in), so they go and the note reads back the same once written out.
+        while (!note.empty() && note.back() == '\n') {
+            note.pop_back();
+        }
         node.note = std::move(note);
         note.clear();
         open.push_back({indent, static_cast<std::uint32_t>(tree.nodes.size())});

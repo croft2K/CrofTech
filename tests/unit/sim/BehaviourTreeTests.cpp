@@ -85,6 +85,18 @@ TEST_CASE("a behaviour tree written out reads back the same") {
                   "        target_within 12\n");
     CHECK(parse(text) == tree);
     CHECK(ct::formatBehaviourTree(ct::standardBehaviourTree()) == ct::standardBehaviourText());
+
+    // Blank comment lines part a note's paragraphs but don't end it.
+    const auto spaced = parse("sequence\n"
+                              "    #\n"
+                              "    # one\n"
+                              "    #\n"
+                              "    # two\n"
+                              "    #\n"
+                              "    chance 0.5 #\n");
+    REQUIRE(spaced.has_value());
+    CHECK(spaced->nodes[1].note == "one\n\ntwo");
+    CHECK(parse(ct::formatBehaviourTree(*spaced)) == spaced);
 }
 
 TEST_CASE("malformed behaviour trees are refused, naming the line") {
