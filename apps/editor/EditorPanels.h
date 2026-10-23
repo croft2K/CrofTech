@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GameDataPanel.h"
 #include "LevelViewport.h"
 #include "ScriptPanel.h"
 
@@ -23,6 +24,7 @@ struct MenuRequests {
     bool frameSelection = false;
     const EntityClassInfo* addEntity = nullptr; // a point entity, at the placement point
     const EntityPreset* addPreset = nullptr;    // a ready-made brush entity, there too
+    std::string addEnemy;                       // an enemy of this type, there too
     bool play = false;
     bool playFromHere = false; // from the 3D camera
 };
@@ -38,9 +40,12 @@ public:
     bool drawToolbar(LevelViewport& viewport, EditorSettings& settings, const ViewRect& view);
     void drawHierarchy(EditorDocument& document);
     void drawInspector(EditorDocument& document, const EditorSettings& settings);
-    // The game's weapons, which pickups choose from.
-    void setWeaponNames(std::vector<std::string> names) { m_weaponNames = std::move(names); }
-    void setEnemyNames(std::vector<std::string> names) { m_enemyNames = std::move(names); }
+    // The game's data: the weapons pickups choose from and the enemy types, and the window that
+    // edits them. Both must outlive these panels.
+    void setGameData(const GameData* data, GameDataPanel* panel) {
+        m_gameData = data;
+        m_gameDataPanel = panel;
+    }
     // The scripts the script property offers, whose events and inputs script entities have, and
     // the panel that edits them. Both must outlive these panels.
     void setScripts(const ScriptLibrary* scripts, ScriptPanel* panel) {
@@ -72,6 +77,8 @@ private:
     void drawEntityProperties(EditorDocument& document, std::size_t index);
     // A script entity's Edit script button, or New script for one that names none.
     void drawScriptButtons(EditorDocument& document, std::size_t index);
+    // An enemy's or a spawner's type, described, with a button to edit it in the Game data window.
+    void drawEnemyType(const LevelEntity& entity);
     // The entity's outputs, as a table of event, target, input and delay.
     void drawEntityOutputs(EditorDocument& document, std::size_t index);
     void drawMultipleInspector(EditorDocument& document);
@@ -95,8 +102,8 @@ private:
     std::string m_newValue;
     EntityOutput m_newOutput;
     std::string m_problem;
-    std::vector<std::string> m_weaponNames;
-    std::vector<std::string> m_enemyNames;
+    const GameData* m_gameData = nullptr;
+    GameDataPanel* m_gameDataPanel = nullptr;
     const ScriptLibrary* m_scripts = nullptr;
     ScriptPanel* m_scriptPanel = nullptr;
     std::string m_newScript; // the name being typed for a new script

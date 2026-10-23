@@ -77,3 +77,61 @@ TEST_CASE("text files are written whole, replacing what was there") {
     CHECK_FALSE(ct::writeTextFile(directory.path() / "missing/folder/x.luau", "x", error));
     CHECK_FALSE(error.empty());
 }
+
+TEST_CASE("setting a value changes its line in place and keeps the comments") {
+    const std::string text = "# Gunner\n"
+                             "\n"
+                             "health          40      # health it starts with\r\n"
+                             "weapon          # empty has no ranged attack\n"
+                             "speed 5\n";
+    CHECK(ct::setConfigValue(text, "health", "35") ==
+          "# Gunner\n"
+          "\n"
+          "health          35      # health it starts with\r\n"
+          "weapon          # empty has no ranged attack\n"
+          "speed 5\n");
+    // A longer value pushes the comment along rather than into it.
+    CHECK(ct::setConfigValue(text, "health", "123456789") ==
+          "# Gunner\n"
+          "\n"
+          "health          123456789  # health it starts with\r\n"
+          "weapon          # empty has no ranged attack\n"
+          "speed 5\n");
+    CHECK(ct::setConfigValue(text, "weapon", "machinegun") ==
+          "# Gunner\n"
+          "\n"
+          "health          40      # health it starts with\r\n"
+          "weapon          machinegun  # empty has no ranged attack\n"
+          "speed 5\n");
+    CHECK(ct::setConfigValue(text, "health", "") ==
+          "# Gunner\n"
+          "\n"
+          "health                  # health it starts with\r\n"
+          "weapon          # empty has no ranged attack\n"
+          "speed 5\n");
+    CHECK(ct::setConfigValue(text, "speed", " 6.5 ").ends_with("speed 6.5\n"));
+}
+
+TEST_CASE("setting a value adds a line for a new key and changes only the last of repeats") {
+    CHECK(ct::setConfigValue("", "health", "40") == "health          40\n");
+    CHECK(ct::setConfigValue("a 1", "health", "40") == "a 1\nhealth          40\n");
+    CHECK(ct::setConfigValue("a 1\r\n", "b", "2") == "a 1\r\nb               2\r\n");
+    CHECK(ct::setConfigValue("a 1\na 2\n", "a", "3") == "a 1\na 3\n");
+    const std::string set = ct::setConfigValue("x 1\n", "description", "Shoots back");
+    const auto entries = ct::parseConfig(set);
+    REQUIRE(entries.size() == 2);
+    CHECK(entries[1].key == "description");
+    CHECK(entries[1].value == "Shoots back");
+}
+
+TEST_CASE("removing a value drops every line of its key") {
+    CHECK(ct::removeConfigValue("# keep\na 1   # one\nb 2\na 3\n", "a") == "# keep\nb 2\n");
+    CHECK(ct::removeConfigValue("a 1", "b") == "a 1");
+}
+
+TEST_CASE("config values are one line with no comment") {
+    CHECK(ct::isConfigValue("A gunner that misses"));
+    CHECK(ct::isConfigValue(""));
+    CHECK_FALSE(ct::isConfigValue("number #1"));
+    CHECK_FALSE(ct::isConfigValue("two\nlines"));
+}

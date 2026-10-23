@@ -34,6 +34,9 @@ public:
 
     // What set() accepts, e.g. "a number from 60 to 140".
     std::string describeRange() const;
+    // The range of an Int or Float; kNoLimit (negated for the minimum) where there is none.
+    float minimum() const { return m_min; }
+    float maximum() const { return m_max; }
 
     // Returns false and leaves the value unchanged if text is not valid for the type and range.
     bool set(std::string_view text);

@@ -227,12 +227,14 @@ made from scratch in the editor, their properties and behaviour included. Entity
 first; the rest of the editor tools follow. In order; each step builds, tests and commits on its
 own, and everything a step adds to play is simulation state, so it saves, rewinds and replicates.
 
-1. **Entity types.** A type is a data file the editor writes and the game loads: what it is built
-   on (enemy, pickup, prop; props are boxes until M5 brings models), its properties with defaults
-   and ranges, how it looks and sounds, its behaviour (step 3) and an optional script. A Game data
-   panel makes a type by copying a template (the charger and gunner become the first), edits it
-   with undo, and applies it live in play-in-editor. Types are listed in the Create menu and the
-   inspector like the engine's own classes, and levels name them as they name enemy kinds today.
+1. **Entity types.** *Done for enemies (2026-10-23).* An enemy type is its settings file, which
+   the Game data window makes by copying another (the charger and gunner to start with), edits
+   with undo and saves into the game's content folder; changes apply at once, in play too. A type
+   also has a description, the colour of its box and the sound set it uses. Types are listed in
+   Create > Enemy and the inspector, and levels name them in `type` as before. The same window
+   already edits weapons, movement and rules (most of step 6). Pickup types wait: presets and each
+   pickup's own properties cover them for now. Props wait for M5's models. A type's behaviour is
+   step 3, and a script on a type comes with it, as a behaviour node.
 2. **Per-entity overrides.** Any property of a type can be set on one placed entity or spawner
    (a calmer gunner here, a faster charger there) without a new type. Overrides are kept with
    each entity in its components.
@@ -248,8 +250,8 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    light up (alongside "Show what enemies think").
 5. **Visual logic graph.** The level's wiring as nodes in the same graph window, with the outputs
    table as the text form.
-6. **Game data for the rest.** Weapons, movement and rules in the Game data panel, made from
-   templates and tuned live.
+6. **Game data for the rest.** Weapons, movement and rules are already edited and tuned live in
+   the Game data window (step 1); still to come are new weapons made from others.
 7. **The remaining editor tools.** Texture and material assignment with face alignment, editable
    level-geometry meshes, movers along paths and turning movers, the asset browser and hot reload
    of textures, materials, shaders and levels. Planned in detail when step 6 is done.

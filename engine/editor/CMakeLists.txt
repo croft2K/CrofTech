@@ -5,6 +5,7 @@ add_library(ct_editor STATIC
     include/croftech/editor/EditorActions.h
     include/croftech/editor/EditorDocument.h
     include/croftech/editor/EntityLinks.h
+    include/croftech/editor/GameData.h
     include/croftech/editor/LevelCommands.h
     include/croftech/editor/LevelItem.h
     include/croftech/editor/LuauHighlight.h
@@ -19,6 +20,7 @@ add_library(ct_editor STATIC
     src/EditorActions.cpp
     src/EditorDocument.cpp
     src/EntityLinks.cpp
+    src/GameData.cpp
     src/LevelCommands.cpp
     src/LevelItem.cpp
     src/LuauHighlight.cpp
@@ -31,6 +33,6 @@ add_library(ct_editor STATIC
 add_library(ct::editor ALIAS ct_editor)
 
 target_include_directories(ct_editor PUBLIC include)
-target_link_libraries(ct_editor PUBLIC ct::core ct::level ct::script)
+target_link_libraries(ct_editor PUBLIC ct::core ct::level ct::script ct::sim)
 
 ct_apply_defaults(ct_editor)

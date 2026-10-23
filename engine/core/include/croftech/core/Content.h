@@ -62,9 +62,16 @@ struct GameManifest {
     std::filesystem::path root;
 };
 
-// Reads games/<name>/game.cfg. Game, weapon and enemy names are limited to lowercase letters,
-// digits, '-' and '_'.
+// Whether the name can be a game's, a weapon's or an enemy's: they are parts of file paths, so they
+// are limited to lowercase letters, digits, '-' and '_'.
+bool isContentName(std::string_view name);
+
+// Reads games/<name>/game.cfg.
 std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesDirectory,
                                              std::string_view name, std::string& error);
+// The same from the file's text, for the game in root (games/<name>).
+std::optional<GameManifest> parseGameManifest(std::string_view text,
+                                              const std::filesystem::path& root,
+                                              std::string& error);
 
 } // namespace ct

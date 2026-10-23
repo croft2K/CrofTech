@@ -62,7 +62,8 @@ walking into them when needed, come back after their respawn time (or never, for
 player) and fire on_pickup; health and armour above `rules.max_health`/`max_armour` drain away.
 `--map weapons_test` is a small arena with all of them. Enemies (the `enemy` class, of a kind
 from the game's list: `enemies` in `game.cfg`, each kind a file `enemies/<name>.cfg` with
-variables `enemy.<name>.<setting>`) are bodies moved by the player movement code at their kind's
+variables `enemy.<name>.<setting>`, which also give its description, the colour of its box and
+the sound set it uses, so a copy of the gunner sounds like one) are bodies moved by the player movement code at their kind's
 size and speed (`movementOf` in `sim/Enemies.h`; every system that touches bodies uses each one's
 own box), driven by input commands from their AI (`runEnemies`, `sim/src/Enemies.cpp`, state in
 `sim/Enemy.h`). Each stands at its post, or walks its patrol (`patrol` names a `patrol_point`,
@@ -117,7 +118,15 @@ reach the log through `Simulation::takeScriptMessages`. `--map script_test` is a
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`;
 File > Open (Ctrl+O) lists the content folders' levels (`listLevelFiles` in `level/LevelLoad.h`)
-or browses for any `.level` or `.map`. Every
+or browses for any `.level` or `.map`. The Game data window (`apps/editor/GameDataPanel`, over
+`GameData` in `engine/editor`) edits the game's enemy types, weapons, movement and rules with an
+undo of its own (Ctrl+Z, Ctrl+Y and Ctrl+S while it has the focus): every change applies at once,
+to markers and to play (Shift+F1 frees the mouse while playing), and saving writes only into the
+game's content folder, where a file the engine's content also has holds just the settings the game
+changes (shown in gold, each with a Reset). "New type from this" copies an enemy type into a file
+of the game's own and adds it to `game.cfg`; Create > Enemy lists the types, and the inspector of
+an enemy or spawner has Edit type. `setConfigValue` (`core/ConfigFile.h`) changes a setting's
+line and keeps the file's comments. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
 drags preview live and record one command when released, and edits of several selected items are
 one compound command. Moves, turns, flips and scales of any brush shape go through
@@ -218,8 +227,8 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/render    Vulkan renderer, incl. Dear ImGui drawing (Windows client only)  (core)
     engine/devui     Dear ImGui context, developer console, stats overlay, entity inspector
                      (core)
-    engine/editor    editor document, undo/redo commands, brush editing and picking maths
-                     (core, level)
+    engine/editor    editor document, undo/redo commands, brush editing and picking maths,
+                     script links, the game's data files (core, level, script, sim)
     engine/net       protocol messages, Transport, LoopbackLink with the network
                      conditioner; later bitstream, sockets, channels, crypto (M6) (core, sim)
     engine/server    Server (players join over a Transport, inputs, ticks, snapshots),

@@ -1,6 +1,8 @@
 #include "croftech/sim/GameSettings.h"
 
 #include "croftech/core/Assert.h"
+#include "croftech/core/ConfigFile.h"
+#include "croftech/core/Content.h"
 #include "croftech/sim/MovementConfig.h"
 #include "croftech/sim/World.h"
 
@@ -166,6 +168,26 @@ void registerEnemyCVars(Console& console, std::string_view enemy) {
     }
     console.add(CVar::makeString(prefix + "weapon", defaults.weapon,
                                  "the game's weapon it shoots; empty has no ranged attack"));
+    console.add(CVar::makeString(prefix + "description", "", "a line for level designers"));
+    console.add(CVar::makeString(
+        prefix + "sounds", "",
+        "the name its sound files start with (sounds/<name>_alert.wav); empty is its own"));
+    console.add(CVar::makeString(
+        prefix + "colour", "",
+        "red green blue of its box, each 0 to 1 as a colour picker shows them; empty picks one"));
+}
+
+std::optional<Vec3> parseColour(std::string_view text) {
+    float rgb[3]{};
+    if (!parseFloats(text, rgb)) {
+        return std::nullopt;
+    }
+    for (const float channel : rgb) {
+        if (!(channel >= 0.0f && channel <= 1.0f)) {
+            return std::nullopt;
+        }
+    }
+    return Vec3{rgb[0], rgb[1], rgb[2]};
 }
 
 EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
@@ -181,6 +203,13 @@ EnemySettings enemyFromCVars(const Console& console, std::string_view enemy,
         settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asFloat();
     }
     settings.weapon = findCVar(console, prefix + "weapon").text();
+    settings.description = findCVar(console, prefix + "description").text();
+    // Ones that won't do are left to their defaults.
+    if (const std::string& sounds = findCVar(console, prefix + "sounds").text();
+        isContentName(sounds)) {
+        settings.sounds = sounds;
+    }
+    settings.colour = parseColour(findCVar(console, prefix + "colour").text());
     for (std::uint32_t i = 0; i < weapons.size(); ++i) {
         if (!settings.weapon.empty() && weapons[i].name == settings.weapon) {
             settings.weaponIndex = i;

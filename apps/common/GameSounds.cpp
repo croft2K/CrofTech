@@ -22,6 +22,17 @@ constexpr float kAlertReach = 50.0f;
 
 } // namespace
 
+void GameSounds::setSettings(const GameSettings& settings) {
+    m_weaponNames.clear();
+    for (const WeaponSettings& weapon : settings.weapons) {
+        m_weaponNames.push_back(weapon.name);
+    }
+    m_enemySoundSets.clear();
+    for (const EnemySettings& enemy : settings.enemies) {
+        m_enemySoundSets.emplace_back(enemy.soundSet());
+    }
+}
+
 GameSounds::GameSounds(AudioOutput& output, const ContentPaths& content)
     : m_output(output), m_content(content) {}
 
@@ -52,8 +63,8 @@ std::optional<Mixer::SoundId> GameSounds::sound(std::string_view name, bool quie
 }
 
 std::string GameSounds::named(std::string_view name, const GameEvent& event) {
-    if (event.enemyType < m_enemyNames.size()) {
-        std::string own = std::format("{}_{}", m_enemyNames[event.enemyType], name);
+    if (event.enemyType < m_enemySoundSets.size()) {
+        std::string own = std::format("{}_{}", m_enemySoundSets[event.enemyType], name);
         if (sound(own, true)) {
             return own;
         }

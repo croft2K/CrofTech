@@ -41,6 +41,10 @@ public:
 
     // The game's weapon names, in the order of GameSettings::weapons, for the HUD.
     void setWeaponNames(std::vector<std::string> names) { m_hud.setWeaponNames(std::move(names)); }
+    // Tuning while playing. The settings must list the same weapons and enemy types as play
+    // started with, as the game refers to them by their places in the lists.
+    void setSettings(const GameSettings& settings);
+    const GameSettings& settings() const { return m_settings; }
 
     void look(float countsX, float countsY, bool invert);
     // Number keys and the mouse wheel change weapons (WeaponSelect). Returns whether the event

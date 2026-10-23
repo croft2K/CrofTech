@@ -3,6 +3,8 @@ add_executable(croftech_editor
     CodeEditor.h
     EditorPanels.cpp
     EditorPanels.h
+    GameDataPanel.cpp
+    GameDataPanel.h
     LevelViewport.cpp
     LevelViewport.h
     main.cpp

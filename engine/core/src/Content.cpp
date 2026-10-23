@@ -64,29 +64,35 @@ std::optional<std::vector<LayeredConfig::Layer>> LayeredConfig::reloadIfChanged(
     return layers;
 }
 
+bool isContentName(std::string_view name) {
+    return !name.empty() && std::all_of(name.begin(), name.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+    });
+}
+
 std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesDirectory,
                                              std::string_view name, std::string& error) {
-    const auto validName = [](std::string_view text) {
-        return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
-            return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
-        });
-    };
-    if (!validName(name)) {
+    if (!isContentName(name)) {
         error = std::format("invalid game name '{}'", name);
         return std::nullopt;
     }
-
-    GameManifest manifest;
-    manifest.name = std::string(name);
-    manifest.title = manifest.name;
-    manifest.root = gamesDirectory / manifest.name;
-    const std::optional<std::string> text = readTextFile(manifest.root / "game.cfg");
+    const std::filesystem::path root = gamesDirectory / std::string(name);
+    const std::optional<std::string> text = readTextFile(root / "game.cfg");
     if (!text) {
-        std::filesystem::path expected = manifest.root / "game.cfg";
+        std::filesystem::path expected = root / "game.cfg";
         error = std::format("no game '{}' (expected {})", name, expected.make_preferred().string());
         return std::nullopt;
     }
-    for (const ConfigEntry& entry : parseConfig(*text)) {
+    return parseGameManifest(*text, root, error);
+}
+
+std::optional<GameManifest>
+parseGameManifest(std::string_view text, const std::filesystem::path& root, std::string& error) {
+    GameManifest manifest;
+    manifest.name = root.filename().string();
+    manifest.title = manifest.name;
+    manifest.root = root;
+    for (const ConfigEntry& entry : parseConfig(text)) {
         if (entry.key == "title" && !entry.value.empty()) {
             manifest.title = entry.value;
         } else if (entry.key == "start_map") {
@@ -102,7 +108,7 @@ std::optional<GameManifest> loadGameManifest(const std::filesystem::path& gamesD
                 const std::string_view item =
                     std::string_view(entry.value).substr(start, end - start);
                 if (!item.empty()) {
-                    if (!validName(item)) {
+                    if (!isContentName(item)) {
                         error = std::format("game.cfg: line {}: invalid {} name '{}'", entry.line,
                                             weapons ? "weapon" : "enemy", item);
                         return std::nullopt;

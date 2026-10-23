@@ -6,6 +6,7 @@
 #include "croftech/sim/Weapons.h"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -63,6 +64,14 @@ inline constexpr std::uint32_t kMaxEnemyTypes = 64;
 // movement code, using the game's movement settings with their own size and speed.
 struct EnemySettings {
     std::string name; // its file's name, as game.cfg lists it and levels name it
+    // How it looks and sounds, for the client and the editor; the simulation ignores them.
+    std::string description; // a line for level designers
+    // Its sounds are sounds/<set>_alert.wav and the like; empty is its own name. A type made from
+    // another keeps the other's sounds this way.
+    std::string sounds;
+    // The colour of its box, red, green and blue from 0 to 1 as a colour picker shows them (sRGB);
+    // nullopt picks one by its place in the game's list.
+    std::optional<Vec3> colour;
     std::int32_t health = 100;
     float width = 0.8f;           // of its box, m
     float height = 1.8f;          // m
@@ -103,6 +112,9 @@ struct EnemySettings {
     float corpseTime = 10.0f; // seconds its body stays after death; -1 stays for good
     // The game's movement with the size, eye height, speed and acceleration above.
     MovementSettings movement;
+
+    // The name its sound files start with.
+    std::string_view soundSet() const { return sounds.empty() ? name : sounds; }
 };
 
 // Everything a game tunes that the simulation reads. It may only change between ticks.

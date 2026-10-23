@@ -17,7 +17,8 @@ namespace ct {
 // The game's sounds: one for each GameEvent, read from sounds/<name>.wav through the content
 // layers (so a game can replace any of them), and a hum while a mover moves. Each weapon fires
 // with sounds/<weapon>_fire.wav. An enemy's footsteps, pain, death, alert and swing are
-// sounds/<kind>_<name>.wav where there is one (charger_alert.wav), else the plain one. The
+// sounds/<set>_<name>.wav where there is one (charger_alert.wav), else the plain one; the set is
+// its type's (EnemySettings::soundSet), usually the type's own name. The
 // player's own sounds play unplaced, in both ears; everyone else's come from where they happened.
 class GameSounds {
 public:
@@ -26,10 +27,9 @@ public:
     GameSounds(const GameSounds&) = delete;
     GameSounds& operator=(const GameSounds&) = delete;
 
-    // The game's weapon names, in the order of GameSettings::weapons, for their firing sounds.
-    void setWeaponNames(std::vector<std::string> names) { m_weaponNames = std::move(names); }
-    // The game's enemy names, in the order of GameSettings::enemies, for their own sounds.
-    void setEnemyNames(std::vector<std::string> names) { m_enemyNames = std::move(names); }
+    // The game's weapons, for their firing sounds, and enemy types, for their own sounds. Again
+    // whenever the settings change.
+    void setSettings(const GameSettings& settings);
 
     // Once a frame, with the events since the last and where the ears are.
     void update(std::span<const GameEvent> events, EntityId player, const GameLevel& level,
@@ -48,7 +48,7 @@ private:
 
     AudioOutput& m_output;
     std::vector<std::string> m_weaponNames;
-    std::vector<std::string> m_enemyNames;
+    std::vector<std::string> m_enemySoundSets;
     const ContentPaths& m_content;
     std::map<std::string, std::optional<Mixer::SoundId>, std::less<>> m_sounds;
     struct Hum {

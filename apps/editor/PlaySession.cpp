@@ -55,6 +55,11 @@ PlaySession::PlaySession(const Level& level, const GameSettings& settings,
       m_look{from ? PlayerLook{from->yawRadians, from->pitchRadians}
                   : PlayerLook{angleToRadians(m_game.level().spawns().front().yaw), 0.0f}} {}
 
+void PlaySession::setSettings(const GameSettings& settings) {
+    m_settings = settings;
+    m_game.setSettings(settings);
+}
+
 void PlaySession::look(float countsX, float countsY, bool invert) {
     m_look.turn(countsX, countsY, kSensitivity, invert);
 }

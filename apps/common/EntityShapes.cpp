@@ -62,6 +62,14 @@ float drawnTick(const LocalGame& game, const State& state, LocalGame::Clock::tim
     return static_cast<float>(state.tick) - 1.0f + game.blend(now);
 }
 
+// A colour as a colour picker shows it (sRGB) in the linear RGB the renderer lights.
+Vec3 linearColour(Vec3 srgb) {
+    const auto channel = [](float value) {
+        return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
+    };
+    return {channel(srgb.x), channel(srgb.y), channel(srgb.z)};
+}
+
 // A body's colour, flashing pale for a moment each time it is hurt.
 Vec3 withHurtFlash(Vec3 color, const Health* health, float tick) {
     if (health == nullptr || health->hurtTick == 0) {
@@ -201,7 +209,10 @@ void addEnemies(std::vector<WorldVertex>& out, const LocalGame& game,
             continue;
         }
         const MovementSettings& movement = movementOf(world, id, game.settings());
-        const Vec3 color = kEnemyColors[enemy.type % kEnemyColors.size()];
+        const std::vector<EnemySettings>& types = game.settings().enemies;
+        const Vec3 color = enemy.type < types.size() && types[enemy.type].colour
+                               ? linearColour(*types[enemy.type].colour)
+                               : kEnemyColors[enemy.type % kEnemyColors.size()];
         const float yaw = angleToRadians(transform->yaw);
         const Vec3 half = movement.halfExtents;
         const Vec3 feet = transform->position - Vec3{0.0f, 0.0f, half.z};

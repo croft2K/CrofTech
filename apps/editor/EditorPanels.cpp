@@ -341,6 +341,29 @@ MenuRequests EditorPanels::drawMenuBar(EditorDocument& document, EditorSettings&
         }
         ImGui::SeparatorText("Ready-made");
         for (const EntityPreset& preset : entityPresets()) {
+            if (preset.className == kEnemyClass && m_gameData != nullptr) {
+                // The game's types, from its data.
+                if (ImGui::BeginMenu(std::string(preset.name).c_str())) {
+                    for (const EnemySettings& type : m_gameData->settings().enemies) {
+                        if (ImGui::MenuItem(type.name.c_str())) {
+                            requests.addEnemy = type.name;
+                        }
+                        tooltip(type.description);
+                    }
+                    if (m_gameData->settings().enemies.empty()) {
+                        ImGui::TextDisabled("The game has no enemy types");
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("New enemy type...") && m_gameDataPanel != nullptr) {
+                        const std::vector<std::string>& types = m_gameData->manifest().enemies;
+                        m_gameDataPanel->newEnemyType(types.empty() ? "" : types.front());
+                    }
+                    tooltip("A copy of one of the game's enemy types, to change in the Game data "
+                            "window");
+                    ImGui::EndMenu();
+                }
+                continue;
+            }
             if (ImGui::MenuItem(std::string(preset.name).c_str())) {
                 requests.addPreset = &preset;
             }
@@ -1111,6 +1134,9 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
     if (entity.className == kScriptClass) {
         drawScriptButtons(document, index);
     }
+    if (entity.className == kEnemyClass || entity.className == kSpawnerClass) {
+        drawEnemyType(document.level().entities[index]);
+    }
     if (entity.className == kEnemyClass || entity.className == kPatrolPointClass) {
         // index is still this entity: properties that change apply on a later frame.
         if (ImGui::Button("Add patrol point")) {
@@ -1189,16 +1215,24 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
             } else if (property.type == PropertyType::Weapon ||
                        property.type == PropertyType::Enemy) {
                 const bool weapon = property.type == PropertyType::Weapon;
-                const std::vector<std::string>& names = weapon ? m_weaponNames : m_enemyNames;
                 const char* none = weapon ? "(none)" : "(the first)";
                 const std::string current(propertyValue(entity, property));
                 if (ImGui::BeginCombo("##value", current.empty() ? none : current.c_str())) {
                     if (ImGui::Selectable(none, current.empty())) {
                         setValue(key, "");
                     }
-                    for (const std::string& name : names) {
-                        if (ImGui::Selectable(name.c_str(), name == current)) {
-                            setValue(key, name);
+                    if (m_gameData != nullptr && weapon) {
+                        for (const WeaponSettings& each : m_gameData->settings().weapons) {
+                            if (ImGui::Selectable(each.name.c_str(), each.name == current)) {
+                                setValue(key, each.name);
+                            }
+                        }
+                    } else if (m_gameData != nullptr) {
+                        for (const EnemySettings& each : m_gameData->settings().enemies) {
+                            if (ImGui::Selectable(each.name.c_str(), each.name == current)) {
+                                setValue(key, each.name);
+                            }
+                            tooltip(each.description);
                         }
                     }
                     ImGui::EndCombo();
@@ -1467,6 +1501,40 @@ void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index
             m_newOutput = {};
         }
     }
+}
+
+void EditorPanels::drawEnemyType(const LevelEntity& entity) {
+    if (m_gameData == nullptr || m_gameDataPanel == nullptr) {
+        return;
+    }
+    const std::vector<std::string>& types = m_gameData->manifest().enemies;
+    const std::string* named = findProperty(entity, "type");
+    const std::string type =
+        named != nullptr && !named->empty() ? *named : (types.empty() ? "" : types.front());
+    const std::vector<EnemySettings>& enemies = m_gameData->settings().enemies;
+    const auto found = std::find_if(enemies.begin(), enemies.end(),
+                                    [&](const EnemySettings& each) { return each.name == type; });
+    if (found == enemies.end()) {
+        ImGui::TextColored({1.0f, 0.47f, 0.4f, 1.0f}, "The game has no enemy type '%s'",
+                           type.c_str());
+        return;
+    }
+    if (!found->description.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s: %s", type.c_str(), found->description.c_str());
+        ImGui::PopStyleColor();
+    }
+    if (ImGui::Button("Edit type")) {
+        m_gameDataPanel->open(std::format("enemies/{}.cfg", type));
+    }
+    ImGui::SetItemTooltip("Shows the %s's settings in the Game data window; every %s changes",
+                          type.c_str(), type.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("New type from it...")) {
+        m_gameDataPanel->newEnemyType(type);
+    }
+    ImGui::SetItemTooltip("A copy of the %s to change as you like, in the Game data window",
+                          type.c_str());
 }
 
 void EditorPanels::drawScriptButtons(EditorDocument& document, std::size_t index) {

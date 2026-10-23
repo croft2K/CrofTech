@@ -19,6 +19,18 @@ struct ConfigEntry {
 
 std::vector<ConfigEntry> parseConfig(std::string_view text);
 
+// Edits for tools that write config files, keeping everything else as it was: comments, blank
+// lines, the order and the layout.
+//
+// Whether the text can be a value: one line with no '#', which would start a comment.
+bool isConfigValue(std::string_view value);
+// The text with the key set to the value (isConfigValue). The key's last line, the one that wins,
+// is changed in place, keeping its comment in the same column where the value leaves room; a key
+// with no line gets a new one at the end.
+std::string setConfigValue(std::string_view text, std::string_view key, std::string_view value);
+// The text without any of the key's lines.
+std::string removeConfigValue(std::string_view text, std::string_view key);
+
 // Strict parsers: the whole text must be a valid, finite value.
 bool parseFloat(std::string_view text, float& value);
 bool parseBool(std::string_view text, bool& value); // 1/0, true/false, on/off

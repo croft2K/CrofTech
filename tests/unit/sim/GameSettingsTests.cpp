@@ -158,3 +158,24 @@ TEST_CASE("an enemy's weapon is found among the game's weapons by name") {
     CHECK(settings.enemies[1].weapon == "cannon");
     CHECK(settings.enemies[1].weaponIndex == 0xFFFFFFFFu);
 }
+
+TEST_CASE("an enemy type's look and sounds are read, and ones that won't do are left out") {
+    const std::vector<std::string> enemies{"grunt", "brute"};
+    ct::Console console;
+    ct::registerGameCVars(console, {}, enemies);
+    console.applyConfig(ct::enemyCVarPrefix("grunt"),
+                        oneLayer("description Walks at you slowly\n"
+                                 "sounds charger\n"
+                                 "colour 0.5 0.25 1\n"));
+    console.applyConfig(ct::enemyCVarPrefix("brute"), oneLayer("sounds ../secret\n"
+                                                               "colour 0.5 2 1\n"));
+    const ct::GameSettings settings = ct::gameSettingsFromCVars(console, {}, enemies);
+    const ct::EnemySettings& grunt = settings.enemies.at(0);
+    CHECK(grunt.description == "Walks at you slowly");
+    CHECK(grunt.soundSet() == "charger");
+    REQUIRE(grunt.colour.has_value());
+    CHECK(grunt.colour->y == 0.25f);
+    const ct::EnemySettings& brute = settings.enemies.at(1);
+    CHECK(brute.soundSet() == "brute");
+    CHECK_FALSE(brute.colour.has_value());
+}

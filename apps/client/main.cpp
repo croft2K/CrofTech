@@ -400,8 +400,6 @@ int main(int argc, char** argv) {
     // Destroyed before SDL shuts down, sounds first.
     auto audio = std::make_unique<ct::AudioOutput>();
     auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
-    sounds->setWeaponNames(game->weapons);
-    sounds->setEnemyNames(game->enemies);
     ct::GameEvents gameEvents;
     ct::GameEffects gameEffects;
     std::vector<ct::GameEvent> events; // this frame's
@@ -410,6 +408,7 @@ int main(int argc, char** argv) {
     const auto inspectedState = std::make_unique<ct::State>();
 
     ct::GameSettings settings = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
+    sounds->setSettings(settings);
     std::uint64_t seenChanges = console.changeCount();
 
     ct::PlayerLook look;
@@ -554,6 +553,7 @@ int main(int argc, char** argv) {
             seenChanges = console.changeCount();
             settings = ct::gameSettingsFromCVars(console, game->weapons, game->enemies);
             localGame->setSettings(settings);
+            sounds->setSettings(settings);
             localGame->setConditions(client.linkConditions());
         }
 

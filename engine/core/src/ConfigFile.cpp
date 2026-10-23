@@ -48,6 +48,134 @@ std::vector<ConfigEntry> parseConfig(std::string_view text) {
     return entries;
 }
 
+namespace {
+
+// Where a new value starts when a line has no gap to keep, as in the hand-written files.
+constexpr std::size_t kValueColumn = 16;
+
+// One line of a config file, split up so a tool can change the value and keep the rest.
+struct ConfigLine {
+    std::string_view indent;
+    std::string_view key;
+    std::string_view gap; // between the key and the value
+    std::string_view value;
+    std::string_view comment; // from the '#', or empty
+    std::size_t commentColumn = 0;
+    std::string_view ending; // "\n", "\r\n" or nothing on the last line
+};
+
+ConfigLine splitLine(std::string_view line) {
+    ConfigLine split;
+    if (line.ends_with("\r\n")) {
+        split.ending = line.substr(line.size() - 2);
+    } else if (line.ends_with('\n')) {
+        split.ending = line.substr(line.size() - 1);
+    }
+    line.remove_suffix(split.ending.size());
+    const std::size_t hash = line.find('#');
+    if (hash != std::string_view::npos) {
+        split.comment = line.substr(hash);
+        split.commentColumn = hash;
+        line = line.substr(0, hash);
+    }
+    std::size_t at = 0;
+    while (at < line.size() && isSpace(line[at])) {
+        ++at;
+    }
+    split.indent = line.substr(0, at);
+    std::size_t end = at;
+    while (end < line.size() && !isSpace(line[end])) {
+        ++end;
+    }
+    split.key = line.substr(at, end - at);
+    std::size_t valueStart = end;
+    while (valueStart < line.size() && isSpace(line[valueStart])) {
+        ++valueStart;
+    }
+    split.gap = line.substr(end, valueStart - end);
+    split.value = trim(line.substr(valueStart));
+    return split;
+}
+
+// The text's lines, each with its line ending.
+std::vector<std::string_view> splitLines(std::string_view text) {
+    std::vector<std::string_view> lines;
+    while (!text.empty()) {
+        const std::size_t newline = text.find('\n');
+        const std::size_t length = newline == std::string_view::npos ? text.size() : newline + 1;
+        lines.push_back(text.substr(0, length));
+        text.remove_prefix(length);
+    }
+    return lines;
+}
+
+} // namespace
+
+bool isConfigValue(std::string_view value) {
+    return value.find_first_of("#\r\n") == std::string_view::npos;
+}
+
+std::string setConfigValue(std::string_view text, std::string_view key, std::string_view value) {
+    value = trim(value);
+    const std::vector<std::string_view> lines = splitLines(text);
+    std::size_t last = lines.size();
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        if (splitLine(lines[i]).key == key) {
+            last = i;
+        }
+    }
+    std::string result;
+    result.reserve(text.size() + key.size() + value.size() + kValueColumn);
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        if (i != last) {
+            result += lines[i];
+            continue;
+        }
+        const ConfigLine line = splitLine(lines[i]);
+        result += line.indent;
+        result += line.key;
+        if (!value.empty()) {
+            const std::size_t column = line.indent.size() + line.key.size();
+            if (!line.gap.empty()) {
+                result += line.gap;
+            } else {
+                result.append(column < kValueColumn ? kValueColumn - column : 1, ' ');
+            }
+            result += value;
+        }
+        if (!line.comment.empty()) {
+            const std::size_t lineStart = result.rfind('\n') + 1; // npos + 1 is 0
+            const std::size_t column = result.size() - lineStart;
+            result.append(line.commentColumn > column + 1 ? line.commentColumn - column : 2, ' ');
+            result += line.comment;
+        }
+        result += line.ending;
+    }
+    if (last == lines.size()) {
+        if (!result.empty() && !result.ends_with('\n')) {
+            result += text.find("\r\n") != std::string_view::npos ? "\r\n" : "\n";
+        }
+        result += key;
+        if (!value.empty()) {
+            result.append(key.size() < kValueColumn ? kValueColumn - key.size() : 1, ' ');
+            result += value;
+        }
+        result += text.find("\r\n") != std::string_view::npos ? "\r\n" : "\n";
+    }
+    return result;
+}
+
+std::string removeConfigValue(std::string_view text, std::string_view key) {
+    std::string result;
+    result.reserve(text.size());
+    for (const std::string_view line : splitLines(text)) {
+        if (splitLine(line).key != key) {
+            result += line;
+        }
+    }
+    return result;
+}
+
 bool parseFloat(std::string_view text, float& value) {
     float parsed = 0.0f;
     const char* end = text.data() + text.size();

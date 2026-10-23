@@ -3,7 +3,8 @@
 // The window is a dockspace: the 3D view fills the middle, with the hierarchy, inspector and
 // console docked around it, and the tool bar over the view. Hold the right mouse button in the view
 // to fly (WASD, Q/E down/up, Shift faster); in an orthographic pane it pans and the wheel zooms.
-// F5 plays the level, Shift+F5 from the 3D camera (Esc stops; F6 and F9 save and load). Shortcuts:
+// F5 plays the level, Shift+F5 from the 3D camera (Esc stops; F6 and F9 save and load; Shift+F1
+// frees the mouse, to tune the game in the Game data window while it plays). Shortcuts:
 // Q/W/E/R select, move, rotate and scale tools, V vertex tool, C clip tool, B shape tool,
 // Ctrl+H/J/K hollow, merge and subtract the selected brushes, Ctrl+S save, Ctrl+Z/Ctrl+Y undo/redo,
 // Ctrl+A select all, Ctrl+D duplicate, Ctrl+G group, Ctrl+Shift+G ungroup, F2 rename (in the
@@ -15,6 +16,7 @@
 #include "EditorPanels.h"
 #include "EnemyThoughts.h"
 #include "EntityShapes.h"
+#include "GameDataPanel.h"
 #include "GameEffects.h"
 #include "GameSounds.h"
 #include "LevelViewport.h"
@@ -30,6 +32,7 @@
 #include "croftech/devui/ConsoleWindow.h"
 #include "croftech/devui/DevUi.h"
 #include "croftech/editor/EditorActions.h"
+#include "croftech/editor/GameData.h"
 #include "croftech/editor/ScriptLinks.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
@@ -98,19 +101,32 @@ bool invertMouseSetting(const ct::ContentPaths& content) {
     return invert.asBool();
 }
 
-// The game's settings: the player size spawn markers show, and how play-in-editor plays.
-ct::GameSettings loadGameSettings(const ct::ContentPaths& content, const ct::GameManifest& game) {
-    ct::Console console;
-    ct::registerGameCVars(console, game.weapons, game.enemies);
-    for (const ct::GameConfigFile& file : ct::gameConfigFiles(game.weapons, game.enemies)) {
-        ct::LayeredConfig config(content, file.path);
-        if (const auto layers = config.reloadIfChanged()) {
-            for (const std::string& problem : console.applyConfig(file.prefix, *layers)) {
-                ct::logWarning("{}", problem);
-            }
-        }
+// The sizes markers show, from the game's settings.
+ct::BodySizes bodySizes(const ct::GameSettings& game) {
+    ct::BodySizes bodies;
+    bodies.player = game.movement.halfExtents;
+    for (const ct::EnemySettings& enemy : game.enemies) {
+        bodies.enemies.emplace_back(enemy.name, enemy.movement.halfExtents);
     }
-    return ct::gameSettingsFromCVars(console, game.weapons, game.enemies);
+    return bodies;
+}
+
+std::vector<std::string> weaponNames(const ct::GameSettings& game) {
+    std::vector<std::string> names;
+    for (const ct::WeaponSettings& weapon : game.weapons) {
+        names.push_back(weapon.name);
+    }
+    return names;
+}
+
+// Whether play can take the new settings: the game refers to weapons and enemy types by their
+// places in the lists, which must stay as play started.
+bool sameTypes(const ct::GameSettings& a, const ct::GameSettings& b) {
+    const auto sameNames = [](const auto& x, const auto& y) {
+        return std::equal(x.begin(), x.end(), y.begin(), y.end(),
+                          [](const auto& p, const auto& q) { return p.name == q.name; });
+    };
+    return sameNames(a.weapons, b.weapons) && sameNames(a.enemies, b.enemies);
 }
 
 ct::Camera startingCamera(const ct::Level& level) {
@@ -147,6 +163,7 @@ void buildDefaultLayout(ImGuiID dockspace) {
     ImGui::DockBuilderDockWindow("Hierarchy", left);
     ImGui::DockBuilderDockWindow("Inspector", right);
     ImGui::DockBuilderDockWindow("Scripts", bottom);
+    ImGui::DockBuilderDockWindow("Game data", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderFinish(dockspace);
 }
@@ -225,7 +242,7 @@ void drawPlayBanner(const ct::PlaySession& play, bool captured, const ct::Editor
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
         ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("Playing", nullptr, kFlags)) {
-        ImGui::Text("Playing %s   Esc stops   F6 saves   F9 loads",
+        ImGui::Text("Playing %s   Esc stops   F6 saves   F9 loads   Shift+F1 frees the mouse",
                     document.path().filename().string().c_str());
         ImGui::TextDisabled("%.1f m/s   server tick %.2f ms", static_cast<double>(play.speed()),
                             static_cast<double>(play.game().serverTickMilliseconds()));
@@ -286,12 +303,21 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    const ct::GameSettings gameSettings = loadGameSettings(content, *game);
-    ct::EditorSettings settings;
-    settings.bodies.player = gameSettings.movement.halfExtents;
-    for (const ct::EnemySettings& enemy : gameSettings.enemies) {
-        settings.bodies.enemies.emplace_back(enemy.name, enemy.movement.halfExtents);
+    // The game's settings, edited in the Game data window: the sizes markers show, and how
+    // play-in-editor plays.
+    std::optional<ct::GameData> gameData =
+        ct::GameData::load(content, game->root / "game.cfg", error);
+    if (!gameData) {
+        ct::logError("{}", error);
+        return EXIT_FAILURE;
     }
+    for (const std::string& warning : gameData->warnings()) {
+        ct::logWarning("{}", warning);
+    }
+    ct::GameSettings gameSettings = gameData->settings();
+    std::uint64_t seenGameData = gameData->changeCount();
+    ct::EditorSettings settings;
+    settings.bodies = bodySizes(gameSettings);
     settings.invertMouse = invertMouseSetting(content);
     ct::NavMeshView navMeshView(ct::navAgent(gameSettings.movement));
     ct::LevelViewport viewport(startingCamera(*level));
@@ -325,8 +351,8 @@ int main(int argc, char** argv) {
     ct::Console console;
     ct::ConsoleWindow consoleWindow(console, ct::ConsoleStyle::Panel);
     ct::EditorPanels panels;
-    panels.setWeaponNames(game->weapons);
-    panels.setEnemyNames(game->enemies);
+    ct::GameDataPanel gameDataPanel(*gameData, kSourceDirectory);
+    panels.setGameData(&*gameData, &gameDataPanel);
     // Looked at again every second, so scripts written alongside the editor show up as saved.
     ct::ScriptLibrary scripts(content);
     scripts.refresh();
@@ -367,8 +393,7 @@ int main(int argc, char** argv) {
     // Destroyed before SDL shuts down, sounds first.
     auto audio = std::make_unique<ct::AudioOutput>();
     auto sounds = std::make_unique<ct::GameSounds>(*audio, content);
-    sounds->setWeaponNames(game->weapons);
-    sounds->setEnemyNames(game->enemies);
+    sounds->setSettings(gameSettings);
     ct::GameEffects gameEffects;
     std::string shownTitle;
     Clock::time_point lastFrame = Clock::now();
@@ -419,7 +444,7 @@ int main(int argc, char** argv) {
             ct::logError("Can't play: {}", playError);
             return;
         }
-        play->setWeaponNames(game->weapons);
+        play->setWeaponNames(weaponNames(gameSettings));
         for (const std::string& warning : play->game().level().warnings()) {
             ct::logWarning("{}", warning);
         }
@@ -431,6 +456,9 @@ int main(int argc, char** argv) {
         if (const auto now = std::chrono::steady_clock::now();
             now - scriptsRefreshed > std::chrono::seconds(1)) {
             scripts.refresh();
+            if (gameData->reloadIfChanged()) {
+                ct::logInfo("The game data changed on disk; read it again");
+            }
             scriptsRefreshed = now;
         }
         ct::FlyInput flyInput;
@@ -461,6 +489,9 @@ int main(int argc, char** argv) {
                         play->quickSave(Clock::now());
                     } else if (event.key.key == SDLK_F9) {
                         play->quickLoad(Clock::now());
+                    } else if (event.key.key == SDLK_F1 && (event.key.mod & SDL_KMOD_SHIFT) &&
+                               playCaptured) {
+                        capturePlayMouse(false);
                     }
                 }
                 break;
@@ -527,6 +558,20 @@ int main(int argc, char** argv) {
         panels.drawInspector(document, settings);
         const bool frameScriptUser = scriptPanel.draw(document);
         ImGui::EndDisabled();
+        // Open in play too, to tune the game as it runs.
+        gameDataPanel.draw(document, playing);
+        if (gameData->changeCount() != seenGameData) {
+            seenGameData = gameData->changeCount();
+            gameSettings = gameData->settings();
+            settings.bodies = bodySizes(gameSettings);
+            sounds->setSettings(gameSettings);
+            if (play && sameTypes(play->settings(), gameSettings)) {
+                play->setSettings(gameSettings);
+            } else if (play) {
+                ct::logWarning("Weapons or enemy types were added or taken away: they play from "
+                               "the next start");
+            }
+        }
         viewport.setHighlighted(scriptPanel.frontScript().empty()
                                     ? std::vector<std::uint32_t>{}
                                     : ct::scriptUsers(document.level(), scriptPanel.frontScript()));
@@ -570,7 +615,14 @@ int main(int argc, char** argv) {
             const float grid = settings.grid();
             const bool editingCorners =
                 viewport.tool() == ct::EditorTool::Vertex && !viewport.selectedCorners().empty();
-            if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
+            // The Game data window has undo, redo and save of its own.
+            const bool gameDataKeys = gameDataPanel.hasFocus();
+            if (gameDataKeys &&
+                (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S) ||
+                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z) ||
+                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y) ||
+                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))) {
+            } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
                 save(document);
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_O)) {
                 menu.open = true;
@@ -681,6 +733,15 @@ int main(int argc, char** argv) {
             ct::addPresetEntity(document, *menu.addPreset,
                                 viewport.placementPoint(document, settings));
         }
+        if (!menu.addEnemy.empty()) {
+            if (const ct::EntityClassInfo* enemyClass = ct::findEntityClass(ct::kEnemyClass)) {
+                ct::LevelEntity entity = ct::makeEntity(*enemyClass);
+                ct::setProperty(entity, "origin",
+                                ct::formatVec3(viewport.placementPoint(document, settings)));
+                ct::setProperty(entity, "type", menu.addEnemy);
+                ct::addEntity(document, std::move(entity));
+            }
+        }
         if (menu.addEntity != nullptr) {
             ct::LevelEntity entity = ct::makeEntity(*menu.addEntity);
             ct::setProperty(entity, "origin",
@@ -698,7 +759,8 @@ int main(int argc, char** argv) {
 
         // Leaving with unsaved changes asks first.
         if (quitRequested) {
-            if (document.hasUnsavedChanges() || scriptPanel.hasUnsavedChanges()) {
+            if (document.hasUnsavedChanges() || scriptPanel.hasUnsavedChanges() ||
+                gameData->hasUnsavedChanges()) {
                 ImGui::OpenPopup("Unsaved changes");
             } else {
                 running = false;
@@ -713,6 +775,9 @@ int main(int argc, char** argv) {
             for (const std::string& script : scriptPanel.unsavedNames()) {
                 unsaved += std::format("{}{}.luau", unsaved.empty() ? "" : ", ", script);
             }
+            for (const std::string& file : gameData->unsavedFiles()) {
+                unsaved += std::format("{}{}", unsaved.empty() ? "" : ", ", file);
+            }
             ImGui::Text("Save changes to %s before quitting?", unsaved.c_str());
             if (ImGui::Button("Save and quit")) {
                 if (document.hasUnsavedChanges()) {
@@ -722,8 +787,13 @@ int main(int argc, char** argv) {
                 if (!scriptPanel.saveAll(scriptError)) {
                     ct::logError("Couldn't save: {}", scriptError);
                 }
-                running = document.hasUnsavedChanges() || scriptPanel.hasUnsavedChanges() ? running
-                                                                                          : false;
+                if (gameData->hasUnsavedChanges()) {
+                    gameDataPanel.save();
+                }
+                running = document.hasUnsavedChanges() || scriptPanel.hasUnsavedChanges() ||
+                                  gameData->hasUnsavedChanges()
+                              ? running
+                              : false;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
