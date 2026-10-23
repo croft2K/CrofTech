@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LevelViewport.h"
+#include "ScriptPanel.h"
 
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EditorDocument.h"
@@ -39,9 +40,12 @@ public:
     // The game's weapons, which pickups choose from.
     void setWeaponNames(std::vector<std::string> names) { m_weaponNames = std::move(names); }
     void setEnemyNames(std::vector<std::string> names) { m_enemyNames = std::move(names); }
-    // The scripts the script property offers, whose events and inputs script entities have. It
-    // must outlive the panels.
-    void setScripts(const ScriptLibrary* scripts) { m_scripts = scripts; }
+    // The scripts the script property offers, whose events and inputs script entities have, and
+    // the panel that edits them. Both must outlive these panels.
+    void setScripts(const ScriptLibrary* scripts, ScriptPanel* panel) {
+        m_scripts = scripts;
+        m_scriptPanel = panel;
+    }
 
 private:
     // Sides, steps, thickness and facing for the shape being drawn.
@@ -65,6 +69,8 @@ private:
     void drawEntityInspector(EditorDocument& document, std::size_t index, float grid);
     // The entity's properties: those of its class, with their defaults, then any others.
     void drawEntityProperties(EditorDocument& document, std::size_t index);
+    // A script entity's Edit script button, or New script for one that names none.
+    void drawScriptButtons(EditorDocument& document, std::size_t index);
     // The entity's outputs, as a table of event, target, input and delay.
     void drawEntityOutputs(EditorDocument& document, std::size_t index);
     void drawMultipleInspector(EditorDocument& document);
@@ -91,6 +97,8 @@ private:
     std::vector<std::string> m_weaponNames;
     std::vector<std::string> m_enemyNames;
     const ScriptLibrary* m_scripts = nullptr;
+    ScriptPanel* m_scriptPanel = nullptr;
+    std::string m_newScript; // the name being typed for a new script
 
     // The rows shown in the hierarchy, in order, for Shift-click ranges: this frame's so far and
     // last frame's, which every click sees in full.

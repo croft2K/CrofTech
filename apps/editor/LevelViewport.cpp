@@ -64,6 +64,7 @@ constexpr ImU32 kEndHandleColor = IM_COL32(120, 190, 255, 255);
 constexpr ImU32 kWireOutColor = IM_COL32(110, 230, 255, 230);
 constexpr ImU32 kWireInColor = IM_COL32(200, 150, 255, 200);
 constexpr ImU32 kRouteColor = IM_COL32(130, 230, 110, 220);
+constexpr ImU32 kHighlightColor = IM_COL32(120, 220, 255, 255);
 constexpr ImU32 kWireLabelBackground = IM_COL32(15, 15, 20, 190);
 constexpr std::array<ImU32, 3> kAxisColors{IM_COL32(235, 75, 75, 255), IM_COL32(115, 205, 65, 255),
                                            IM_COL32(75, 135, 245, 255)};
@@ -1802,6 +1803,11 @@ void LevelViewport::drawPane(const EditorDocument& document, const EditorSetting
     };
     if (active && m_hover && !isDragging() && !document.isSelected(m_hover->target)) {
         outline(m_hover->target, kHoverColor, 1.0f);
+    }
+    for (const std::uint32_t entity : m_highlighted) {
+        if (!document.isSelected(LevelItem::entity(entity))) {
+            outline(LevelItem::entity(entity), kHighlightColor, 2.0f);
+        }
     }
     for (const LevelItem& item : document.selection()) {
         outline(item, kSelectedColor, 2.0f);

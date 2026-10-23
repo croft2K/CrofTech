@@ -290,6 +290,7 @@ GameLevel::GameLevel(const Level& level, std::optional<SpawnPoint> start,
         }
     }
     resolveOutputs(level);
+    checkScriptSends();
     resolveReferences(level);
     numberWaves(level);
     spawnLogic(settings);
@@ -311,6 +312,29 @@ void GameLevel::loadScripts(std::span<const ScriptSource> scripts) {
             m_scripts.push_back(std::make_unique<ScriptProgram>(std::move(*program)));
         } else {
             m_warnings.push_back(std::format("scripts/{}.luau: {}", source.name, error));
+        }
+    }
+}
+
+void GameLevel::checkScriptSends() {
+    for (const std::unique_ptr<ScriptProgram>& program : m_scripts) {
+        for (const ScriptCallSite& site : program->callSites()) {
+            if (site.kind != ScriptCallKind::Send) {
+                continue;
+            }
+            const std::span<const NamedEntity> targets = entitiesNamed(site.name);
+            if (targets.empty()) {
+                m_warnings.push_back(
+                    std::format("scripts/{}.luau:{}: game:send: no entity is named '{}'",
+                                program->name(), site.line, site.name));
+            }
+            for (const NamedEntity& target : targets) {
+                if (!findInput(target.index, site.input)) {
+                    m_warnings.push_back(std::format(
+                        "scripts/{}.luau:{}: game:send: {} has no input '{}'", program->name(),
+                        site.line, describe(target.index), site.input));
+                }
+            }
         }
     }
 }

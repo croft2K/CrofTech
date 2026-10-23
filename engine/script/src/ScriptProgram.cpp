@@ -9,7 +9,9 @@
 #include <Luau/Compiler.h>
 #include <Luau/Parser.h>
 #include <algorithm>
+#include <charconv>
 #include <format>
+#include <system_error>
 
 namespace ct {
 namespace {
@@ -75,9 +77,63 @@ private:
     }
 };
 
-std::string located(std::string_view name, const Luau::Location& location,
+// Finds the calls game:fire("event"), game:after(seconds, "input") and game:send("name", "input").
+class CallFinder : public Luau::AstVisitor {
+public:
+    std::vector<ScriptCallSite> sites;
+
+    bool visit(Luau::AstExprCall* node) override {
+        const Luau::AstExprIndexName* function = node->func->as<Luau::AstExprIndexName>();
+        if (function == nullptr || !namedGame(function->expr)) {
+            return true;
+        }
+        const std::string_view method = function->index.value;
+        const auto text = [&](std::size_t index) -> std::optional<std::string> {
+            if (index >= node->args.size) {
+                return std::nullopt;
+            }
+            const Luau::AstExprConstantString* string =
+                node->args.data[index]->as<Luau::AstExprConstantString>();
+            if (string == nullptr) {
+                return std::nullopt;
+            }
+            return std::string(string->value.data, string->value.size);
+        };
+        ScriptCallSite site;
+        site.line = node->location.begin.line + 1;
+        if (method == "fire" && text(0)) {
+            site.kind = ScriptCallKind::Fire;
+            site.name = *text(0);
+        } else if (method == "after" && text(1)) {
+            site.kind = ScriptCallKind::After;
+            site.name = *text(1);
+        } else if (method == "send" && text(0) && text(1)) {
+            site.kind = ScriptCallKind::Send;
+            site.name = *text(0);
+            site.input = *text(1);
+        } else {
+            return true;
+        }
+        sites.push_back(std::move(site));
+        return true;
+    }
+
+private:
+    static bool namedGame(Luau::AstExpr* expr) {
+        if (const Luau::AstExprLocal* local = expr->as<Luau::AstExprLocal>()) {
+            return std::string_view(local->local->name.value) == "game";
+        }
+        if (const Luau::AstExprGlobal* global = expr->as<Luau::AstExprGlobal>()) {
+            return std::string_view(global->name.value) == "game";
+        }
+        return false;
+    }
+};
+
+ScriptError located(std::string_view name, const Luau::Location& location,
                     std::string_view message) {
-    return std::format("{}:{}: {}", name, location.begin.line + 1, message);
+    return {std::format("{}:{}: {}", name, location.begin.line + 1, message),
+            location.begin.line + 1};
 }
 
 } // namespace
@@ -90,13 +146,24 @@ bool isValidScriptName(std::string_view name) {
 
 std::optional<ScriptProgram> ScriptProgram::load(std::string_view name, std::string_view source,
                                                  std::string& error) {
+    ScriptError failure;
+    std::optional<ScriptProgram> program = load(name, source, failure);
+    if (!program) {
+        error = std::move(failure.text);
+    }
+    return program;
+}
+
+std::optional<ScriptProgram> ScriptProgram::load(std::string_view name, std::string_view source,
+                                                 ScriptError& error) {
+    error = {};
     if (!isValidScriptName(name)) {
-        error =
+        error.text =
             std::format("'{}' isn't a script name: lowercase letters, digits, '-' or '_'", name);
         return std::nullopt;
     }
     if (source.size() > kMaxScriptBytes) {
-        error = std::format("{} is over {} KB", name, kMaxScriptBytes / 1024);
+        error.text = std::format("{} is over {} KB", name, kMaxScriptBytes / 1024);
         return std::nullopt;
     }
 
@@ -125,6 +192,8 @@ std::optional<ScriptProgram> ScriptProgram::load(std::string_view name, std::str
         error = located(name, *check.where, check.problem);
         return std::nullopt;
     }
+    CallFinder calls;
+    parsed.root->visit(&calls);
 
     ScriptProgram program;
     program.m_name = std::string(name);
@@ -142,9 +211,33 @@ std::optional<ScriptProgram> ScriptProgram::load(std::string_view name, std::str
 
     ScriptRunner runner;
     if (!runner.declare(program.m_name, program.m_bytecode, program.m_declarations)) {
-        error = std::string(runner.error());
+        error.text = std::string(runner.error());
+        // Errors raised by the script itself say where: "name:line: message".
+        const std::string prefix = program.m_name + ":";
+        const std::size_t colon = error.text.find(':', prefix.size());
+        if (error.text.starts_with(prefix) && colon != std::string::npos) {
+            const std::string_view digits =
+                std::string_view(error.text).substr(prefix.size(), colon - prefix.size());
+            std::uint32_t line = 0;
+            if (std::from_chars(digits.data(), digits.data() + digits.size(), line).ec ==
+                std::errc{}) {
+                error.line = line;
+            }
+        }
         return std::nullopt;
     }
+    for (const ScriptCallSite& site : calls.sites) {
+        const bool fire = site.kind == ScriptCallKind::Fire;
+        const bool after = site.kind == ScriptCallKind::After;
+        if ((fire && !program.findEvent(site.name)) || (after && !program.findInput(site.name))) {
+            error.line = site.line;
+            error.text = std::format("{}:{}: game:{}: no {} '{}' (declare it in {})", name,
+                                     site.line, fire ? "fire" : "after", fire ? "event" : "input",
+                                     site.name, fire ? "events" : "inputs");
+            return std::nullopt;
+        }
+    }
+    program.m_callSites = std::move(calls.sites);
     return program;
 }
 

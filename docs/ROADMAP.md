@@ -208,7 +208,14 @@ snapshots like the logic of M2, and every tuning value is game data layered over
    offers each script's events and inputs for wiring, `docs/Scripting.md` describes scripts for
    level designers, a fuzz target runs scripts, and `levels/script_test.level` is a combination
    lock. Left for later: trigonometry with results of our own making, so scripts can turn and
-   aim; queries of the game (who is where, what is alive), when a level needs them.*
+   aim; queries of the game (who is where, what is alive), when a level needs them. 8b done
+   (2026-10-23), after Tony asked to edit scripts in the editor and see which entities each is
+   tied to: a Scripts window with a code editor of our own (Luau colours, line numbers, undo,
+   find, the clipboard), scripts checked as they are typed with errors on their lines, unsaved
+   text used by the inspector and by play, new scripts from a template (also from a script
+   entity's inspector), and beside the code the entities running it (outlined in the view), the
+   wiring in and out, and what doesn't line up: inputs or events the script lacks, game:send to
+   names the level doesn't have, inputs nothing sends.*
 9. **First playable arena.** Built in the editor, with weapons and pickups, waves of both enemy
    kinds, arena locks and one scripted moment (music waits for the audio middleware). M3 is done
    when it has been played through.

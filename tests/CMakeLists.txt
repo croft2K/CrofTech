@@ -15,8 +15,11 @@ add_executable(ct_unit_tests
     unit/editor/EditorDocumentTests.cpp
     unit/editor/EntityLinksTests.cpp
     unit/editor/GroupTests.cpp
+    unit/editor/LuauHighlightTests.cpp
+    unit/editor/ScriptLinksTests.cpp
     unit/editor/SelectionTests.cpp
     unit/editor/ShapesTests.cpp
+    unit/editor/TextBufferTests.cpp
     unit/editor/AffineTransformTests.cpp
     unit/audio/MixerTests.cpp
     unit/audio/WavFileTests.cpp

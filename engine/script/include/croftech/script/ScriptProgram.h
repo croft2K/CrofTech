@@ -54,20 +54,44 @@ struct ScriptDeclarations {
 // weapons and enemies. It is part of a file path, so nothing else is allowed.
 bool isValidScriptName(std::string_view name);
 
+// Why a script didn't load.
+struct ScriptError {
+    std::string text;       // "name:line: message", or without the line when there is none
+    std::uint32_t line = 0; // counting from 1; 0 when the problem isn't at a line
+};
+
+enum class ScriptCallKind : std::uint8_t { Fire, After, Send };
+
+// A call of game:fire, game:after or game:send written with its names in quotes, as most are, so
+// they can be checked before the script runs: fire and after against what the script declares
+// (when it loads), send against the level (by the game as it builds the level, and by tools).
+struct ScriptCallSite {
+    ScriptCallKind kind = ScriptCallKind::Fire;
+    std::string name;  // the event (Fire), the script's own input (After), the entity (Send)
+    std::string input; // Send: the input it sends
+    std::uint32_t line = 0;
+};
+
 // A script compiled for the sandbox, with what it declares. Loading rejects anything that would
 // play differently on different platforms: the ^ operator (pow differs between C libraries),
 // maths library functions other than the exact ones, and the optimize and native comments (which
-// fold builtins with the compiling machine's maths).
+// fold builtins with the compiling machine's maths). It also rejects game:fire and game:after
+// calls naming an event or input in quotes that the script doesn't declare, which could only
+// fail.
 class ScriptProgram {
 public:
-    // Compiles and checks the source, then runs it once to read its declarations. Errors give the
-    // line, counting from 1.
+    // Compiles and checks the source, then runs it once to read its declarations.
+    static std::optional<ScriptProgram> load(std::string_view name, std::string_view source,
+                                             ScriptError& error);
     static std::optional<ScriptProgram> load(std::string_view name, std::string_view source,
                                              std::string& error);
 
     const std::string& name() const { return m_name; }
     const std::string& bytecode() const { return m_bytecode; }
     const ScriptDeclarations& declarations() const { return m_declarations; }
+    // The calls on a table named game (the name scripts give it) with names in quotes, in the
+    // order they are written.
+    const std::vector<ScriptCallSite>& callSites() const { return m_callSites; }
     std::optional<std::uint32_t> findInput(std::string_view input) const;
     std::optional<std::uint32_t> findEvent(std::string_view event) const;
 
@@ -75,6 +99,7 @@ private:
     std::string m_name;
     std::string m_bytecode;
     ScriptDeclarations m_declarations;
+    std::vector<ScriptCallSite> m_callSites;
 };
 
 } // namespace ct

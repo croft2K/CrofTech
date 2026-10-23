@@ -7,12 +7,24 @@ them.
 
 ## Making one
 
-1. Write `scripts/<name>.luau` in the game's content folder (or the engine's `content/scripts`).
-   The name is lowercase letters, digits, `-` and `_`.
-2. In the editor, Create > Script, and choose the script in the inspector. Its events and inputs
-   then appear in the outputs table, like any entity's.
-3. Play. The script is read again each time play starts, so edits show at once. Errors and what
-   it prints appear in the console.
+1. In the editor, Create > Script, then in the inspector press **New script...** and give it a
+   name (lowercase letters, digits, `-` and `_`). That makes `scripts/<name>.luau` in the game's
+   content folder from a template, sets the entity to run it and opens it in the Scripts window.
+   (Or choose an existing script in the inspector, and press **Edit script**.)
+2. Write it in the Scripts window. It is checked as you type: a line that stops it loading is
+   marked red with the reason. Beside it are:
+   - the entities that run it (outlined in the view; click one to select it),
+   - what it declares,
+   - the wiring into and out of those entities,
+   - what doesn't line up: inputs or events the script doesn't have, `game:send` to a name no
+     entity has, inputs nothing sends. Those with a line are marked on it too.
+3. Wire it in the outputs table like any entity: its events and inputs are listed there.
+4. Play. What is in the Scripts window plays, saved or not. Ctrl+S saves the script; errors and
+   what it prints appear in the console.
+
+Scripts can be written in another editor too (**Open outside**, for VS Code with the Luau
+extension, say): the Scripts window follows the file as long as it has no unsaved changes of its
+own.
 
 `content/scripts/combination.luau`, played in `--map script_test`, is a complete example.
 
@@ -57,6 +69,9 @@ return {
 
 - **Only the declared state survives a call.** Every call starts afresh, so a global or a local
   set in one call is gone by the next. Keep what matters in `game.state`.
+- **Names are checked when they can be.** `game:fire("on_x")` or `game:after(1, "tick")` naming
+  an event or input the script doesn't declare stops it loading; `game:send` to a name no entity
+  has is a warning. Names worked out while the game runs are only checked when the call happens.
 - **A call that fails does nothing.** If it errors, it changes no state and fires nothing, and the
   error is logged with the script's name and line.
 - **A call has a budget**: 200,000 steps (loop turns and function calls) and 4 MB of memory. A

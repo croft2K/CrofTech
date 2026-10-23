@@ -8,6 +8,14 @@
 
 namespace ct {
 
+void ScriptLibrary::compile(Entry& entry, std::string_view text) {
+    entry.program.reset();
+    entry.error = {};
+    if (std::optional<ScriptProgram> program = ScriptProgram::load(entry.name, text, entry.error)) {
+        entry.program = std::make_unique<ScriptProgram>(std::move(*program));
+    }
+}
+
 bool ScriptLibrary::refresh() {
     // Where each script is now: the highest layer's copy.
     std::vector<std::pair<std::string, std::filesystem::path>> found;
@@ -39,7 +47,8 @@ bool ScriptLibrary::refresh() {
         Entry next;
         const auto old = std::find_if(m_entries.begin(), m_entries.end(),
                                       [&](const Entry& e) { return e.name == name; });
-        if (old != m_entries.end()) {
+        const bool known = old != m_entries.end();
+        if (known) {
             next = std::move(*old);
         } else {
             next.name = name;
@@ -51,28 +60,30 @@ bool ScriptLibrary::refresh() {
             writeTime.reset();
         }
         const std::uintmax_t size = std::filesystem::file_size(path, error);
-        if (next.path != path || next.writeTime != writeTime || next.size != size ||
-            old == m_entries.end()) {
+        if (!known || next.path != path || next.writeTime != writeTime || next.size != size) {
             changed = true;
             next.path = path;
             next.writeTime = writeTime;
             next.size = size;
-            next.program.reset();
-            next.error.clear();
-            const std::optional<std::string> text = readTextFile(path, kMaxScriptBytes);
-            if (!text) {
-                next.error = std::format("can't read {} (or it is over {} KB)", path.string(),
-                                         kMaxScriptBytes / 1024);
-                // Probably caught mid-save; forget its time so the next refresh tries again.
-                next.writeTime.reset();
-            } else if (std::optional<ScriptProgram> program =
-                           ScriptProgram::load(name, *text, next.error)) {
-                next.program = std::make_unique<ScriptProgram>(std::move(*program));
+            // Text being edited stands for the file until it is cleared.
+            if (!next.text) {
+                if (const std::optional<std::string> text = readTextFile(path, kMaxScriptBytes)) {
+                    compile(next, *text);
+                } else {
+                    next.program.reset();
+                    next.error = {std::format("can't read {} (or it is over {} KB)", path.string(),
+                                              kMaxScriptBytes / 1024)};
+                    // Probably caught mid-save; forget its time so the next refresh tries again.
+                    next.writeTime.reset();
+                }
             }
         }
         entries.push_back(std::move(next));
     }
     m_entries = std::move(entries);
+    if (changed) {
+        ++m_generation;
+    }
     return changed;
 }
 
@@ -84,11 +95,15 @@ std::vector<std::string_view> ScriptLibrary::names() const {
     return names;
 }
 
-const ScriptLibrary::Entry* ScriptLibrary::entry(std::string_view name) const {
+ScriptLibrary::Entry* ScriptLibrary::entry(std::string_view name) {
     const auto it = std::lower_bound(
         m_entries.begin(), m_entries.end(), name,
         [](const Entry& entry, std::string_view wanted) { return entry.name < wanted; });
     return it != m_entries.end() && it->name == name ? &*it : nullptr;
+}
+
+const ScriptLibrary::Entry* ScriptLibrary::entry(std::string_view name) const {
+    return const_cast<ScriptLibrary*>(this)->entry(name);
 }
 
 const ScriptProgram* ScriptLibrary::find(std::string_view name) const {
@@ -99,9 +114,34 @@ const ScriptProgram* ScriptLibrary::find(std::string_view name) const {
 std::string_view ScriptLibrary::error(std::string_view name) const {
     const Entry* found = entry(name);
     if (found == nullptr) {
-        return "there is no such script in the scripts folder";
+        return "there is no such script in the scripts folders";
     }
-    return found->error;
+    return found->error.text;
+}
+
+std::uint32_t ScriptLibrary::errorLine(std::string_view name) const {
+    const Entry* found = entry(name);
+    return found != nullptr ? found->error.line : 0;
+}
+
+std::filesystem::path ScriptLibrary::path(std::string_view name) const {
+    const Entry* found = entry(name);
+    return found != nullptr ? found->path : std::filesystem::path();
+}
+
+void ScriptLibrary::setText(std::string_view name, std::string text) {
+    if (Entry* found = entry(name)) {
+        compile(*found, text);
+        found->text = std::move(text);
+        ++m_generation;
+    }
+}
+
+void ScriptLibrary::clearText(std::string_view name) {
+    if (Entry* found = entry(name); found != nullptr && found->text) {
+        found->text.reset();
+        found->writeTime.reset();
+    }
 }
 
 } // namespace ct

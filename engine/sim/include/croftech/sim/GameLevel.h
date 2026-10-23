@@ -256,6 +256,8 @@ public:
 private:
     void readEntity(const Level& level, std::uint32_t index, const GameSettings& settings);
     void loadScripts(std::span<const ScriptSource> scripts);
+    // Warns of game:send calls, with names in quotes, that no entity would take.
+    void checkScriptSends();
     void resolveOutputs(const Level& level);
     void resolveReferences(const Level& level);
     // Numbers each encounter's waves from 0 in the order of the spawners' wave settings, so a

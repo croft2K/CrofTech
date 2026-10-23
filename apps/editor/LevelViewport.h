@@ -171,6 +171,10 @@ public:
     // Entity markers, selection outlines, gizmos and tool previews over every pane.
     void drawOverlay(const EditorDocument& document, const EditorSettings& settings,
                      const ViewRect& region) const;
+    // Entities outlined besides the selection: those running the script being edited.
+    void setHighlighted(std::vector<std::uint32_t> entities) {
+        m_highlighted = std::move(entities);
+    }
 
     // Where a new entity goes: the surface under the middle of the active pane, or a few metres
     // ahead.
@@ -364,6 +368,7 @@ private:
     std::optional<VertexHandle> m_hoverVertex;
     bool m_hoverEnd = false; // the mouse is over the selected mover's end handle
     std::vector<Vec3> m_corners;
+    std::vector<std::uint32_t> m_highlighted;
     std::vector<Vec3> m_clipPoints;
     ClipKeep m_clipKeep = ClipKeep::Back;
     float m_shapeHeight = 1.0f; // new shapes start as tall as the last one

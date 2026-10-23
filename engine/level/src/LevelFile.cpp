@@ -414,31 +414,7 @@ std::optional<Level> loadLevelFile(const std::filesystem::path& path, std::strin
 
 bool saveLevelFile(const Level& level, const std::filesystem::path& path, std::string& error) {
     const std::optional<std::string> text = formatLevel(level, error);
-    if (!text) {
-        return false;
-    }
-    std::filesystem::path temporary = path;
-    temporary += ".tmp";
-    {
-        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-        file.write(text->data(), static_cast<std::streamsize>(text->size()));
-        file.close();
-        if (!file) {
-            error = std::format("{}: cannot write", pathText(temporary));
-            std::error_code ignored;
-            std::filesystem::remove(temporary, ignored);
-            return false;
-        }
-    }
-    std::error_code renameError;
-    std::filesystem::rename(temporary, path, renameError);
-    if (renameError) {
-        error = std::format("{}: {}", pathText(path), renameError.message());
-        std::error_code ignored;
-        std::filesystem::remove(temporary, ignored);
-        return false;
-    }
-    return true;
+    return text && writeTextFile(path, *text, error);
 }
 
 std::uint64_t levelContentHash(const Level& level) {

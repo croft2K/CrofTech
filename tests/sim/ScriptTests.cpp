@@ -148,6 +148,12 @@ TEST_CASE("a script that fails or sends to nothing is reported, and the game goe
          entity("timer", {{"origin", "0 0 0"}, {"interval", "0.1"}, {"start_on", "1"}},
                 {{"on_timer", "broken", "fail", 0.0f}})}};
     SimHarness sim(level, ct::GameSettings{}, std::span(&broken, 1));
+    // Sends with names in quotes are checked as the level is built, too.
+    const std::span<const std::string> warnings = sim.level().warnings();
+    REQUIRE(warnings.size() == 2);
+    CHECK(warnings[0] == "scripts/broken.luau:6: game:send: no entity is named 'nobody'");
+    CHECK(warnings[1] ==
+          "scripts/broken.luau:7: game:send: counter 'hits' (entity 1) has no input 'explode'");
     sim.run(ct::UserCmd{}, 20);
     const std::vector<ct::ScriptMessage> messages = sim.takeScriptMessages();
     REQUIRE(messages.size() == 4);

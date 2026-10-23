@@ -1,3 +1,5 @@
+#include "TestFiles.h"
+
 #include "croftech/core/ConfigFile.h"
 
 #include <doctest/doctest.h>
@@ -62,4 +64,16 @@ TEST_CASE("parseBool accepts the usual spellings") {
     CHECK((ct::parseBool("on", value) && value));
     CHECK((ct::parseBool("0", value) && !value));
     CHECK_FALSE(ct::parseBool("yes", value));
+}
+
+TEST_CASE("text files are written whole, replacing what was there") {
+    ct::test::TempDirectory directory;
+    const std::filesystem::path path = directory.path() / "script.luau";
+    std::string error;
+    REQUIRE_MESSAGE(ct::writeTextFile(path, "first", error), error);
+    REQUIRE_MESSAGE(ct::writeTextFile(path, "second\nversion", error), error);
+    CHECK(ct::readTextFile(path) == "second\nversion");
+    CHECK_FALSE(std::filesystem::exists(directory.path() / "script.luau.tmp"));
+    CHECK_FALSE(ct::writeTextFile(directory.path() / "missing/folder/x.luau", "x", error));
+    CHECK_FALSE(error.empty());
 }

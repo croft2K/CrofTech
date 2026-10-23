@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -105,6 +106,34 @@ std::optional<std::string> readTextFile(const std::filesystem::path& path, std::
         return std::nullopt;
     }
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+bool writeTextFile(const std::filesystem::path& path, std::string_view text, std::string& error) {
+    const auto shown = [](std::filesystem::path shownPath) {
+        return shownPath.make_preferred().string();
+    };
+    std::filesystem::path temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
+        file.close();
+        if (!file) {
+            error = std::format("{}: cannot write", shown(temporary));
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+            return false;
+        }
+    }
+    std::error_code renameError;
+    std::filesystem::rename(temporary, path, renameError);
+    if (renameError) {
+        error = std::format("{}: {}", shown(path), renameError.message());
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        return false;
+    }
+    return true;
 }
 
 } // namespace ct

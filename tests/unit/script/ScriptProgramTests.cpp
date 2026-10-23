@@ -126,3 +126,53 @@ TEST_CASE("scripts over the size limit don't load") {
     const std::string big(ct::kMaxScriptBytes + 1, ' ');
     CHECK(loadError(big).find("is over") != std::string::npos);
 }
+
+TEST_CASE("load errors say the line apart from the text") {
+    ct::ScriptError error;
+    CHECK_FALSE(ct::ScriptProgram::load("test", "return {\n  x = = 1 }", error));
+    CHECK(error.line == 2);
+    CHECK(error.text.starts_with("test:2: "));
+    CHECK_FALSE(ct::ScriptProgram::load("test", "local a = 1\nlocal b = 2\nerror('no')", error));
+    CHECK(error.line == 3);
+    CHECK_FALSE(ct::ScriptProgram::load("test", "return { events = { 'a', 'a' } }", error));
+    CHECK(error.line == 0);
+}
+
+TEST_CASE("game:fire and game:after naming what the script doesn't declare don't load") {
+    CHECK(loadError("return {\n events = { 'on_a' },\n inputs = { go = function(game)\n "
+                    "game:fire('on_b') end } }") ==
+          "test:4: game:fire: no event 'on_b' (declare it in events)");
+    CHECK(loadError("return { inputs = { go = function(game) game:after(1, 'later') end } }") ==
+          "test:1: game:after: no input 'later' (declare it in inputs)");
+    // Only on the game: other tables may have methods of those names.
+    CHECK(loadError("local door = { fire = function() end }\ndoor:fire('x')\nreturn {}") ==
+          "loaded");
+}
+
+TEST_CASE("calls with names in quotes are recorded with their lines") {
+    std::string error;
+    const std::optional<ct::ScriptProgram> program = load(R"(return {
+        events = { "on_done" },
+        inputs = {
+            go = function(game)
+                game:fire("on_done")
+                game.after(2, "go")
+                game:send("vault", "move_to_end", 1)
+                game:send(game.state.target, "open")
+            end,
+        },
+    })",
+                                                          error);
+    REQUIRE_MESSAGE(program, error);
+    const std::vector<ct::ScriptCallSite>& sites = program->callSites();
+    REQUIRE(sites.size() == 3);
+    CHECK(sites[0].kind == ct::ScriptCallKind::Fire);
+    CHECK(sites[0].name == "on_done");
+    CHECK(sites[0].line == 5);
+    CHECK(sites[1].kind == ct::ScriptCallKind::After);
+    CHECK(sites[1].name == "go");
+    CHECK(sites[2].kind == ct::ScriptCallKind::Send);
+    CHECK(sites[2].name == "vault");
+    CHECK(sites[2].input == "move_to_end");
+    CHECK(sites[2].line == 7);
+}

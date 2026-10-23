@@ -107,7 +107,12 @@ in the `Script` component as doubles, so scripts save, rewind and replicate; a c
 (`game:fire`, `game:after`, `game:send`) are applied only if it finishes. The client and editor
 read a level's scripts with `loadLevelScripts` (the editor each time play starts, and its
 inspector through `ScriptLibrary`, which offers a script entity's events and inputs for wiring);
-saves record the level's hash continued with its scripts'. What scripts print and their errors
+saves record the level's hash continued with its scripts'. The editor edits scripts in its Scripts
+window (`apps/editor/ScriptPanel`, `CodeEditor`; the text, cursor, undo and Luau colouring are
+`TextBuffer` and `LuauHighlight` in `engine/editor`): text being edited is compiled as it is typed
+(`ScriptLibrary::setText`) and plays unsaved, and beside it are the entities running the script
+(outlined in the view), the wiring in and out of them and the problems with it (`ScriptLinks`,
+which also checks `game:send` calls written with names in quotes; `ScriptProgram::callSites`). What scripts print and their errors
 reach the log through `Simulation::takeScriptMessages`. `--map script_test` is a combination lock.
 
 Run the editor: `build\windows-debug\bin\croftech_editor.exe [--game sandbox] [--map name]`. Every

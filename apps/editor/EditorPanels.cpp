@@ -4,6 +4,7 @@
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EntityLinks.h"
 #include "croftech/editor/LevelCommands.h"
+#include "croftech/editor/ScriptLinks.h"
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
@@ -1106,6 +1107,9 @@ void EditorPanels::drawEntityInspector(EditorDocument& document, std::size_t ind
     }
 
     drawEntityProperties(document, index);
+    if (entity.className == kScriptClass) {
+        drawScriptButtons(document, index);
+    }
     if (entity.className == kEnemyClass || entity.className == kPatrolPointClass) {
         // index is still this entity: properties that change apply on a later frame.
         if (ImGui::Button("Add patrol point")) {
@@ -1461,6 +1465,53 @@ void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index
         if (adding && m_problem.empty()) {
             m_newOutput = {};
         }
+    }
+}
+
+void EditorPanels::drawScriptButtons(EditorDocument& document, std::size_t index) {
+    const LevelEntity& entity = document.level().entities[index];
+    const EntityClassInfo* entityClass = findEntityClass(entity.className);
+    if (m_scriptPanel == nullptr || m_scripts == nullptr || entityClass == nullptr) {
+        return;
+    }
+    const std::string script(textProperty(entity, *entityClass, "script"));
+    if (!script.empty() && !m_scripts->path(script).empty()) {
+        if (ImGui::Button("Edit script")) {
+            m_scriptPanel->open(script);
+        }
+        ImGui::SetItemTooltip("Opens scripts/%s.luau in the Scripts window", script.c_str());
+        const std::size_t users = scriptUsers(document.level(), script).size();
+        if (users > 1) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%zu entities run it: editing changes them all)", users);
+        }
+        return;
+    }
+    if (ImGui::Button("New script...")) {
+        m_newScript.clear();
+        ImGui::OpenPopup("New script for entity");
+    }
+    ImGui::SetItemTooltip(
+        "Makes a script from a template, sets this entity to run it and opens it");
+    if (ImGui::BeginPopup("New script for entity")) {
+        ImGui::TextUnformatted("Name (lowercase letters, digits, '-' and '_'):");
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        const bool entered =
+            ImGui::InputText("##name", &m_newScript, ImGuiInputTextFlags_EnterReturnsTrue);
+        if ((ImGui::Button("Make") || entered) && !m_newScript.empty()) {
+            std::string error;
+            if (m_scriptPanel->create(m_newScript, error)) {
+                LevelEntity edited = entity;
+                setProperty(edited, "script", m_newScript);
+                commitEntity(document, index, edited, "Set script");
+                ImGui::CloseCurrentPopup();
+            } else {
+                m_problem = error;
+            }
+        }
+        ImGui::EndPopup();
     }
 }
 

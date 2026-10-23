@@ -33,4 +33,8 @@ std::string formatFloat(float value);
 std::optional<std::string> readTextFile(const std::filesystem::path& path,
                                         std::size_t maxBytes = 1u << 20);
 
+// Writes a temporary file and renames it over the target, so a failed save never leaves a
+// half-written file behind.
+bool writeTextFile(const std::filesystem::path& path, std::string_view text, std::string& error);
+
 } // namespace ct

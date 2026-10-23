@@ -20,6 +20,7 @@
 #include "LevelViewport.h"
 #include "NavMeshView.h"
 #include "PlaySession.h"
+#include "ScriptPanel.h"
 #include "WorldMesh.h"
 
 #include "croftech/core/Console.h"
@@ -28,6 +29,7 @@
 #include "croftech/devui/ConsoleWindow.h"
 #include "croftech/devui/DevUi.h"
 #include "croftech/editor/EditorActions.h"
+#include "croftech/editor/ScriptLinks.h"
 #include "croftech/level/LevelLoad.h"
 #include "croftech/render/Renderer.h"
 #include "croftech/script/ScriptFiles.h"
@@ -140,9 +142,10 @@ void buildDefaultLayout(ImGuiID dockspace) {
     const ImGuiID right =
         ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.25f, nullptr, &centre);
     const ImGuiID bottom =
-        ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down, 0.22f, nullptr, &centre);
+        ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down, 0.3f, nullptr, &centre);
     ImGui::DockBuilderDockWindow("Hierarchy", left);
     ImGui::DockBuilderDockWindow("Inspector", right);
+    ImGui::DockBuilderDockWindow("Scripts", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderFinish(dockspace);
 }
@@ -327,7 +330,8 @@ int main(int argc, char** argv) {
     ct::ScriptLibrary scripts(content);
     scripts.refresh();
     auto scriptsRefreshed = std::chrono::steady_clock::now();
-    panels.setScripts(&scripts);
+    ct::ScriptPanel scriptPanel(content, scripts);
+    panels.setScripts(&scripts, &scriptPanel);
     bool running = true;
     bool quitRequested = false;
     bool flying = false;
@@ -380,13 +384,15 @@ int main(int argc, char** argv) {
         }
         // Read each time, so edits to scripts play at once.
         std::vector<std::string> scriptWarnings;
-        const std::vector<ct::ScriptSource> scripts =
+        std::vector<ct::ScriptSource> levelScripts =
             ct::loadLevelScripts(content, document.level(), scriptWarnings);
+        // What is being edited plays, saved or not, as the level does.
+        scriptPanel.applyOpenText(levelScripts);
         for (const std::string& warning : scriptWarnings) {
             ct::logWarning("{}", warning);
         }
         play = ct::PlaySession::start(document.level(), gameSettings, settings.playConditions, from,
-                                      scripts, playError);
+                                      levelScripts, playError);
         if (!play) {
             ct::logError("Can't play: {}", playError);
             return;
@@ -497,7 +503,11 @@ int main(int argc, char** argv) {
         ImGui::BeginDisabled(playing);
         panels.drawHierarchy(document);
         panels.drawInspector(document, settings);
+        const bool frameScriptUser = scriptPanel.draw(document);
         ImGui::EndDisabled();
+        viewport.setHighlighted(scriptPanel.frontScript().empty()
+                                    ? std::vector<std::uint32_t>{}
+                                    : ct::scriptUsers(document.level(), scriptPanel.frontScript()));
         consoleWindow.draw();
 
         ct::ViewRect view;
@@ -530,11 +540,11 @@ int main(int argc, char** argv) {
         }
 
         // Shortcuts, unless a text field has the keyboard.
-        bool frameSelection = menu.frameSelection;
+        bool frameSelection = menu.frameSelection || frameScriptUser;
         bool startPlaying = menu.play;
         bool startPlayingHere = menu.playFromHere;
         // Not on the frame play stops either: its Esc is not for the editor.
-        if (!flying && !playing && !stopPlay && !io.WantTextInput) {
+        if (!flying && !playing && !stopPlay && !io.WantTextInput && !scriptPanel.hasKeyboard()) {
             const float grid = settings.grid();
             const bool editingCorners =
                 viewport.tool() == ct::EditorTool::Vertex && !viewport.selectedCorners().empty();
@@ -630,7 +640,7 @@ int main(int argc, char** argv) {
 
         // Leaving with unsaved changes asks first.
         if (quitRequested) {
-            if (document.hasUnsavedChanges()) {
+            if (document.hasUnsavedChanges() || scriptPanel.hasUnsavedChanges()) {
                 ImGui::OpenPopup("Unsaved changes");
             } else {
                 running = false;
@@ -638,11 +648,24 @@ int main(int argc, char** argv) {
             quitRequested = false;
         }
         if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Save changes to %s before quitting?",
-                        document.path().filename().string().c_str());
+            std::string unsaved;
+            if (document.hasUnsavedChanges()) {
+                unsaved = document.path().filename().string();
+            }
+            for (const std::string& script : scriptPanel.unsavedNames()) {
+                unsaved += std::format("{}{}.luau", unsaved.empty() ? "" : ", ", script);
+            }
+            ImGui::Text("Save changes to %s before quitting?", unsaved.c_str());
             if (ImGui::Button("Save and quit")) {
-                save(document);
-                running = document.hasUnsavedChanges() ? running : false;
+                if (document.hasUnsavedChanges()) {
+                    save(document);
+                }
+                std::string scriptError;
+                if (!scriptPanel.saveAll(scriptError)) {
+                    ct::logError("Couldn't save: {}", scriptError);
+                }
+                running = document.hasUnsavedChanges() || scriptPanel.hasUnsavedChanges() ? running
+                                                                                          : false;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();

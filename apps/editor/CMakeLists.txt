@@ -1,4 +1,6 @@
 add_executable(croftech_editor
+    CodeEditor.cpp
+    CodeEditor.h
     EditorPanels.cpp
     EditorPanels.h
     LevelViewport.cpp
@@ -8,6 +10,8 @@ add_executable(croftech_editor
     NavMeshView.h
     PlaySession.cpp
     PlaySession.h
+    ScriptPanel.cpp
+    ScriptPanel.h
 )
 target_link_libraries(croftech_editor PRIVATE ct_app_common ct::client ct::editor ct::devui ct::render
                                               ct::sim ct::level imgui::imgui SDL3::SDL3)

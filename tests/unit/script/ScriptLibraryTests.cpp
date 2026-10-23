@@ -60,3 +60,29 @@ TEST_CASE("the script library loads a script again when its file changes or goes
     CHECK(library.refresh());
     CHECK(library.names().empty());
 }
+
+TEST_CASE("text given to the library stands for the file until cleared") {
+    TempDirectory root;
+    writeFile(root.path() / "scripts/lock.luau", "return { events = { 'on_file' } }");
+    ct::ContentPaths content;
+    content.addLayer(root.path());
+    ct::ScriptLibrary library(content);
+    library.refresh();
+    CHECK(library.path("lock") == root.path() / "scripts/lock.luau");
+    const std::uint64_t generation = library.generation();
+
+    library.setText("lock", "return {\n events = { 'on_typed' },\n state = { x = 'no' } }");
+    CHECK(library.generation() != generation);
+    CHECK(library.find("lock") == nullptr);
+    CHECK(library.errorLine("lock") == 0); // a declaration problem has no line
+    library.setText("lock", "return { events = { 'on_typed' } }");
+    REQUIRE(library.find("lock") != nullptr);
+    CHECK(library.find("lock")->declarations().events == std::vector<std::string>{"on_typed"});
+    library.refresh(); // the file hasn't changed, and the text still stands
+    CHECK(library.find("lock")->declarations().events == std::vector<std::string>{"on_typed"});
+
+    library.clearText("lock");
+    library.refresh();
+    REQUIRE(library.find("lock") != nullptr);
+    CHECK(library.find("lock")->declarations().events == std::vector<std::string>{"on_file"});
+}

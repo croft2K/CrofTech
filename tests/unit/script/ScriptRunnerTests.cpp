@@ -101,7 +101,7 @@ TEST_CASE("a call that fails changes nothing") {
                     local nothing = nil
                     return nothing.field
                 end,
-                unknown = function(game) game:fire("on_y") end,
+                unknown = function(game) game:fire("on_" .. "y") end,
             },
         }
     )");
