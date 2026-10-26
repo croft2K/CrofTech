@@ -45,6 +45,7 @@ if(CROFTECH_BUILD_CLIENT)
     find_package(VulkanMemoryAllocator CONFIG REQUIRED)
     find_package(vk-bootstrap CONFIG REQUIRED)
     find_package(imgui CONFIG REQUIRED)
+    find_package(unofficial-imgui-node-editor CONFIG REQUIRED)
     find_program(CT_GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" REQUIRED)
 endif()
 

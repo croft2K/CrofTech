@@ -1,0 +1,6 @@
+sequence
+    fallback
+    invert
+        see
+        hear
+    cooldown 3

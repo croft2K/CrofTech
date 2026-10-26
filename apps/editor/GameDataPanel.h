@@ -12,6 +12,8 @@
 
 namespace ct {
 
+class BehaviourPanel;
+
 // The Game data window: the game's enemy types, weapons, movement and rules, each a settings file
 // (GameData) edited here with its own undo and saved when asked. The settings follow every edit,
 // so markers in the view, and a game being played in the editor, change at once. A new enemy type
@@ -25,6 +27,8 @@ public:
     void draw(const EditorDocument& document, bool playing);
     // Shows the file ("enemies/gunner.cfg") and brings the window forward.
     void open(std::string_view path);
+    // Where an enemy type's Edit behaviour opens its tree.
+    void setBehaviourPanel(BehaviourPanel* panel) { m_behaviours = panel; }
     // Asks for the name of a new enemy type made from the one given.
     void newEnemyType(std::string_view from);
     // Whether the window had the focus as of its last draw, when Ctrl+Z, Ctrl+Y and Ctrl+S are its.
@@ -53,6 +57,7 @@ private:
     };
 
     GameData& m_data;
+    BehaviourPanel* m_behaviours = nullptr;
     std::filesystem::path m_shownRoot;
     std::string m_selected; // the file shown, by its path
     bool m_focusWindow = false;

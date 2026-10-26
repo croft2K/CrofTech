@@ -140,7 +140,12 @@ changes (shown in gold, each with a Reset). "New type from this" copies an enemy
 of the game's own and adds it to `game.cfg`; Create > Enemy lists the types, and the inspector of
 an enemy or spawner has Edit type and its own settings (a menu of the type's, then a row each to
 drag or reset; `apps/editor/SettingWidgets` drags numbers in round steps for both windows). `setConfigValue` (`core/ConfigFile.h`) changes a setting's
-line and keeps the file's comments. Every
+line and keeps the file's comments. The Behaviours window (`apps/editor/BehaviourPanel`, on
+imgui-node-editor) edits behaviour trees as graphs laid out left to right, through `GameData`'s
+behaviour texts (same undo and saving; enemy types play them as edited, via
+`loadBehaviourTrees`' edited texts); the tree changes and the layout are `BehaviourEditing` in
+`engine/editor`, on drafts (`BehaviourReading::Draft`, problems from `behaviourProblems`), and in
+play the watched enemy's `EnemyBehaviour` bits light the nodes. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
 drags preview live and record one command when released, and edits of several selected items are
 one compound command. Moves, turns, flips and scales of any brush shape go through
@@ -242,7 +247,8 @@ Before finishing any change: `windows-debug` and `windows-asan` must build with 
     engine/devui     Dear ImGui context, developer console, stats overlay, entity inspector
                      (core)
     engine/editor    editor document, undo/redo commands, brush editing and picking maths,
-                     script links, the game's data files (core, level, script, sim)
+                     script links, the game's data files, behaviour tree editing
+                     (core, level, script, sim)
     engine/net       protocol messages, Transport, LoopbackLink with the network
                      conditioner; later bitstream, sockets, channels, crypto (M6) (core, sim)
     engine/server    Server (players join over a Transport, inputs, ticks, snapshots),

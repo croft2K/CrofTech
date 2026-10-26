@@ -5,9 +5,9 @@ tick (128 times a second). Each enemy type names its tree with the `behaviour` s
 file (the Game data window shows it under Behaviour); a type that names none, or one that won't
 load, uses the standard tree, which the charger and gunner both use.
 
-Until the graph window comes (M4 step 4), trees are text files: `behaviours/<name>.behaviour`,
-through the content layers like everything else, so a game can have its own or replace the
-engine's.
+Trees are text files, `behaviours/<name>.behaviour`, through the content layers like everything
+else, so a game can have its own or replace the engine's. The editor's Behaviours window shows
+and edits them as graphs (see below), and a file can be written by hand too.
 
 ## How a tree runs
 
@@ -72,13 +72,42 @@ A tree has at most 128 nodes, 32 deep, and 16 nodes that remember something (`co
 `time_limit`, `chance`, `wait`). A tree that breaks a rule doesn't load, and a warning names the
 line.
 
+## The Behaviours window
+
+In the editor, the Behaviours window shows a tree as a graph read left to right, as the file reads
+top to bottom: each node's children stand in a column to its right, run in order from the top.
+The Game data window's "Edit behaviour" on an enemy type opens that type's tree.
+
+- Drag from a node's right edge into empty space to add a node under it, or from its left edge
+  to put one above it (wrapping it in a decorator or composite).
+- Drag from a node's right edge onto another node to move that node, and what is under it, there.
+- Drag a node up or down to reorder it among the nodes beside it.
+- Right-click a node to add under it, put above it, change it to another kind, take it away
+  keeping what is under it, move it up or down, copy, cut, paste, duplicate or delete it.
+- Delete removes the chosen node and what is under it. Ctrl+C, X, V and D copy, cut, paste and
+  duplicate, as the file's text, so trees can be pasted to and from these docs.
+- The panel on the right edits the chosen node's setting and note (the note is written as
+  comments above it), and with nothing chosen lists the tree's problems.
+
+Every change applies at once, in play too, and is undone, redone and saved with the Game data
+window's changes (Ctrl+Z, Ctrl+Y and Ctrl+S while the window has the focus). A change to the
+engine's tree is saved as the game's own copy, which "Back to the engine's" takes away.
+
+A tree that breaks a rule (a sequence with nothing under it yet, say) still opens, with its
+problems on its nodes in red; until they are put right, the enemy types that use it run the
+standard tree.
+
+While playing in the editor, the nodes the watched enemy ran on its last tick light up: green
+for those that ran (succeeded or are still running), orange for those it tried that failed. It
+watches the enemy nearest the middle of your view, or the one chosen beside "Watching".
+
 ## Making a new one
 
-1. Copy `content/behaviours/standard.behaviour` to `games/<game>/content/behaviours/<name>.behaviour`
-   and change it.
+1. In the Behaviours window, choose the tree to start from and press "New from this...". It is
+   saved as `games/<game>/content/behaviours/<name>.behaviour`.
 2. In the Game data window, set the enemy type's `behaviour` to `<name>` (or make a new type from
    the gunner first, so the gunner stays as it is).
-3. Play. Problems with the file are in the console.
+3. Change it, and play. Problems with the file are in the console too.
 
 Some ideas:
 
@@ -137,4 +166,4 @@ Some ideas:
 | `wait` | seconds (1) | Stands still this long, then succeeds |
 
 `client.show_ai 1` (Play > Show what enemies think in the editor) labels each enemy with what it is
-doing. Each enemy also records which nodes ran each tick, for the graph window to light up.
+doing. Each enemy also records which nodes ran each tick, which the Behaviours window lights up.

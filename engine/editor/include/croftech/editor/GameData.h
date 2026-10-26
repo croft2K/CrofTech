@@ -80,6 +80,30 @@ public:
     // Takes an enemy type the game owns out of game.cfg, and its file once saved.
     bool deleteEnemyType(std::string_view name, std::string& error);
 
+    // Behaviour trees: behaviours/<name>.behaviour through the content layers, which the
+    // Behaviours window edits as whole texts, with the same undo and saving. Enemy types run them
+    // as edited. As with other files that aren't settings, the game's copy of one takes the place
+    // of the engine's whole.
+    // Every behaviour the content has or that was made here, by name, the standard one first.
+    std::vector<std::string> behaviourNames() const;
+    // Its text as edited; the built-in one for the standard behaviour if no layer has it.
+    std::optional<std::string> behaviourText(std::string_view name);
+    // Whether the game's content folder has it, saved or not.
+    bool hasGameBehaviour(std::string_view name);
+    // Whether a lower layer (the engine's content) has it, so taking the game's copy away goes
+    // back to that one.
+    bool hasBaseBehaviour(std::string_view name) const;
+    bool isBehaviourUnsaved(std::string_view name) const;
+    std::filesystem::path behaviourSavePath(std::string_view name) const;
+    // Sets the behaviour's text in the game's folder, as an undo step named editName. With merge,
+    // it joins the step before if that has the same name, so a drag is one undo step.
+    void setBehaviourText(std::string_view name, std::string text, std::string editName,
+                          bool merge);
+    // A new behaviour of the game's own, a copy of another.
+    bool createBehaviour(std::string_view name, std::string_view from, std::string& error);
+    // Takes the game's copy away (back to the engine's, if it has one).
+    bool removeGameBehaviour(std::string_view name, std::string& error);
+
     bool canUndo() const { return !m_done.empty(); }
     bool canRedo() const { return !m_undone.empty(); }
     std::string_view undoName() const;
@@ -129,6 +153,8 @@ private:
     // The file's lower layers, read once and kept.
     const BaseFile& base(const std::string& relative);
     std::filesystem::path topPath(const std::string& relative) const;
+    // The text of a lower layer's copy of the file, the highest that has one.
+    std::optional<std::string> baseText(const std::string& relative) const;
     // The game's copy of the file, read from disk the first time.
     OwnFile& own(const std::filesystem::path& path);
 

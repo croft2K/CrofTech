@@ -135,6 +135,54 @@ TEST_CASE("malformed behaviour trees are refused, naming the line") {
     CHECK(problemWith(std::string(ct::kMaxBehaviourFileSize + 1, ' ')) == "is over 64 KB");
 }
 
+TEST_CASE("a draft tree opens with its problems on its nodes") {
+    const std::string_view text = "sequence\n"
+                                  "    fallback\n"
+                                  "    invert\n"
+                                  "        see\n"
+                                  "        hear\n"
+                                  "    cooldown\n";
+    CHECK(problemWith(text) == "line 5: invert takes one node under it");
+    std::string error;
+    const auto draft = ct::parseBehaviourTree(text, "test", error, ct::BehaviourReading::Draft);
+    REQUIRE(draft.has_value());
+    REQUIRE(draft->nodes.size() == 6);
+    CHECK(draft->nodes[2].end == 5);
+    CHECK(draft->nodes[5].memory == 0);
+    const std::vector<ct::BehaviourProblem> problems = ct::behaviourProblems(*draft);
+    REQUIRE(problems.size() == 3);
+    CHECK(problems[0] == ct::BehaviourProblem{1, "has nothing under it"});
+    CHECK(problems[1] == ct::BehaviourProblem{2, "takes one node under it"});
+    CHECK(problems[2] == ct::BehaviourProblem{5, "has nothing under it"});
+    // Written out, a draft reads back the same draft.
+    CHECK(ct::parseBehaviourTree(ct::formatBehaviourTree(*draft), "test", error,
+                                 ct::BehaviourReading::Draft) == draft);
+    CHECK(ct::behaviourProblems(*parse("sequence\n    see\n")).empty());
+
+    // Past the limits, the nodes beyond them have the problem; those past the memory get none.
+    std::string waits = "sequence\n";
+    for (std::uint32_t i = 0; i <= ct::kMaxBehaviourMemory; ++i) {
+        waits += "    wait\n";
+    }
+    auto many = ct::parseBehaviourTree(waits, "test", error, ct::BehaviourReading::Draft);
+    REQUIRE(many.has_value());
+    CHECK(many->nodes.back().memory == ct::kNoBehaviourMemory);
+    const std::vector<ct::BehaviourProblem> tooMany = ct::behaviourProblems(*many);
+    REQUIRE(tooMany.size() == 1);
+    CHECK(tooMany[0].node == ct::kMaxBehaviourMemory + 1);
+
+    // Taking a wait away frees a slot; numbering again gives it to the last.
+    many->nodes.erase(many->nodes.begin() + 1);
+    many->nodes[0].end = static_cast<std::uint16_t>(many->nodes.size());
+    for (std::uint32_t i = 1; i < many->nodes.size(); ++i) {
+        many->nodes[i].end = static_cast<std::uint16_t>(i + 1);
+    }
+    ct::numberBehaviourMemory(*many);
+    CHECK(many->nodes.back().memory == ct::kMaxBehaviourMemory - 1);
+    CHECK(ct::behaviourProblems(*many).empty());
+    CHECK(parse(ct::formatBehaviourTree(*many)) == many);
+}
+
 TEST_CASE("the shipped standard behaviour is the built-in one") {
     const std::optional<std::string> text = ct::readTextFile(
         std::filesystem::path(CROFTECH_CONTENT_DIR) / "behaviours/standard.behaviour");

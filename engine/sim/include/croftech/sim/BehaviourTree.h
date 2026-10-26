@@ -108,12 +108,34 @@ struct BehaviourTree {
     friend bool operator==(const BehaviourTree&, const BehaviourTree&) = default;
 };
 
+// How a tree file is read. The game runs only whole trees; the editor also reads drafts, so a tree
+// still being built (a fallback with nothing under it yet), or one past the limits, opens with
+// its problems shown on its nodes (behaviourProblems).
+enum class BehaviourReading : std::uint8_t { Whole, Draft };
+
 // Reads a tree file: one node a line, children indented further than their parent with spaces,
 // a node's setting after its name, and '#' starting a comment, which belongs to the node below it
 // (or on its line); comments after the last node are dropped. Rejects anything malformed or past
-// the limits with an error naming the line; a tree that loads is safe to run.
+// the limits with an error naming the line; a tree that loads is safe to run. A draft may also
+// have composites and decorators with nothing under them, decorators with more than one node
+// under them, and more nodes, depth and nodes that remember than the limits allow (those past
+// the memory limit get no slot).
 std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::string_view name,
-                                                std::string& error);
+                                                std::string& error,
+                                                BehaviourReading reading = BehaviourReading::Whole);
+
+struct BehaviourProblem {
+    std::uint32_t node = 0;
+    std::string text; // what is wrong with it: "has nothing under it"
+
+    friend bool operator==(const BehaviourProblem&, const BehaviourProblem&) = default;
+};
+// What keeps a draft from loading as a whole tree, on the nodes it is about, in node order; none
+// for a whole tree.
+std::vector<BehaviourProblem> behaviourProblems(const BehaviourTree& tree);
+// Gives each node that remembers the next memory slot, in node order, as reading does; those past
+// kMaxBehaviourMemory get none. For trees changed after reading.
+void numberBehaviourMemory(BehaviourTree& tree);
 // The file text of a tree; parsing it gives the same tree.
 std::string formatBehaviourTree(const BehaviourTree& tree);
 
@@ -122,10 +144,17 @@ std::string formatBehaviourTree(const BehaviourTree& tree);
 std::string_view standardBehaviourText();
 const BehaviourTree& standardBehaviourTree();
 
+// A behaviour file's text as the editor has it, saved or not.
+struct BehaviourText {
+    std::string name;
+    std::string text;
+};
+
 // Reads the tree each enemy type names into the settings (GameSettings::behaviours, and each
-// type's behaviourIndex). Types whose tree is missing or won't load use the standard one; the
-// problems are returned.
-std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSettings& settings);
+// type's behaviourIndex), from the edited texts given or else the content. Types whose tree is
+// missing or won't load use the standard one; the problems are returned.
+std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSettings& settings,
+                                            std::span<const BehaviourText> edited = {});
 // The tree an enemy type runs.
 const BehaviourTree& behaviourOf(const GameSettings& settings, std::uint32_t enemyType);
 

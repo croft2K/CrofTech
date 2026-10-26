@@ -13,6 +13,7 @@
 // [ and ] grid size, Esc cancel or deselect.
 
 #include "AudioOutput.h"
+#include "BehaviourPanel.h"
 #include "EditorPanels.h"
 #include "EnemyThoughts.h"
 #include "EntityShapes.h"
@@ -164,6 +165,7 @@ void buildDefaultLayout(ImGuiID dockspace) {
     ImGui::DockBuilderDockWindow("Inspector", right);
     ImGui::DockBuilderDockWindow("Scripts", bottom);
     ImGui::DockBuilderDockWindow("Game data", bottom);
+    ImGui::DockBuilderDockWindow("Behaviours", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderFinish(dockspace);
 }
@@ -353,6 +355,8 @@ int main(int argc, char** argv) {
     ct::EditorPanels panels;
     ct::GameDataPanel gameDataPanel(*gameData, kSourceDirectory);
     panels.setGameData(&*gameData, &gameDataPanel);
+    ct::BehaviourPanel behaviourPanel(*gameData);
+    gameDataPanel.setBehaviourPanel(&behaviourPanel);
     // Looked at again every second, so scripts written alongside the editor show up as saved.
     ct::ScriptLibrary scripts(content);
     scripts.refresh();
@@ -560,6 +564,7 @@ int main(int argc, char** argv) {
         ImGui::EndDisabled();
         // Open in play too, to tune the game as it runs.
         gameDataPanel.draw(document, playing);
+        behaviourPanel.draw(play.get());
         if (gameData->changeCount() != seenGameData) {
             seenGameData = gameData->changeCount();
             gameSettings = gameData->settings();
@@ -615,13 +620,18 @@ int main(int argc, char** argv) {
             const float grid = settings.grid();
             const bool editingCorners =
                 viewport.tool() == ct::EditorTool::Vertex && !viewport.selectedCorners().empty();
-            // The Game data window has undo, redo and save of its own.
+            // The Game data window has undo, redo and save of its own; the Behaviours window has
+            // its own keys altogether, but for play.
             const bool gameDataKeys = gameDataPanel.hasFocus();
-            if (gameDataKeys &&
-                (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S) ||
-                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z) ||
-                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y) ||
-                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))) {
+            if (behaviourPanel.hasFocus()) {
+                if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+                    (io.KeyShift ? startPlayingHere : startPlaying) = true;
+                }
+            } else if (gameDataKeys &&
+                       (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S) ||
+                        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z) ||
+                        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y) ||
+                        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))) {
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
                 save(document);
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_O)) {

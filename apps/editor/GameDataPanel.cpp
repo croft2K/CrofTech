@@ -1,5 +1,6 @@
 #include "GameDataPanel.h"
 
+#include "BehaviourPanel.h"
 #include "SettingWidgets.h"
 
 #include "croftech/core/ConfigFile.h"
@@ -291,6 +292,20 @@ void GameDataPanel::drawFile(const GameConfigFile& file, const EditorDocument& d
             }
         }
         ImGui::EndDisabled();
+        if (m_behaviours != nullptr) {
+            std::string behaviour = "standard";
+            for (const EnemySettings& type : m_data.settings().enemies) {
+                if (type.name == name && !type.behaviour.empty()) {
+                    behaviour = type.behaviour;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Edit behaviour")) {
+                m_behaviours->open(behaviour);
+            }
+            ImGui::SetItemTooltip("Shows the %s's behaviour tree, %s, in the Behaviours window",
+                                  name.c_str(), behaviour.c_str());
+        }
         ImGui::SameLine();
         ImGui::TextDisabled("%zu in this level%s", users,
                             playing ? "; types can't be made or deleted while playing" : "");

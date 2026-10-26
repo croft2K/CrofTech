@@ -176,7 +176,8 @@ const BehaviourNodeInfo* findBehaviourNode(std::string_view name) {
 }
 
 std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::string_view name,
-                                                std::string& error) {
+                                                std::string& error, BehaviourReading reading) {
+    const bool whole = reading == BehaviourReading::Whole;
     if (text.size() > kMaxBehaviourFileSize) {
         error = std::format("is over {} KB", kMaxBehaviourFileSize / 1024);
         return std::nullopt;
@@ -276,7 +277,7 @@ std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::stri
                     std::format("line {}: {} takes nothing under it", lineNumber, parentInfo.name);
                 return std::nullopt;
             }
-            if (parentInfo.category == Decorator && parent.children == 1) {
+            if (whole && parentInfo.category == Decorator && parent.children == 1) {
                 error =
                     std::format("line {}: {} takes one node under it", lineNumber, parentInfo.name);
                 return std::nullopt;
@@ -289,24 +290,27 @@ std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::stri
             parent.childIndent = indent;
             ++parent.children;
         }
-        if (tree.nodes.size() == kMaxBehaviourNodes) {
+        if (whole && tree.nodes.size() == kMaxBehaviourNodes) {
             error =
                 std::format("line {}: a tree has at most {} nodes", lineNumber, kMaxBehaviourNodes);
             return std::nullopt;
         }
-        if (open.size() == kMaxBehaviourDepth) {
+        if (whole && open.size() == kMaxBehaviourDepth) {
             error = std::format("line {}: a tree is at most {} nodes deep", lineNumber,
                                 kMaxBehaviourDepth);
             return std::nullopt;
         }
         if (info->remembers) {
-            if (memory == kMaxBehaviourMemory) {
+            if (whole && memory == kMaxBehaviourMemory) {
                 error = std::format("line {}: a tree has at most {} nodes that remember (such as "
                                     "{})",
                                     lineNumber, kMaxBehaviourMemory, word);
                 return std::nullopt;
             }
-            node.memory = static_cast<std::uint8_t>(memory++);
+            if (memory < kMaxBehaviourMemory) {
+                node.memory = static_cast<std::uint8_t>(memory);
+            }
+            ++memory;
         }
         // Blank comment lines separate a note's paragraphs; at its end they mean nothing (leading
         // ones never get in), so they go and the note reads back the same once written out.
@@ -326,7 +330,7 @@ std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::stri
         close();
     }
     // Composites need children to choose from, and decorators one to change.
-    for (std::uint32_t i = 0; i < tree.nodes.size(); ++i) {
+    for (std::uint32_t i = 0; whole && i < tree.nodes.size(); ++i) {
         const BehaviourNodeInfo& info = behaviourNodeInfo(tree.nodes[i].kind);
         if ((info.category == Composite || info.category == Decorator) &&
             tree.nodes[i].end == i + 1) {
@@ -335,6 +339,57 @@ std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::stri
         }
     }
     return tree;
+}
+
+std::vector<BehaviourProblem> behaviourProblems(const BehaviourTree& tree) {
+    std::vector<BehaviourProblem> problems;
+    std::vector<std::uint32_t> ends; // of the nodes this one is under
+    std::uint32_t memory = 0;
+    for (std::uint32_t i = 0; i < tree.nodes.size(); ++i) {
+        while (!ends.empty() && ends.back() <= i) {
+            ends.pop_back();
+        }
+        const BehaviourNode& node = tree.nodes[i];
+        const BehaviourNodeInfo& info = behaviourNodeInfo(node.kind);
+        const auto problem = [&](std::string text) { problems.push_back({i, std::move(text)}); };
+        if (i == kMaxBehaviourNodes) {
+            problem(std::format("is past the {} nodes a tree can have", kMaxBehaviourNodes));
+        }
+        if (ends.size() == kMaxBehaviourDepth) {
+            problem(std::format("is past the {} levels a tree can have", kMaxBehaviourDepth));
+        }
+        if (info.remembers && memory++ == kMaxBehaviourMemory) {
+            problem(std::format("is past the {} nodes that remember (cooldown, time_limit, "
+                                "chance, wait) a tree can have",
+                                kMaxBehaviourMemory));
+        }
+        if (info.category == Composite || info.category == Decorator) {
+            std::uint32_t children = 0;
+            for (std::uint32_t child = i + 1; child < node.end; child = tree.nodes[child].end) {
+                ++children;
+            }
+            if (children == 0) {
+                problem("has nothing under it");
+            } else if (info.category == Decorator && children > 1) {
+                problem("takes one node under it");
+            }
+        }
+        ends.push_back(node.end);
+    }
+    return problems;
+}
+
+void numberBehaviourMemory(BehaviourTree& tree) {
+    std::uint32_t memory = 0;
+    for (BehaviourNode& node : tree.nodes) {
+        node.memory = kNoBehaviourMemory;
+        if (behaviourNodeInfo(node.kind).remembers) {
+            if (memory < kMaxBehaviourMemory) {
+                node.memory = static_cast<std::uint8_t>(memory);
+            }
+            ++memory;
+        }
+    }
 }
 
 std::string formatBehaviourTree(const BehaviourTree& tree) {
@@ -380,7 +435,8 @@ const BehaviourTree& standardBehaviourTree() {
     return tree;
 }
 
-std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSettings& settings) {
+std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSettings& settings,
+                                            std::span<const BehaviourText> edited) {
     std::vector<std::string> problems;
     settings.behaviours.clear();
     for (EnemySettings& enemy : settings.enemies) {
@@ -400,17 +456,25 @@ std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSet
             continue;
         }
         const std::string path = std::format("behaviours/{}.behaviour", name);
-        const std::optional<std::filesystem::path> found = content.find(path);
-        if (!found) {
-            if (name != kStandardName) {
-                problems.push_back(std::format("{}: there is no {}", enemy.name, path));
+        std::optional<std::string> text;
+        if (const auto own =
+                std::find_if(edited.begin(), edited.end(),
+                             [&](const BehaviourText& file) { return file.name == name; });
+            own != edited.end()) {
+            text = own->text;
+        } else {
+            const std::optional<std::filesystem::path> found = content.find(path);
+            if (!found) {
+                if (name != kStandardName) {
+                    problems.push_back(std::format("{}: there is no {}", enemy.name, path));
+                }
+                continue;
             }
-            continue;
-        }
-        const std::optional<std::string> text = readTextFile(*found, kMaxBehaviourFileSize);
-        if (!text) {
-            problems.push_back(std::format("{}: couldn't read {}", enemy.name, path));
-            continue;
+            text = readTextFile(*found, kMaxBehaviourFileSize);
+            if (!text) {
+                problems.push_back(std::format("{}: couldn't read {}", enemy.name, path));
+                continue;
+            }
         }
         std::string error;
         std::optional<BehaviourTree> tree = parseBehaviourTree(*text, name, error);

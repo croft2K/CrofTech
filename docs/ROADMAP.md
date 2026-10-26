@@ -251,9 +251,13 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    standard tree, in which their settings decide what each does, and play as before (the
    existing enemy tests pass unchanged). Still to come with step 4: a Luau script as a node, for
    an odd custom decision.
-4. **Behaviour graph editor.** A node-graph window (imgui-node-editor, MIT, from vcpkg) to build
-   and edit a type's tree, with problems shown on the nodes; in play, each enemy's running nodes
-   light up (alongside "Show what enemies think").
+4. **Behaviour graph editor.** *Graph done (2026-10-23).* The Behaviours window
+   (imgui-node-editor, MIT, from vcpkg) shows a tree laid out left to right as its file reads,
+   and builds and edits it: nodes added by dragging from a node's edge, moved by linking,
+   reordered by dragging, changed through their menu, copied and pasted as text. Edits go
+   through the Game data window's undo and saving and play at once. Trees still being built open
+   as drafts with their problems on the nodes. In play, the watched enemy's running nodes light
+   up. Still to come: a Luau script as a node.
 5. **Visual logic graph.** The level's wiring as nodes in the same graph window, with the outputs
    table as the text form.
 6. **Game data for the rest.** Weapons, movement and rules are already edited and tuned live in

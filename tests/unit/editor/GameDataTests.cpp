@@ -2,12 +2,14 @@
 
 #include "croftech/core/ConfigFile.h"
 #include "croftech/editor/GameData.h"
+#include "croftech/sim/BehaviourTree.h"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -256,4 +258,58 @@ TEST_CASE("unknown settings in the files are warnings") {
     const ct::GameData data = game.load();
     REQUIRE(data.warnings().size() == 1);
     CHECK(data.warnings()[0].find("wings") != std::string::npos);
+}
+
+TEST_CASE("behaviours are edited as whole files, and play as edited") {
+    TestGame game;
+    ct::test::writeFile(game.engine() / "behaviours/coward.behaviour", "patrol\n");
+    ct::GameData data = game.load();
+    CHECK(data.behaviourNames() == std::vector<std::string>{"standard", "coward"});
+    CHECK(data.behaviourText("standard") == ct::standardBehaviourText());
+    CHECK(data.behaviourText("coward") == "patrol\n");
+    CHECK_FALSE(data.behaviourText("brave").has_value());
+    set(data, "enemies/gunner.cfg", "behaviour", "coward");
+    REQUIRE(data.settings().behaviours.size() == 1);
+    CHECK(data.settings().behaviours[0].nodes.size() == 1);
+
+    // The game's copy takes the engine's place; changes made one after another join.
+    data.setBehaviourText("coward", "sequence\n    see\n    patrol\n", "Edit coward", false);
+    data.setBehaviourText("coward", "sequence\n    hear\n    patrol\n", "Edit coward", true);
+    CHECK(data.hasGameBehaviour("coward"));
+    CHECK(data.hasBaseBehaviour("coward"));
+    CHECK(data.isBehaviourUnsaved("coward"));
+    CHECK(data.settings().behaviours[0].nodes.size() == 3);
+    CHECK(data.settings().behaviours[0].nodes[1].kind == ct::BehaviourNodeKind::Hear);
+    // A tree that won't load leaves the type on the standard tree, with a warning.
+    data.setBehaviourText("coward", "fallback\n", "Edit coward", false);
+    CHECK(data.settings().behaviours.empty());
+    CHECK(data.warnings().back().find("has nothing under it") != std::string::npos);
+    REQUIRE(data.undo());
+    REQUIRE(data.undo());
+    CHECK_FALSE(data.hasGameBehaviour("coward"));
+    CHECK(data.settings().behaviours[0].nodes.size() == 1);
+    REQUIRE(data.redo());
+
+    std::string error;
+    REQUIRE_MESSAGE(data.createBehaviour("brave", "coward", error), error);
+    CHECK_FALSE(data.createBehaviour("brave", "coward", error));
+    CHECK_FALSE(data.createBehaviour("Brave", "coward", error));
+    CHECK_FALSE(data.createBehaviour("bold", "nobody", error));
+    CHECK(data.behaviourNames() == std::vector<std::string>{"standard", "brave", "coward"});
+    CHECK(data.behaviourText("brave") == "sequence\n    hear\n    patrol\n");
+    CHECK_FALSE(data.hasBaseBehaviour("brave"));
+    REQUIRE_MESSAGE(data.save(error), error);
+    CHECK(ct::readTextFile(game.game() / "behaviours/brave.behaviour") ==
+          "sequence\n    hear\n    patrol\n");
+    CHECK(data.behaviourSavePath("brave") == game.game() / "behaviours/brave.behaviour");
+
+    // Taken away, the game's copy goes; the engine's comes back.
+    REQUIRE_MESSAGE(data.removeGameBehaviour("brave", error), error);
+    REQUIRE_MESSAGE(data.removeGameBehaviour("coward", error), error);
+    CHECK_FALSE(data.removeGameBehaviour("standard", error));
+    CHECK(data.behaviourNames() == std::vector<std::string>{"standard", "coward"});
+    CHECK(data.behaviourText("coward") == "patrol\n");
+    REQUIRE_MESSAGE(data.save(error), error);
+    CHECK_FALSE(std::filesystem::exists(game.game() / "behaviours/brave.behaviour"));
+    CHECK_FALSE(std::filesystem::exists(game.game() / "behaviours/coward.behaviour"));
 }

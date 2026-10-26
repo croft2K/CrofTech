@@ -2,6 +2,7 @@
 
 #include "croftech/core/ConfigFile.h"
 #include "croftech/level/Level.h"
+#include "croftech/sim/BehaviourTree.h"
 
 #include <algorithm>
 #include <format>
@@ -59,6 +60,12 @@ std::string_view trimmed(std::string_view text) {
         return {};
     }
     return text.substr(first, text.find_last_not_of(" 	") - first + 1);
+}
+
+constexpr std::string_view kStandardBehaviour = "standard";
+
+std::string behaviourPath(std::string_view name) {
+    return std::format("behaviours/{}.behaviour", name);
 }
 
 std::string joinNames(std::span<const std::string> names) {
@@ -133,6 +140,16 @@ const GameData::BaseFile& GameData::base(const std::string& relative) {
     return found->second;
 }
 
+std::optional<std::string> GameData::baseText(const std::string& relative) const {
+    const std::vector<std::filesystem::path>& layers = m_content.layers();
+    for (std::size_t i = layers.size() - 1; i-- > 0;) {
+        if (std::optional<std::string> text = readTextFile(layers[i] / relative)) {
+            return text;
+        }
+    }
+    return std::nullopt;
+}
+
 bool GameData::rebuild(std::string& error) {
     const std::optional<std::string>& manifestText = own(m_manifestPath).text;
     std::optional<GameManifest> manifest =
@@ -156,7 +173,16 @@ bool GameData::rebuild(std::string& error) {
         }
     }
     m_settings = gameSettingsFromCVars(*console, m_manifest.weapons, m_manifest.enemies);
-    for (std::string& problem : loadBehaviourTrees(m_content, m_settings)) {
+    // Behaviours play as edited, saved or not.
+    std::vector<BehaviourText> behaviours;
+    const std::filesystem::path behaviourFolder = topPath("behaviours");
+    for (const auto& [path, file] : m_own) {
+        if (file.text && path.parent_path() == behaviourFolder &&
+            path.extension() == ".behaviour") {
+            behaviours.push_back({path.stem().string(), *file.text});
+        }
+    }
+    for (std::string& problem : loadBehaviourTrees(m_content, m_settings, behaviours)) {
         m_warnings.push_back(std::move(problem));
     }
     m_console = std::move(console);
@@ -397,6 +423,117 @@ bool GameData::deleteEnemyType(std::string_view name, std::string& error) {
     record({std::format("Delete enemy type {}", name),
             {{path, own(path).text, std::nullopt},
              {m_manifestPath, manifestBefore, std::move(manifestAfter)}},
+            {}},
+           false);
+    return true;
+}
+
+std::vector<std::string> GameData::behaviourNames() const {
+    std::vector<std::string> names;
+    const auto add = [&names](std::string name) {
+        if (std::find(names.begin(), names.end(), name) == names.end()) {
+            names.push_back(std::move(name));
+        }
+    };
+    const std::filesystem::path behaviourFolder = topPath("behaviours");
+    for (const std::filesystem::path& layer : m_content.layers()) {
+        std::error_code error;
+        for (const auto& entry : std::filesystem::directory_iterator(layer / "behaviours", error)) {
+            const std::filesystem::path& path = entry.path();
+            const std::string name = path.stem().string();
+            // A file of the game's taken away here, and not yet saved, is gone.
+            const auto own = m_own.find(path);
+            if (path.extension() == ".behaviour" && isContentName(name) &&
+                (own == m_own.end() || own->second.text)) {
+                add(name);
+            }
+        }
+    }
+    for (const auto& [path, file] : m_own) {
+        if (file.text && path.parent_path() == behaviourFolder &&
+            path.extension() == ".behaviour") {
+            add(path.stem().string());
+        }
+    }
+    std::erase(names, kStandardBehaviour);
+    std::sort(names.begin(), names.end());
+    names.insert(names.begin(), std::string(kStandardBehaviour));
+    return names;
+}
+
+std::optional<std::string> GameData::behaviourText(std::string_view name) {
+    const std::string relative = behaviourPath(name);
+    if (const std::optional<std::string>& text = own(topPath(relative)).text) {
+        return text;
+    }
+    if (std::optional<std::string> text = baseText(relative)) {
+        return text;
+    }
+    if (name == kStandardBehaviour) {
+        return std::string(standardBehaviourText());
+    }
+    return std::nullopt;
+}
+
+bool GameData::hasGameBehaviour(std::string_view name) {
+    return own(topPath(behaviourPath(name))).text.has_value();
+}
+
+bool GameData::hasBaseBehaviour(std::string_view name) const {
+    return baseText(behaviourPath(name)).has_value();
+}
+
+bool GameData::isBehaviourUnsaved(std::string_view name) const {
+    const auto found = m_own.find(topPath(behaviourPath(name)));
+    return found != m_own.end() && found->second.text != found->second.saved;
+}
+
+std::filesystem::path GameData::behaviourSavePath(std::string_view name) const {
+    return topPath(behaviourPath(name));
+}
+
+void GameData::setBehaviourText(std::string_view name, std::string text, std::string editName,
+                                bool merge) {
+    const std::filesystem::path path = topPath(behaviourPath(name));
+    std::optional<std::string> before = own(path).text;
+    if (before == text) {
+        return;
+    }
+    std::string mergeKey = std::format("{}|{}", behaviourPath(name), editName);
+    record({std::move(editName), {{path, std::move(before), std::move(text)}}, std::move(mergeKey)},
+           merge);
+}
+
+bool GameData::createBehaviour(std::string_view name, std::string_view from, std::string& error) {
+    if (!isContentName(name) || name.size() > kMaxNameLength) {
+        error = "A behaviour's name is lowercase letters, digits, '-' and '_'.";
+        return false;
+    }
+    if (behaviourText(name)) {
+        error = std::format("There is already a behaviour named '{}'.", name);
+        return false;
+    }
+    std::optional<std::string> text = behaviourText(from);
+    if (!text) {
+        error = std::format("There is no behaviour '{}' to make it from.", from);
+        return false;
+    }
+    record({std::format("New behaviour {}", name),
+            {{topPath(behaviourPath(name)), std::nullopt, std::move(*text)}},
+            {}},
+           false);
+    return true;
+}
+
+bool GameData::removeGameBehaviour(std::string_view name, std::string& error) {
+    const std::filesystem::path path = topPath(behaviourPath(name));
+    std::optional<std::string> before = own(path).text;
+    if (!before) {
+        error = std::format("The game has no {} of its own.", behaviourPath(name));
+        return false;
+    }
+    record({std::format("{} behaviour {}", hasBaseBehaviour(name) ? "Reset" : "Delete", name),
+            {{path, std::move(before), std::nullopt}},
             {}},
            false);
     return true;

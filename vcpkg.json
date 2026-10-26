@@ -30,6 +30,7 @@
             "sdl3-binding"
           ]
         },
+        "imgui-node-editor",
         "vk-bootstrap",
         "volk",
         "vulkan-memory-allocator"
