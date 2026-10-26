@@ -325,35 +325,98 @@ bool GameData::reset(GameConfigFile file, std::string_view key) {
     return true;
 }
 
+namespace {
+
+// How each kind game.cfg lists is named and kept, by GameData::Listed.
+struct ListedInfo {
+    std::string_view folder;  // and game.cfg's key
+    std::string_view noun;    // "enemy type"
+    std::string_view article; // "an"
+    std::string_view prefix;  // of its console variables
+    std::size_t most;
+};
+
+constexpr ListedInfo kListedInfo[] = {
+    {"enemies", "enemy type", "an", "enemy", kMaxEnemyTypes},
+    {"weapons", "weapon", "a", "weapon", kMaxWeapons},
+};
+
+} // namespace
+
 bool GameData::createEnemyType(std::string_view name, std::string_view from, std::string& error) {
+    return createListed(Listed::Enemy, name, from, error);
+}
+
+bool GameData::deleteEnemyType(std::string_view name, std::string& error) {
+    return deleteListed(Listed::Enemy, name, error);
+}
+
+bool GameData::createWeapon(std::string_view name, std::string_view from, std::string& error) {
+    return createListed(Listed::Weapon, name, from, error);
+}
+
+bool GameData::deleteWeapon(std::string_view name, std::string& error) {
+    return deleteListed(Listed::Weapon, name, error);
+}
+
+bool GameData::moveWeapon(std::string_view name, std::size_t place, std::string& error) {
+    std::vector<std::string> names = m_manifest.weapons;
+    const auto found = std::find(names.begin(), names.end(), name);
+    if (found == names.end()) {
+        error = std::format("The game has no weapon '{}'.", name);
+        return false;
+    }
+    if (place >= names.size()) {
+        error = std::format("The game has only {} weapons.", names.size());
+        return false;
+    }
+    if (static_cast<std::size_t>(found - names.begin()) == place) {
+        return true;
+    }
+    std::string moved = std::move(*found);
+    names.erase(found);
+    names.insert(names.begin() + static_cast<std::ptrdiff_t>(place), std::move(moved));
+    recordList(Listed::Weapon, names, std::format("Move {} to key {}", name, place + 1), {});
+    return true;
+}
+
+const std::vector<std::string>& GameData::listed(Listed kind) const {
+    return kind == Listed::Enemy ? m_manifest.enemies : m_manifest.weapons;
+}
+
+bool GameData::createListed(Listed kind, std::string_view name, std::string_view from,
+                            std::string& error) {
+    const ListedInfo& info = kListedInfo[static_cast<std::size_t>(kind)];
+    const std::vector<std::string>& names = listed(kind);
     if (!isContentName(name) || name.size() > kMaxNameLength) {
-        error = "A type's name is lowercase letters, digits, '-' and '_'.";
+        error = "A name is lowercase letters, digits, '-' and '_'.";
         return false;
     }
-    const std::vector<std::string>& enemies = m_manifest.enemies;
-    if (std::find(enemies.begin(), enemies.end(), name) != enemies.end()) {
-        error = std::format("The game already has an enemy type named '{}'.", name);
+    if (std::find(names.begin(), names.end(), name) != names.end()) {
+        error =
+            std::format("The game already has {} {} named '{}'.", info.article, info.noun, name);
         return false;
     }
-    if (enemies.size() >= kMaxEnemyTypes) {
-        error = std::format("A game has at most {} enemy types.", kMaxEnemyTypes);
+    if (names.size() >= info.most) {
+        error = std::format("A game has at most {} {}s{}.", info.most, info.noun,
+                            kind == Listed::Weapon ? ", one for each number key" : "");
         return false;
     }
-    const std::string relative = std::format("enemies/{}.cfg", name);
+    const std::string relative = std::format("{}/{}.cfg", info.folder, name);
     const std::filesystem::path path = topPath(relative);
     if (!readBase(relative).layers.empty() || own(path).text) {
         error = std::format("There is already a file {} in the content.", relative);
         return false;
     }
-    const auto fromName = std::find(enemies.begin(), enemies.end(), from);
-    const GameConfigFile* fromFile = findFile(std::format("enemies/{}.cfg", from));
-    if (fromName == enemies.end() || fromFile == nullptr) {
-        error = std::format("There is no enemy type '{}' to make it from.", from);
+    const auto fromName = std::find(names.begin(), names.end(), from);
+    const GameConfigFile* fromFile = findFile(std::format("{}/{}.cfg", info.folder, from));
+    if (fromName == names.end() || fromFile == nullptr) {
+        error = std::format("There is no {} '{}' to make it from.", info.noun, from);
         return false;
     }
 
-    // The lowest file of the type it is made from, with every higher layer's settings written in,
-    // so the new type has every setting the other has, and keeps its comments.
+    // The lowest file of the one it is made from, with every higher layer's settings written in,
+    // so the new one has every setting the other has, and keeps its comments.
     const BaseFile& fromBase = base(fromFile->path);
     std::vector<std::span<const ConfigEntry>> higher;
     std::string text;
@@ -376,56 +439,64 @@ bool GameData::createEnemyType(std::string_view name, std::string_view from, std
             text = setConfigValue(text, entry.key, entry.value);
         }
     }
-    text = std::format("# {}: an enemy type made in the editor from the {}. Each line is also a "
-                       "console\n# variable named enemy.{}.<setting>.\n\n{}",
-                       name, from, name, withoutHeader(text));
-    const std::size_t fromIndex = static_cast<std::size_t>(fromName - enemies.begin());
-    if (fromIndex < m_settings.enemies.size() && m_settings.enemies[fromIndex].sounds.empty()) {
-        text = setConfigValue(text, "sounds", m_settings.enemies[fromIndex].soundSet());
+    text = std::format("# {}: {} {} made in the editor from the {}. Each line is also a console\n"
+                       "# variable named {}.{}.<setting>.\n\n{}",
+                       name, info.article, info.noun, from, info.prefix, name, withoutHeader(text));
+    // It sounds like the one it is made from.
+    const std::size_t fromIndex = static_cast<std::size_t>(fromName - names.begin());
+    std::string sounds;
+    if (kind == Listed::Enemy && fromIndex < m_settings.enemies.size() &&
+        m_settings.enemies[fromIndex].sounds.empty()) {
+        sounds = m_settings.enemies[fromIndex].soundSet();
+    } else if (kind == Listed::Weapon && fromIndex < m_settings.weapons.size() &&
+               m_settings.weapons[fromIndex].sounds.empty()) {
+        sounds = m_settings.weapons[fromIndex].soundSet();
+    }
+    if (!sounds.empty()) {
+        text = setConfigValue(text, "sounds", sounds);
     }
 
-    std::vector<std::string> names = enemies;
-    names.emplace_back(name);
-    const std::optional<std::string> manifestBefore = own(m_manifestPath).text;
-    std::string manifestAfter =
-        setConfigValue(manifestBefore.value_or(""), "enemies", joinNames(names));
-    record({std::format("New enemy type {}", name),
-            {{path, std::nullopt, std::move(text)},
-             {m_manifestPath, manifestBefore, std::move(manifestAfter)}},
-            {}},
-           false);
+    std::vector<std::string> added = names;
+    added.emplace_back(name);
+    std::vector<Change> changes;
+    changes.push_back({path, std::nullopt, std::move(text)});
+    recordList(kind, added, std::format("New {} {}", info.noun, name), std::move(changes));
     return true;
 }
 
-bool GameData::deleteEnemyType(std::string_view name, std::string& error) {
-    const std::vector<std::string>& enemies = m_manifest.enemies;
-    const GameConfigFile* file = findFile(std::format("enemies/{}.cfg", name));
-    if (std::find(enemies.begin(), enemies.end(), name) == enemies.end() || file == nullptr) {
-        error = std::format("The game has no enemy type '{}'.", name);
+bool GameData::deleteListed(Listed kind, std::string_view name, std::string& error) {
+    const ListedInfo& info = kListedInfo[static_cast<std::size_t>(kind)];
+    const std::vector<std::string>& names = listed(kind);
+    const GameConfigFile* file = findFile(std::format("{}/{}.cfg", info.folder, name));
+    if (std::find(names.begin(), names.end(), name) == names.end() || file == nullptr) {
+        error = std::format("The game has no {} '{}'.", info.noun, name);
         return false;
     }
     if (!isGameOwned(*file)) {
-        error = std::format("The {} comes with the engine; only the game's own types can be "
-                            "deleted.",
-                            name);
+        error = std::format("The {} comes with the engine; only the game's own {}s can be deleted.",
+                            name, info.noun);
         return false;
     }
-    std::vector<std::string> names;
-    for (const std::string& enemy : enemies) {
-        if (enemy != name) {
-            names.push_back(enemy);
+    std::vector<std::string> kept;
+    for (const std::string& each : names) {
+        if (each != name) {
+            kept.push_back(each);
         }
     }
     const std::filesystem::path path = topPath(file->path);
-    const std::optional<std::string> manifestBefore = own(m_manifestPath).text;
-    std::string manifestAfter =
-        setConfigValue(manifestBefore.value_or(""), "enemies", joinNames(names));
-    record({std::format("Delete enemy type {}", name),
-            {{path, own(path).text, std::nullopt},
-             {m_manifestPath, manifestBefore, std::move(manifestAfter)}},
-            {}},
-           false);
+    std::vector<Change> changes;
+    changes.push_back({path, own(path).text, std::nullopt});
+    recordList(kind, kept, std::format("Delete {} {}", info.noun, name), std::move(changes));
     return true;
+}
+
+void GameData::recordList(Listed kind, const std::vector<std::string>& names, std::string editName,
+                          std::vector<Change> changes) {
+    const std::string_view key = kListedInfo[static_cast<std::size_t>(kind)].folder;
+    const std::optional<std::string> manifestBefore = own(m_manifestPath).text;
+    std::string manifestAfter = setConfigValue(manifestBefore.value_or(""), key, joinNames(names));
+    changes.push_back({m_manifestPath, manifestBefore, std::move(manifestAfter)});
+    record({std::move(editName), std::move(changes), {}}, false);
 }
 
 std::vector<std::string> GameData::behaviourNames() const {

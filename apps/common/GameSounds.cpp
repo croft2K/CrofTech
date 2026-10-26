@@ -23,9 +23,9 @@ constexpr float kAlertReach = 50.0f;
 } // namespace
 
 void GameSounds::setSettings(const GameSettings& settings) {
-    m_weaponNames.clear();
+    m_weaponSoundSets.clear();
     for (const WeaponSettings& weapon : settings.weapons) {
-        m_weaponNames.push_back(weapon.name);
+        m_weaponSoundSets.emplace_back(weapon.soundSet());
     }
     m_enemySoundSets.clear();
     for (const EnemySettings& enemy : settings.enemies) {
@@ -119,8 +119,8 @@ void GameSounds::update(std::span<const GameEvent> events, EntityId player, cons
             play("explosion", event, player, 1.0f, kExplosionReach);
             break;
         case GameEventKind::Fire:
-            if (event.weapon < m_weaponNames.size()) {
-                play(m_weaponNames[event.weapon] + "_fire", event, player,
+            if (event.weapon < m_weaponSoundSets.size()) {
+                play(m_weaponSoundSets[event.weapon] + "_fire", event, player,
                      event.entity == player ? kOwnFireVolume : 1.0f, kFireReach);
             }
             break;

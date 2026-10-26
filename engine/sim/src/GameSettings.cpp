@@ -227,6 +227,10 @@ void registerWeaponCVars(Console& console, std::string_view weapon) {
                                     setting.min, setting.max, std::string(setting.description)));
     }
     console.add(CVar::makeBool(prefix + "given", defaults.given, "1 = carried from spawn"));
+    console.add(CVar::makeString(prefix + "description", "", "a line for level designers"));
+    console.add(CVar::makeString(
+        prefix + "sounds", "",
+        "the name its sound files start with (sounds/<name>_fire.wav); empty is its own"));
 }
 
 WeaponSettings weaponFromCVars(const Console& console, std::string_view weapon) {
@@ -240,6 +244,12 @@ WeaponSettings weaponFromCVars(const Console& console, std::string_view weapon) 
         settings.*setting.field = findCVar(console, prefix + std::string(setting.key)).asFloat();
     }
     settings.given = findCVar(console, prefix + "given").asBool();
+    settings.description = findCVar(console, prefix + "description").text();
+    // One that won't do is left to its own.
+    if (const std::string& sounds = findCVar(console, prefix + "sounds").text();
+        isContentName(sounds)) {
+        settings.sounds = sounds;
+    }
     return settings;
 }
 

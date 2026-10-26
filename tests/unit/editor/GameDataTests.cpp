@@ -7,6 +7,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <format>
 #include <optional>
 #include <string>
 #include <vector>
@@ -19,8 +20,13 @@ constexpr std::string_view kGunner = "# Gunner: shoots.\n"
                                      "health          40      # health it starts with\n"
                                      "speed           5       # m/s running\n";
 
+constexpr std::string_view kPistol = "# Pistol: one shot at a time.\n"
+                                     "\n"
+                                     "damage          12\n"
+                                     "fire_interval   0.4     # seconds between shots\n";
+
 constexpr std::string_view kManifest = "title  Test\n"
-                                       "weapons pistol\n"
+                                       "weapons pistol   # in number-key order\n"
                                        "enemies gunner   # each is enemies/<name>.cfg\n";
 
 // An engine content folder with the gunner, and a game with its own content folder on top.
@@ -30,6 +36,7 @@ struct TestGame {
 
     TestGame() {
         ct::test::writeFile(engine() / "enemies/gunner.cfg", std::string(kGunner));
+        ct::test::writeFile(engine() / "weapons/pistol.cfg", std::string(kPistol));
         ct::test::writeFile(manifest(), std::string(kManifest));
         std::filesystem::create_directories(game());
         content.addLayer(engine());
@@ -236,6 +243,90 @@ TEST_CASE("only the game's own enemy types can be deleted") {
     REQUIRE_MESSAGE(data.save(error), error);
     CHECK_FALSE(std::filesystem::exists(game.game() / "enemies/grunt.cfg"));
     CHECK(ct::readTextFile(game.manifest())->find("enemies gunner ") != std::string::npos);
+}
+
+TEST_CASE("a new weapon copies another, sounds like it and takes the next number key") {
+    TestGame game;
+    ct::GameData data = game.load();
+    set(data, "weapons/pistol.cfg", "damage", "15");
+    std::string error;
+    REQUIRE_MESSAGE(data.createWeapon("heavy_pistol", "pistol", error), error);
+    REQUIRE(data.settings().weapons.size() == 2);
+    const ct::WeaponSettings& heavy = data.settings().weapons[1];
+    CHECK(heavy.name == "heavy_pistol");
+    CHECK(heavy.damage == 15); // with the game's change to the pistol
+    CHECK(heavy.fireInterval == 0.4f);
+    CHECK(heavy.soundSet() == "pistol");
+    CHECK(data.settings().weapons[0].soundSet() == "pistol");
+    CHECK(data.isGameOwned(fileOf(data, "weapons/heavy_pistol.cfg")));
+    CHECK(data.undoName() == "New weapon heavy_pistol");
+
+    set(data, "weapons/heavy_pistol.cfg", "damage", "30");
+    CHECK(data.settings().weapons[1].damage == 30);
+    CHECK(data.settings().weapons[0].damage == 15);
+
+    CHECK_FALSE(data.createWeapon("heavy_pistol", "pistol", error));
+    CHECK_FALSE(data.createWeapon("Heavy", "pistol", error));
+    CHECK_FALSE(data.createWeapon("cannon", "nobody", error));
+    // An enemy type's name is no weapon to copy.
+    CHECK_FALSE(data.createWeapon("cannon", "gunner", error));
+
+    REQUIRE_MESSAGE(data.save(error), error);
+    const std::optional<std::string> text =
+        ct::readTextFile(game.game() / "weapons/heavy_pistol.cfg");
+    REQUIRE(text.has_value());
+    CHECK(text->starts_with("# heavy_pistol: a weapon made in the editor from the pistol. Each "
+                            "line is also a console\n# variable named weapon.heavy_pistol."));
+    CHECK(text->find("fire_interval   0.4     # seconds between shots\n") != std::string::npos);
+    CHECK(ct::readTextFile(game.manifest())->find("weapons pistol heavy_pistol  # in number-key") !=
+          std::string::npos);
+}
+
+TEST_CASE("a game has at most one weapon for each number key") {
+    TestGame game;
+    ct::GameData data = game.load();
+    std::string error;
+    for (std::uint32_t i = 1; i < ct::kMaxWeapons; ++i) {
+        REQUIRE_MESSAGE(data.createWeapon(std::format("pistol_{}", i), "pistol", error), error);
+    }
+    CHECK(data.settings().weapons.size() == ct::kMaxWeapons);
+    CHECK_FALSE(data.createWeapon("one_too_many", "pistol", error));
+    CHECK(error.find("one for each number key") != std::string::npos);
+}
+
+TEST_CASE("weapons move between number keys, and only the game's own are deleted") {
+    TestGame game;
+    ct::GameData data = game.load();
+    std::string error;
+    REQUIRE_MESSAGE(data.createWeapon("rifle", "pistol", error), error);
+    REQUIRE_MESSAGE(data.createWeapon("cannon", "pistol", error), error);
+    set(data, "enemies/gunner.cfg", "weapon", "cannon");
+    CHECK(data.settings().enemies[0].weaponIndex == 2);
+
+    REQUIRE_MESSAGE(data.moveWeapon("cannon", 0, error), error);
+    CHECK(data.manifest().weapons == std::vector<std::string>{"cannon", "pistol", "rifle"});
+    CHECK(data.settings().weapons[0].name == "cannon");
+    CHECK(data.settings().enemies[0].weaponIndex == 0); // found by name again
+    CHECK(data.undoName() == "Move cannon to key 1");
+    CHECK_FALSE(data.moveWeapon("cannon", 3, error));
+    CHECK_FALSE(data.moveWeapon("nobody", 0, error));
+    const std::uint64_t before = data.changeCount();
+    REQUIRE(data.moveWeapon("cannon", 0, error)); // where it is already
+    CHECK(data.changeCount() == before);
+    REQUIRE(data.undo());
+    CHECK(data.manifest().weapons == std::vector<std::string>{"pistol", "rifle", "cannon"});
+
+    CHECK_FALSE(data.deleteWeapon("pistol", error));
+    CHECK(error.find("comes with the engine") != std::string::npos);
+    CHECK_FALSE(data.deleteWeapon("gunner", error));
+    REQUIRE_MESSAGE(data.deleteWeapon("rifle", error), error);
+    CHECK(data.manifest().weapons == std::vector<std::string>{"pistol", "cannon"});
+    CHECK(data.findFile("weapons/rifle.cfg") == nullptr);
+    CHECK(data.settings().enemies[0].weaponIndex == 1);
+    CHECK(data.undoName() == "Delete weapon rifle");
+    REQUIRE(data.undo());
+    CHECK(data.settings().weapons.size() == 3);
+    CHECK(data.settings().weapons[1].name == "rifle");
 }
 
 TEST_CASE("files changed on disk are read again, unless edits here are unsaved") {

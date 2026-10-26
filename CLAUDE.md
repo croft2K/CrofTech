@@ -56,7 +56,8 @@ on contact or when their fuse runs out, hurting and throwing what is near (rocke
 shows a crosshair (marked when your shot hurts someone), the weapons carried and the ammo in hand;
 a placeholder weapon is held in view (`addViewWeapon`). Shots make Fire and Impact game events:
 the client works out where hitscan pellets went from the shooter's random counter, as the server
-did, for tracers and sparks, and each weapon fires with `sounds/<weapon>_fire.wav`. Pickups
+did, for tracers and sparks, and each weapon fires with `sounds/<set>_fire.wav` (its `sounds`
+setting, else its own name, so a copy of the shotgun sounds like one). Pickups
 (the `pickup` class: health, armour, ammo or a weapon named from the game's list) are taken by
 walking into them when needed, come back after their respawn time (or never, for single
 player) and fire on_pickup; health and armour above `rules.max_health`/`max_armour` drain away.
@@ -137,7 +138,9 @@ undo of its own (Ctrl+Z, Ctrl+Y and Ctrl+S while it has the focus): every change
 to markers and to play (Shift+F1 frees the mouse while playing), and saving writes only into the
 game's content folder, where a file the engine's content also has holds just the settings the game
 changes (shown in gold, each with a Reset). "New type from this" copies an enemy type into a file
-of the game's own and adds it to `game.cfg`; Create > Enemy lists the types, and the inspector of
+of the game's own and adds it to `game.cfg`, and "New weapon from this" does the same for a
+weapon, which takes the next number key (the arrows beside it move it between keys; only the
+game's own types and weapons can be deleted); Create > Enemy lists the types, and the inspector of
 an enemy or spawner has Edit type and its own settings (a menu of the type's, then a row each to
 drag or reset; `apps/editor/SettingWidgets` drags numbers in round steps for both windows). `setConfigValue` (`core/ConfigFile.h`) changes a setting's
 line and keeps the file's comments. The Behaviours window (`apps/editor/BehaviourPanel`, on

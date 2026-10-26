@@ -56,6 +56,15 @@ struct WeaponSettings {
     float splashRadius = 0.0f;      // m
     float splashKnockback = 0.0f;   // m/s at the centre, away from it
     float selfDamage = 0.5f;        // share of its splash damage the shooter takes
+
+    // For the client and the editor; the simulation ignores them.
+    std::string description; // a line for level designers
+    // It fires with sounds/<set>_fire.wav; empty is its own name. A weapon made from another
+    // keeps the other's sound this way.
+    std::string sounds;
+
+    // The name its sound files start with.
+    std::string_view soundSet() const { return sounds.empty() ? name : sounds; }
 };
 
 // Kinds of enemy a game can have.

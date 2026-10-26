@@ -17,20 +17,22 @@ class BehaviourPanel;
 // The Game data window: the game's enemy types, weapons, movement and rules, each a settings file
 // (GameData) edited here with its own undo and saved when asked. The settings follow every edit,
 // so markers in the view, and a game being played in the editor, change at once. A new enemy type
-// starts as a copy of another (the charger and gunner to begin with).
+// or weapon starts as a copy of another (the charger and gunner, the shotgun and the rest, to
+// begin with).
 class GameDataPanel {
 public:
     // Paths are shown relative to shownRoot.
     GameDataPanel(GameData& data, std::filesystem::path shownRoot);
 
-    // Types can't be made or deleted while playing: the game numbers them as play starts.
+    // Types and weapons can't be made, deleted or moved while playing: the game numbers them as
+    // play starts.
     void draw(const EditorDocument& document, bool playing);
     // Shows the file ("enemies/gunner.cfg") and brings the window forward.
     void open(std::string_view path);
     // Where an enemy type's Edit behaviour opens its tree.
     void setBehaviourPanel(BehaviourPanel* panel) { m_behaviours = panel; }
     // Asks for the name of a new enemy type made from the one given.
-    void newEnemyType(std::string_view from);
+    void newEnemyType(std::string_view from) { askNewName(false, from); }
     // Whether the window had the focus as of its last draw, when Ctrl+Z, Ctrl+Y and Ctrl+S are its.
     bool hasFocus() const { return m_focused; }
     // Logs what happened.
@@ -42,7 +44,12 @@ private:
     void drawSetting(const GameConfigFile& file, const GameDataSetting& setting, bool owned);
     // The value's widget; returns whether it changed, with the new text in value.
     bool drawValue(const GameConfigFile& file, const GameDataSetting& setting, std::string& value);
-    void drawNewTypePopup(bool playing);
+    void drawEnemyButtons(const std::string& name, bool owned, const EditorDocument& document,
+                          bool playing);
+    void drawWeaponButtons(const std::string& name, bool owned, const EditorDocument& document,
+                           bool playing);
+    void askNewName(bool weapon, std::string_view from);
+    void drawNewPopup(bool playing);
     void drawDeletePopup(const EditorDocument& document);
     // Edits wait until the file has been drawn: each replaces the settings being drawn.
     void applyPending();
@@ -71,6 +78,7 @@ private:
     std::string m_text;
     std::string m_newName;
     std::string m_newFrom;
+    bool m_newWeapon = false; // else an enemy type
     bool m_openNewPopup = false;
     std::string m_problem;
 };

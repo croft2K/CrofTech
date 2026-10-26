@@ -24,6 +24,7 @@ constexpr ImVec4 kProblemColour{1.0f, 0.47f, 0.4f, 1.0f};
 constexpr float kListWidth = 190.0f;
 
 bool isEnemyFile(const GameConfigFile& file) { return file.path.starts_with("enemies/"); }
+bool isWeaponFile(const GameConfigFile& file) { return file.path.starts_with("weapons/"); }
 
 std::string fileName(const GameConfigFile& file) {
     return std::filesystem::path(file.path).stem().string();
@@ -41,6 +42,48 @@ std::size_t typeUsers(const Level& level, std::string_view type, std::string_vie
         }
     }
     return count;
+}
+
+// What uses the weapon: the level's pickups of it and its enemies and spawners with it as their
+// own, and the game's enemy types armed with it.
+struct WeaponUsers {
+    std::size_t pickups = 0;
+    std::size_t enemies = 0;
+    std::vector<std::string> types;
+};
+
+WeaponUsers weaponUsers(const Level& level, const GameSettings& settings, std::string_view weapon) {
+    WeaponUsers users;
+    for (const LevelEntity& entity : level.entities) {
+        const std::string* named = findProperty(entity, "weapon");
+        if (named == nullptr || *named != weapon) {
+            continue;
+        }
+        if (entity.className == kPickupClass) {
+            ++users.pickups;
+        } else if (entity.className == kEnemyClass || entity.className == kSpawnerClass) {
+            ++users.enemies;
+        }
+    }
+    for (const EnemySettings& type : settings.enemies) {
+        if (type.weapon == weapon) {
+            users.types.push_back(type.name);
+        }
+    }
+    return users;
+}
+
+std::string describeUsers(const WeaponUsers& users) {
+    std::string text =
+        std::format("{} pickup{} and {} enem{} of its own in this level", users.pickups,
+                    users.pickups == 1 ? "" : "s", users.enemies, users.enemies == 1 ? "y" : "ies");
+    if (!users.types.empty()) {
+        text += "; armed with it:";
+        for (const std::string& type : users.types) {
+            text += " " + type;
+        }
+    }
+    return text;
 }
 
 std::optional<Vec3> parseColour(std::string_view text) {
@@ -98,7 +141,8 @@ void GameDataPanel::open(std::string_view path) {
     m_focusWindow = true;
 }
 
-void GameDataPanel::newEnemyType(std::string_view from) {
+void GameDataPanel::askNewName(bool weapon, std::string_view from) {
+    m_newWeapon = weapon;
     m_newFrom = std::string(from);
     m_newName.clear();
     m_problem.clear();
@@ -215,7 +259,7 @@ void GameDataPanel::draw(const EditorDocument& document, bool playing) {
         ImGui::TextDisabled("Choose an enemy type, weapon or part of the game on the left.");
     }
     ImGui::EndChild();
-    drawNewTypePopup(playing);
+    drawNewPopup(playing);
     ImGui::End();
 }
 
@@ -244,10 +288,23 @@ void GameDataPanel::drawList() {
                                                               : m_data.manifest().enemies.front()));
     }
     ImGui::SeparatorText("Weapons");
+    std::size_t key = 0;
     for (const GameConfigFile& file : m_data.files()) {
-        if (file.path.starts_with("weapons/")) {
-            row(file, fileName(file));
+        if (isWeaponFile(file)) {
+            ++key;
+            row(file, std::format("{}  {}", key, fileName(file)));
+            ImGui::SetItemTooltip("Number key %zu%s", key,
+                                  m_data.isGameOwned(file)
+                                      ? ""
+                                      : "\nComes with the engine; the game's changes are its own");
         }
+    }
+    if (ImGui::SmallButton("New weapon...")) {
+        const GameConfigFile* shownFile = m_data.findFile(m_selected);
+        const std::vector<std::string>& weapons = m_data.manifest().weapons;
+        askNewName(true, shownFile != nullptr && isWeaponFile(*shownFile)
+                             ? fileName(*shownFile)
+                             : (weapons.empty() ? std::string() : weapons.front()));
     }
     ImGui::SeparatorText("Game");
     for (const GameConfigFile& file : m_data.files()) {
@@ -262,11 +319,10 @@ void GameDataPanel::drawFile(const GameConfigFile& file, const EditorDocument& d
     const std::string name = fileName(file);
     const bool owned = m_data.isGameOwned(file);
     const bool enemy = isEnemyFile(file);
+    const bool weapon = isWeaponFile(file);
     ImGui::Text("%s", name.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", enemy                               ? "enemy type"
-                              : file.path.starts_with("weapons/") ? "weapon"
-                                                                  : "game settings");
+    ImGui::TextDisabled("%s", enemy ? "enemy type" : weapon ? "weapon" : "game settings");
     if (owned) {
         ImGui::TextDisabled("The game's own: %s", shown(m_data.savePath(file)).c_str());
     } else {
@@ -276,40 +332,9 @@ void GameDataPanel::drawFile(const GameConfigFile& file, const EditorDocument& d
     }
 
     if (enemy) {
-        const std::vector<std::string>& enemies = m_data.manifest().enemies;
-        const std::size_t users =
-            typeUsers(document.level(), name, enemies.empty() ? "" : enemies.front());
-        ImGui::BeginDisabled(playing);
-        if (ImGui::Button("New type from this...")) {
-            newEnemyType(name);
-        }
-        ImGui::SetItemTooltip(
-            "A new enemy type with every setting of the %s, to change as you like", name.c_str());
-        if (owned) {
-            ImGui::SameLine();
-            if (ImGui::Button("Delete type...")) {
-                ImGui::OpenPopup("Delete enemy type");
-            }
-        }
-        ImGui::EndDisabled();
-        if (m_behaviours != nullptr) {
-            std::string behaviour = "standard";
-            for (const EnemySettings& type : m_data.settings().enemies) {
-                if (type.name == name && !type.behaviour.empty()) {
-                    behaviour = type.behaviour;
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Edit behaviour")) {
-                m_behaviours->open(behaviour);
-            }
-            ImGui::SetItemTooltip("Shows the %s's behaviour tree, %s, in the Behaviours window",
-                                  name.c_str(), behaviour.c_str());
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("%zu in this level%s", users,
-                            playing ? "; types can't be made or deleted while playing" : "");
-        drawDeletePopup(document);
+        drawEnemyButtons(name, owned, document, playing);
+    } else if (weapon) {
+        drawWeaponButtons(name, owned, document, playing);
     }
 
     const std::vector<GameDataSetting> settings = m_data.settingsOf(file);
@@ -351,6 +376,91 @@ void GameDataPanel::drawFile(const GameConfigFile& file, const EditorDocument& d
     if (std::find(drawn.begin(), drawn.end(), false) != drawn.end()) {
         drawGroup("Other", [](std::string_view) { return true; });
     }
+}
+
+void GameDataPanel::drawEnemyButtons(const std::string& name, bool owned,
+                                     const EditorDocument& document, bool playing) {
+    const std::vector<std::string>& enemies = m_data.manifest().enemies;
+    const std::size_t users =
+        typeUsers(document.level(), name, enemies.empty() ? "" : enemies.front());
+    ImGui::BeginDisabled(playing);
+    if (ImGui::Button("New type from this...")) {
+        askNewName(false, name);
+    }
+    ImGui::SetItemTooltip("A new enemy type with every setting of the %s, to change as you like",
+                          name.c_str());
+    if (owned) {
+        ImGui::SameLine();
+        if (ImGui::Button("Delete type...")) {
+            ImGui::OpenPopup("Delete");
+        }
+    }
+    ImGui::EndDisabled();
+    if (m_behaviours != nullptr) {
+        std::string behaviour = "standard";
+        for (const EnemySettings& type : m_data.settings().enemies) {
+            if (type.name == name && !type.behaviour.empty()) {
+                behaviour = type.behaviour;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Edit behaviour")) {
+            m_behaviours->open(behaviour);
+        }
+        ImGui::SetItemTooltip("Shows the %s's behaviour tree, %s, in the Behaviours window",
+                              name.c_str(), behaviour.c_str());
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu in this level%s", users,
+                        playing ? "; types can't be made or deleted while playing" : "");
+    drawDeletePopup(document);
+}
+
+void GameDataPanel::drawWeaponButtons(const std::string& name, bool owned,
+                                      const EditorDocument& document, bool playing) {
+    const std::vector<std::string>& weapons = m_data.manifest().weapons;
+    const std::size_t place =
+        static_cast<std::size_t>(std::find(weapons.begin(), weapons.end(), name) - weapons.begin());
+    ImGui::BeginDisabled(playing);
+    if (ImGui::Button("New weapon from this...")) {
+        askNewName(true, name);
+    }
+    ImGui::SetItemTooltip("A new weapon with every setting of the %s, to change as you like",
+                          name.c_str());
+    if (owned) {
+        ImGui::SameLine();
+        if (ImGui::Button("Delete weapon...")) {
+            ImGui::OpenPopup("Delete");
+        }
+    }
+    // The list's order is the number keys'.
+    const auto move = [&](std::size_t to) {
+        std::string error;
+        if (!m_data.moveWeapon(name, to, error)) {
+            m_problem = error;
+        }
+    };
+    ImGui::SameLine();
+    ImGui::BeginDisabled(place == 0 || place >= weapons.size());
+    if (ImGui::ArrowButton("earlier", ImGuiDir_Up)) {
+        move(place - 1);
+    }
+    ImGui::SetItemTooltip("Number key %zu", place);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(place + 1 >= weapons.size());
+    if (ImGui::ArrowButton("later", ImGuiDir_Down)) {
+        move(place + 1);
+    }
+    ImGui::SetItemTooltip("Number key %zu", place + 2);
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("Number key %zu%s", place + 1,
+                        playing ? "; weapons can't be made, deleted or moved while playing" : "");
+    ImGui::TextDisabled(
+        "%s", describeUsers(weaponUsers(document.level(), m_data.settings(), name)).c_str());
+    drawDeletePopup(document);
 }
 
 void GameDataPanel::drawSetting(const GameConfigFile& file, const GameDataSetting& setting,
@@ -438,15 +548,16 @@ bool GameDataPanel::drawValue(const GameConfigFile& file, const GameDataSetting&
         }
         return changed;
     }
-    if (enemy && (setting.key == "weapon" || setting.key == "sounds")) {
-        const bool weapon = setting.key == "weapon";
+    const bool sounds = setting.key == "sounds" && (enemy || isWeaponFile(file));
+    if ((enemy && setting.key == "weapon") || sounds) {
+        const bool weapon = !sounds;
         std::vector<std::string> names;
         if (weapon) {
             for (const WeaponSettings& each : m_data.settings().weapons) {
                 names.push_back(each.name);
             }
         } else {
-            names = m_data.manifest().enemies;
+            names = enemy ? m_data.manifest().enemies : m_data.manifest().weapons;
         }
         const std::string own = std::format("(its own: {})", fileName(file));
         const char* none = weapon ? "(none: no ranged attack)" : own.c_str();
@@ -487,19 +598,21 @@ bool GameDataPanel::drawValue(const GameConfigFile& file, const GameDataSetting&
     return changed;
 }
 
-void GameDataPanel::drawNewTypePopup(bool playing) {
+void GameDataPanel::drawNewPopup(bool playing) {
     if (m_openNewPopup) {
-        ImGui::OpenPopup("New enemy type");
+        ImGui::OpenPopup("New");
         m_openNewPopup = false;
     }
-    if (!ImGui::BeginPopup("New enemy type")) {
+    if (!ImGui::BeginPopup("New")) {
         return;
     }
+    const char* noun = m_newWeapon ? "weapon" : "enemy type";
     if (playing) {
-        ImGui::TextDisabled("Stop playing first: play numbers the types as it starts.");
+        ImGui::TextDisabled("Stop playing first: play numbers the %ss as it starts.", noun);
         ImGui::EndPopup();
         return;
     }
+    ImGui::SeparatorText(m_newWeapon ? "New weapon" : "New enemy type");
     ImGui::TextUnformatted("Name (lowercase letters, digits, '-' and '_'):");
     if (ImGui::IsWindowAppearing()) {
         ImGui::SetKeyboardFocusHere();
@@ -510,7 +623,8 @@ void GameDataPanel::drawNewTypePopup(bool playing) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(160.0f);
     if (ImGui::BeginCombo("##from", m_newFrom.c_str())) {
-        for (const std::string& type : m_data.manifest().enemies) {
+        for (const std::string& type :
+             m_newWeapon ? m_data.manifest().weapons : m_data.manifest().enemies) {
             if (ImGui::Selectable(type.c_str(), type == m_newFrom)) {
                 m_newFrom = type;
             }
@@ -518,15 +632,20 @@ void GameDataPanel::drawNewTypePopup(bool playing) {
         ImGui::EndCombo();
     }
     ImGui::TextDisabled("It gets every setting of the %s and sounds like it.", m_newFrom.c_str());
+    if (m_newWeapon) {
+        ImGui::TextDisabled("It takes number key %zu.", m_data.manifest().weapons.size() + 1);
+    }
     if (!m_problem.empty()) {
         ImGui::TextColored(kProblemColour, "%s", m_problem.c_str());
     }
     if ((ImGui::Button("Make") || entered) && !m_newName.empty()) {
         std::string error;
-        if (m_data.createEnemyType(m_newName, m_newFrom, error)) {
-            m_selected = std::format("enemies/{}.cfg", m_newName);
+        const bool made = m_newWeapon ? m_data.createWeapon(m_newName, m_newFrom, error)
+                                      : m_data.createEnemyType(m_newName, m_newFrom, error);
+        if (made) {
+            m_selected = std::format("{}/{}.cfg", m_newWeapon ? "weapons" : "enemies", m_newName);
             m_problem.clear();
-            logInfo("New enemy type {}, from the {}; save the game data to keep it", m_newName,
+            logInfo("New {} {}, from the {}; save the game data to keep it", noun, m_newName,
                     m_newFrom);
             ImGui::CloseCurrentPopup();
         } else {
@@ -542,7 +661,7 @@ void GameDataPanel::drawNewTypePopup(bool playing) {
 }
 
 void GameDataPanel::drawDeletePopup(const EditorDocument& document) {
-    if (!ImGui::BeginPopup("Delete enemy type")) {
+    if (!ImGui::BeginPopup("Delete")) {
         return;
     }
     const GameConfigFile* file = m_data.findFile(m_selected);
@@ -552,20 +671,36 @@ void GameDataPanel::drawDeletePopup(const EditorDocument& document) {
         return;
     }
     const std::string name = fileName(*file);
-    const std::vector<std::string>& enemies = m_data.manifest().enemies;
-    const std::size_t users =
-        typeUsers(document.level(), name, enemies.empty() ? "" : enemies.front());
+    const bool weapon = isWeaponFile(*file);
     ImGui::Text("Delete the %s? Its file goes when the game data is saved.", name.c_str());
-    if (users > 0) {
-        ImGui::TextColored(kProblemColour,
-                           "%zu enemies and spawners in this level use it; they won't play.",
-                           users);
+    if (weapon) {
+        const WeaponUsers users = weaponUsers(document.level(), m_data.settings(), name);
+        if (users.pickups + users.enemies > 0 || !users.types.empty()) {
+            ImGui::TextColored(kProblemColour, "%s.", describeUsers(users).c_str());
+            ImGui::TextColored(kProblemColour,
+                               "Those pickups give nothing, and those enemies don't shoot.");
+        }
+        ImGui::TextDisabled("The weapons after it move down a number key.");
+    } else {
+        const std::vector<std::string>& enemies = m_data.manifest().enemies;
+        const std::size_t users =
+            typeUsers(document.level(), name, enemies.empty() ? "" : enemies.front());
+        if (users > 0) {
+            ImGui::TextColored(kProblemColour,
+                               "%zu enemies and spawners in this level use it; they won't play.",
+                               users);
+        }
     }
     if (ImGui::Button("Delete")) {
         std::string error;
-        if (m_data.deleteEnemyType(name, error)) {
-            m_selected =
-                enemies.empty() ? std::string() : std::format("enemies/{}.cfg", enemies.front());
+        const bool deleted =
+            weapon ? m_data.deleteWeapon(name, error) : m_data.deleteEnemyType(name, error);
+        if (deleted) {
+            const std::vector<std::string>& left =
+                weapon ? m_data.manifest().weapons : m_data.manifest().enemies;
+            m_selected = left.empty() ? std::string()
+                                      : std::format("{}/{}.cfg", weapon ? "weapons" : "enemies",
+                                                    left.front());
         } else {
             m_problem = error;
         }

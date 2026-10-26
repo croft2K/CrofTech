@@ -268,8 +268,12 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    graph's selection is the level's. Nodes are laid out by the wiring until moved; then each keeps
    its place in the level as an editor-only `graph` property (Tony's choice). The inspector's
    outputs table stays the text form. Written up for designers in `docs/Wiring.md`.
-6. **Game data for the rest.** Weapons, movement and rules are already edited and tuned live in
-   the Game data window (step 1); still to come are new weapons made from others.
+6. **Game data for the rest.** *Done (2026-10-26).* Weapons, movement and rules were already
+   edited and tuned live in the Game data window (step 1). Now "New weapon from this" makes a
+   weapon of the game's own from another, with every setting and the other's firing sound (a
+   new `sounds` setting, as enemy types have, beside a `description`), and gives it the next
+   number key; arrows move a weapon between keys, and the game's own weapons can be deleted,
+   with a warning naming the pickups, enemies and enemy types that use it.
 7. **The remaining editor tools.** Texture and material assignment with face alignment, editable
    level-geometry meshes, movers along paths and turning movers, the asset browser and hot reload
    of textures, materials, shaders and levels. Planned in detail when step 6 is done.

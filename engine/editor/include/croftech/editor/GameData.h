@@ -79,6 +79,12 @@ public:
     bool createEnemyType(std::string_view name, std::string_view from, std::string& error);
     // Takes an enemy type the game owns out of game.cfg, and its file once saved.
     bool deleteEnemyType(std::string_view name, std::string& error);
+    // The same for weapons: a new one, weapons/<name>.cfg, takes the next number key.
+    bool createWeapon(std::string_view name, std::string_view from, std::string& error);
+    bool deleteWeapon(std::string_view name, std::string& error);
+    // Moves a weapon to another place in game.cfg's list, which is the number-key order: place 0
+    // is key 1.
+    bool moveWeapon(std::string_view name, std::size_t place, std::string& error);
 
     // Behaviour trees: behaviours/<name>.behaviour through the content layers, which the
     // Behaviours window edits as whole texts, with the same undo and saving. Enemy types run them
@@ -142,9 +148,19 @@ private:
         std::vector<std::string> texts;
     };
 
+    // What game.cfg lists, each a settings file in a folder of its own.
+    enum class Listed : std::uint8_t { Enemy, Weapon };
+
     GameData(ContentPaths content, std::filesystem::path manifest);
 
     bool readAll(std::string& error);
+    const std::vector<std::string>& listed(Listed kind) const;
+    bool createListed(Listed kind, std::string_view name, std::string_view from,
+                      std::string& error);
+    bool deleteListed(Listed kind, std::string_view name, std::string& error);
+    // Records game.cfg's list of the kind as names, with the file changes given, as one edit.
+    void recordList(Listed kind, const std::vector<std::string>& names, std::string editName,
+                    std::vector<Change> changes);
     // Builds the settings again from the edited texts.
     bool rebuild(std::string& error);
     void apply(const Edit& edit, bool undoing);
