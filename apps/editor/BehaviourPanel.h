@@ -20,13 +20,17 @@ struct EditorContext;
 
 namespace ct {
 
+class ScriptLibrary;
+class ScriptPanel;
+
 // The Behaviours window: a behaviour tree (behaviours/<name>.behaviour) as a graph laid out left
 // to right, as its file reads top to bottom, edited through GameData with the Game data window's
 // undo and saving, so changes play at once. Nodes are added by dragging from a node's right edge,
 // moved under another by linking them, reordered by dragging them up or down, and changed through
 // their right-click menu; the panel beside the graph edits the chosen node's setting and note.
-// A tree still being built opens as a draft, its problems shown on its nodes. While playing, the
-// nodes the watched enemy ran on its last tick light up.
+// A tree still being built opens as a draft, its problems shown on its nodes, along with those of
+// the scripts its script nodes name. While playing, the nodes the watched enemy ran on its last
+// tick light up.
 class BehaviourPanel {
 public:
     explicit BehaviourPanel(GameData& data);
@@ -38,6 +42,11 @@ public:
     void draw(const PlaySession* play);
     // Shows the behaviour and brings the window forward.
     void open(std::string_view name);
+    // The scripts that script nodes may name, and the window that edits them.
+    void setScripts(const ScriptLibrary* scripts, ScriptPanel* panel) {
+        m_scripts = scripts;
+        m_scriptPanel = panel;
+    }
     // Whether the window had the focus as of its last draw, when the keys are its.
     bool hasFocus() const { return m_focused; }
 
@@ -62,6 +71,7 @@ private:
     void handleShortcuts();
     void drawMenus();
     void drawDetails(const PlaySession* play);
+    void drawScriptSetting(std::uint32_t node);
     void drawNewPopup();
     // Edits wait until the graph has been drawn.
     void edit(BehaviourTree tree, std::string name, std::optional<std::uint32_t> select,
@@ -77,13 +87,19 @@ private:
     std::vector<std::uint32_t> selectedNodes() const;
 
     GameData& m_data;
+    const ScriptLibrary* m_scripts = nullptr;
+    ScriptPanel* m_scriptPanel = nullptr;
     ax::NodeEditor::EditorContext* m_editor = nullptr;
     std::string m_name = "standard";
     std::uint64_t m_seenChange = ~0ull;
+    std::uint64_t m_seenScripts = ~0ull;
     std::string m_seenName;
     std::optional<BehaviourTree> m_tree;
     std::string m_readError;
-    std::vector<BehaviourProblem> m_problems;
+    std::vector<BehaviourProblem> m_problems; // those that keep the tree from playing
+    // Of the scripts that script nodes name, whose nodes fail until they are put right.
+    std::vector<BehaviourProblem> m_scriptProblems;
+    std::vector<BehaviourProblem> m_shownProblems; // both, in node order
     std::vector<std::uint32_t> m_parents;
     // Each node's size as last drawn, and its box as laid out from them.
     std::vector<BehaviourBox> m_sizes;
@@ -109,6 +125,7 @@ private:
     bool m_focusFilter = false;
 
     std::string m_newName;
+    std::string m_newScript;
     bool m_openNewPopup = false;
     std::string m_problem;
     bool m_focusWindow = false;

@@ -1,6 +1,7 @@
 #include "SimHarness.h"
 
 #include "croftech/level/EntityClasses.h"
+#include "croftech/script/ScriptProgram.h"
 #include "croftech/sim/BehaviourTree.h"
 #include "croftech/sim/Damage.h"
 #include "croftech/sim/Enemies.h"
@@ -177,4 +178,93 @@ TEST_CASE("a cooldown, a chance and a time limit keep to their times") {
     CHECK_FALSE(isActive(cooled, 3));
     cooled.run({}, kSecond);
     CHECK(waitRunning());
+}
+
+TEST_CASE("a script node decides for the enemy, and can send inputs to the level") {
+    ct::Level level = alertedEnemyLevel(2);
+    level.entities.push_back(
+        {"counter", {{"origin", "0 0 0"}, {"name", "tally"}, {"count", "65535"}}, {}});
+    ct::GameSettings settings = chargerWith("fallback\n"
+                                            "    sequence\n"
+                                            "        has_target\n"
+                                            "        script brave\n"
+                                            "        chase\n"
+                                            "    patrol\n");
+    std::string error;
+    std::optional<ct::ScriptProgram> brave = ct::ScriptProgram::load("brave", R"(
+        return {
+            decide = function(game, me)
+                game:send("tally", "add")
+                return me.type == "charger" and me.health > me.max_health / 2
+                    and me.target.distance < 20 and me:setting("speed") == 6
+            end,
+        }
+    )",
+                                                                     error);
+    REQUIRE_MESSAGE(brave.has_value(), error);
+    settings.behaviourScripts.push_back(std::move(*brave));
+    SimHarness sim(level, settings);
+    const auto tally = [&] {
+        return sim.state().world.counters.get(sim.level().entity(2)->id)->value;
+    };
+    // Behind it, so only the alert wakes it.
+    sim.spawn({-12.0f, 0.0f, 0.0f});
+    sim.run({}, kSecond / 2);
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Chase);
+    CHECK(isActive(sim, 3));
+    // Asked every tick it had a target, and sent an add each time.
+    const std::uint32_t asked = tally();
+    CHECK(asked > 0);
+    sim.run({}, 1);
+    CHECK(tally() == asked + 1);
+
+    // Badly hurt, it says no, and the enemy goes back to its post.
+    ct::Damage damage;
+    damage.amount = 60;
+    ct::applyDamage(sim.state(), {}, enemyId(sim), damage);
+    sim.run({}, 2);
+    CHECK_FALSE(isActive(sim, 3));
+    CHECK(ct::enemyState(enemyOf(sim)) == ct::EnemyState::Patrol);
+    CHECK(sim.takeScriptMessages().empty());
+}
+
+TEST_CASE("a script node whose script fails, or is missing, fails, and says so once") {
+    ct::GameSettings settings = chargerWith("fallback\n"
+                                            "    script lonely\n"
+                                            "    sequence\n"
+                                            "        script broken\n"
+                                            "        script missing\n"
+                                            "        chase\n"
+                                            "    patrol\n");
+    std::string error;
+    std::optional<ct::ScriptProgram> broken = ct::ScriptProgram::load("broken", R"(
+        return {
+            decide = function(game, me)
+                print("thinking")
+                return me.target.distance < 5
+            end,
+        }
+    )",
+                                                                      error);
+    REQUIRE_MESSAGE(broken.has_value(), error);
+    settings.behaviourScripts.push_back(std::move(*broken));
+    std::optional<ct::ScriptProgram> lonely = ct::ScriptProgram::load(
+        "lonely", "return { decide = function(game) game:send('nobody', 'add') end }", error);
+    REQUIRE_MESSAGE(lonely.has_value(), error);
+    settings.behaviourScripts.push_back(std::move(*lonely));
+    SimHarness sim(alertedEnemyLevel(10000), settings);
+    sim.run({}, kSecond);
+    // Each failed, so the patrol ran.
+    CHECK_FALSE(isActive(sim, 1));
+    CHECK_FALSE(isActive(sim, 3));
+    CHECK_FALSE(isActive(sim, 4));
+    CHECK(isActive(sim, 6));
+    const std::vector<ct::ScriptMessage> messages = sim.takeScriptMessages();
+    REQUIRE(messages.size() == 3);
+    CHECK(messages[0].error);
+    CHECK(messages[0].text == "enemy 'enemy' (entity 0): game:send: no entity is named 'nobody'");
+    CHECK_FALSE(messages[1].error);
+    CHECK(messages[1].text == "charger: thinking");
+    CHECK(messages[2].error);
+    CHECK(messages[2].text.starts_with("charger (behaviour test): broken:5:"));
 }

@@ -1,0 +1,8 @@
+fallback
+    # asks a script
+    sequence
+        has_target
+        script flank
+        chase
+    script
+    patrol

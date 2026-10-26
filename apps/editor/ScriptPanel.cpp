@@ -3,6 +3,7 @@
 #include "croftech/core/ConfigFile.h"
 #include "croftech/editor/LevelItem.h"
 #include "croftech/level/EntityClasses.h"
+#include "croftech/sim/BehaviourTree.h"
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -36,6 +37,20 @@ return {
             game:fire("on_done")
         end,
     },
+}
+)";
+
+constexpr std::string_view kBehaviourTemplate =
+    R"(-- What this decides for enemies, and which behaviours' script nodes ask it.
+
+return {
+    -- Asked each tick a script node naming this script is reached: true is yes (the node
+    -- succeeds), false is no. me is the enemy: me.health, me.state, me.position,
+    -- me:setting("speed") and, while it is after a player, me.target (distance, visible,
+    -- health and more). docs/Behaviours.md lists them all.
+    decide = function(game, me)
+        return me.target ~= nil and me.target.distance < 10
+    end,
 }
 )";
 
@@ -101,7 +116,7 @@ void ScriptPanel::open(std::string_view name) {
     m_tabs.push_back(std::move(tab));
 }
 
-bool ScriptPanel::create(std::string_view name, std::string& error) {
+bool ScriptPanel::create(std::string_view name, std::string& error, ScriptTemplate kind) {
     if (!isValidScriptName(name)) {
         error = "A script's name is lowercase letters, digits, '-' and '_'.";
         return false;
@@ -117,7 +132,8 @@ bool ScriptPanel::create(std::string_view name, std::string& error) {
     const std::filesystem::path folder = m_content.layers().back() / "scripts";
     std::error_code made;
     std::filesystem::create_directories(folder, made);
-    if (!writeTextFile(folder / std::format("{}.luau", name), kTemplate, error)) {
+    if (!writeTextFile(folder / std::format("{}.luau", name),
+                       kind == ScriptTemplate::Behaviour ? kBehaviourTemplate : kTemplate, error)) {
         return false;
     }
     m_library.refresh();
@@ -175,6 +191,16 @@ void ScriptPanel::applyOpenText(std::vector<ScriptSource>& scripts) const {
             }
         }
     }
+}
+
+std::vector<ScriptSource> ScriptPanel::unsavedTexts() const {
+    std::vector<ScriptSource> texts;
+    for (const std::unique_ptr<Tab>& tab : m_tabs) {
+        if (tab->buffer.modified()) {
+            texts.push_back({tab->name, tab->buffer.text()});
+        }
+    }
+    return texts;
 }
 
 // Unedited tabs follow their files when they change outside the editor.
@@ -269,6 +295,13 @@ bool ScriptPanel::drawDetails(Tab& tab, EditorDocument& document) {
         ImGui::TextWrapped("Inputs: %s", joined(declared.inputs).c_str());
         if (declared.start) {
             ImGui::TextUnformatted("Has a start function, called as play begins.");
+        }
+        if (declared.decide) {
+            ImGui::TextWrapped("Has a decide function, which behaviours' script nodes naming it "
+                               "ask (docs/Behaviours.md).");
+            if (const std::string problem = behaviourScriptProblem(*program); !problem.empty()) {
+                ImGui::TextColored(kProblemColour, "%s", problem.c_str());
+            }
         }
     }
 

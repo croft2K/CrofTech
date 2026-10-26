@@ -27,6 +27,21 @@ inline constexpr std::size_t kMaxScriptPrintLength = 200;
 
 // ScriptCall::input for the script's start function rather than an input.
 inline constexpr std::uint32_t kScriptStart = 0xFFFFFFFFu;
+// ScriptCall::input for a behaviour script's decide function.
+inline constexpr std::uint32_t kScriptDecide = 0xFFFFFFFEu;
+
+enum class ScriptValueKind : std::uint8_t { Number, Flag, Text, Vector };
+
+// A value a decide call is told, by name: me.health, me.target.visible. The caller fills them in,
+// as the sandbox knows nothing of the game.
+struct ScriptValue {
+    std::string_view name;
+    ScriptValueKind kind = ScriptValueKind::Number;
+    double x = 0.0; // the number, 1 or 0 for a flag, or a vector's x
+    double y = 0.0;
+    double z = 0.0;
+    std::string_view text;
+};
 
 // One call of a script. The state and the random counter go in, and come out changed if the call
 // finishes.
@@ -36,6 +51,11 @@ struct ScriptCall {
     std::span<double> state;            // a value per declared variable, in declared order
     std::uint32_t random = 0;           // counter for game:random (core/Random.h)
     double time = 0.0;                  // seconds since play began, as game.time
+    // A decide call's second argument, me: these values, with target as a table of its own (nil
+    // when there are none), and me:setting(name) giving the settings by name.
+    std::span<const ScriptValue> subject;
+    std::span<const ScriptValue> target;
+    std::span<const ScriptValue> settings;
 };
 
 enum class ScriptEffectKind : std::uint8_t {
@@ -73,7 +93,8 @@ struct ScriptEffect {
 // The game's calls get a `game` table: game.state (the declared values), game.time,
 // game:fire(event), game:after(seconds, input), game:send(name, input [, seconds]) and
 // game:random() (in [0, 1)) or game:random(m, n) (a whole number from m to n). print writes
-// lines that the caller can log.
+// lines that the caller can log. A decide call (kScriptDecide) also gets me, and returns true or
+// false (nil is false), which decision() then gives.
 //
 // The memory is taken on the first call. Not thread-safe; a runner serves one thread.
 class ScriptRunner {
@@ -97,6 +118,8 @@ public:
         return {m_printed.data(), m_printCount};
     }
     std::string_view error() const { return m_error.view(); }
+    // What the last decide call that finished returned.
+    bool decision() const { return m_decision; }
     // Of the last run: steps taken, and how far into its memory it reached.
     std::uint32_t steps() const { return m_steps; }
     std::size_t memoryUsed() const;
@@ -126,6 +149,7 @@ private:
     FixedText<256> m_error;
     std::uint32_t m_steps = 0;
     bool m_overBudget = false; // steps or memory: the call fails even if the script caught it
+    bool m_decision = false;
 };
 
 } // namespace ct

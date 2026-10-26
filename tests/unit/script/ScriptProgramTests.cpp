@@ -58,8 +58,19 @@ TEST_CASE("a script needs declare nothing but must return a table") {
     CHECK_FALSE(empty->declarations().start);
 
     CHECK(loadError("local x = 1") ==
-          "test must return a table (of state, events, inputs and start)");
+          "test must return a table (of state, events, inputs and start, or decide)");
     CHECK(loadError("return { stats = {} }").find("has 'stats'") != std::string::npos);
+}
+
+TEST_CASE("a behaviour script declares a decide function") {
+    std::string error;
+    const std::optional<ct::ScriptProgram> program =
+        load("return { decide = function(game, me) return true end }", error);
+    REQUIRE_MESSAGE(program, error);
+    CHECK(program->declarations().decide);
+    CHECK_FALSE(program->declarations().start);
+    CHECK(loadError("return { decide = true }").find("decide must be a function") !=
+          std::string::npos);
 }
 
 TEST_CASE("mistakes in a script's declarations are errors when it loads") {

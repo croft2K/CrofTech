@@ -80,6 +80,21 @@ void ScriptHost::report(bool error, std::string text) {
     }
 }
 
+bool ScriptHost::isRepeat(std::string_view script, bool error, std::string_view text) {
+    auto last = std::find_if(lastBehaviourMessages.begin(), lastBehaviourMessages.end(),
+                             [&](const LastMessage& message) {
+                                 return message.script == script && message.error == error;
+                             });
+    if (last == lastBehaviourMessages.end()) {
+        last = lastBehaviourMessages.insert(lastBehaviourMessages.end(),
+                                            {std::string(script), error, {}});
+    } else if (last->text == text) {
+        return true;
+    }
+    last->text = text;
+    return false;
+}
+
 void Simulation::movePlayers(const CollisionScene& scene, const InputSet& inputs,
                              State& state) const {
     World& world = state.world;

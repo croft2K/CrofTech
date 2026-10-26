@@ -30,10 +30,15 @@ struct Caller {
     bool call(std::string_view input) {
         ct::ScriptCall call;
         call.program = &program;
-        call.input = input == "start" ? ct::kScriptStart : *program.findInput(input);
+        call.input = input == "start"    ? ct::kScriptStart
+                     : input == "decide" ? ct::kScriptDecide
+                                         : *program.findInput(input);
         call.state = std::span(values).first(program.declarations().state.size());
         call.random = random;
         call.time = time;
+        call.subject = subject;
+        call.target = target;
+        call.settings = settings;
         const bool finished = runner.run(call);
         random = call.random;
         return finished;
@@ -44,7 +49,22 @@ struct Caller {
     std::array<double, ct::kMaxScriptState> values{};
     std::uint32_t random = 0;
     double time = 0.0;
+    std::vector<ct::ScriptValue> subject;
+    std::vector<ct::ScriptValue> target;
+    std::vector<ct::ScriptValue> settings;
 };
+
+ct::ScriptValue value(std::string_view name, ct::ScriptValueKind kind, double x, double y = 0.0,
+                      double z = 0.0, std::string_view text = {}) {
+    ct::ScriptValue made;
+    made.name = name;
+    made.kind = kind;
+    made.x = x;
+    made.y = y;
+    made.z = z;
+    made.text = text;
+    return made;
+}
 
 } // namespace
 
@@ -294,4 +314,64 @@ TEST_CASE("game functions check what they are given") {
     CHECK_FALSE(caller.call("many"));
     CHECK(caller.runner.error().find("more than 64 things") != std::string_view::npos);
     CHECK_FALSE(caller.call("dice"));
+}
+
+TEST_CASE("a decide call is told about its subject and answers yes or no") {
+    using enum ct::ScriptValueKind;
+    Caller caller(R"(
+        return {
+            decide = function(game, me)
+                print(me.type, me.health, me.position.z, me:setting("speed"), me.target ~= nil)
+                if me.target then game:send("alarm", "trigger") end
+                return me.health < 50 and me.target ~= nil and me.target.visible
+            end,
+        }
+    )");
+    CHECK(caller.program.declarations().decide);
+    caller.subject = {value("type", Text, 0.0, 0.0, 0.0, "gunner"), value("health", Number, 40.0),
+                      value("position", Vector, 1.0, 2.0, 3.5)};
+    caller.settings = {value("speed", Number, 6.0)};
+    REQUIRE(caller.call("decide"));
+    CHECK_FALSE(caller.runner.decision());
+    REQUIRE(caller.runner.printed().size() == 1);
+    CHECK(caller.runner.printed()[0].view() == "gunner 40 3.5 6 false");
+    CHECK(caller.runner.effects().empty());
+
+    caller.target = {value("visible", Flag, 1.0)};
+    REQUIRE(caller.call("decide"));
+    CHECK(caller.runner.decision());
+    REQUIRE(caller.runner.effects().size() == 1);
+    CHECK(caller.runner.effects()[0].kind == ct::ScriptEffectKind::Send);
+    CHECK(caller.runner.effects()[0].target.view() == "alarm");
+
+    caller.subject[1].x = 80.0;
+    REQUIRE(caller.call("decide"));
+    CHECK_FALSE(caller.runner.decision());
+}
+
+TEST_CASE("a decide call fails if it answers with anything but true, false or nil") {
+    Caller caller(R"(
+        return {
+            decide = function(game, me)
+                if me.health == 1 then return nil end
+                if me.health == 2 then return me:setting("nope") end
+                return me.health
+            end,
+        }
+    )");
+    caller.subject = {value("health", ct::ScriptValueKind::Number, 1.0)};
+    REQUIRE(caller.call("decide"));
+    CHECK_FALSE(caller.runner.decision());
+    caller.subject[0].x = 2.0;
+    CHECK_FALSE(caller.call("decide"));
+    CHECK(caller.runner.error().find("there is no setting 'nope'") != std::string_view::npos);
+    caller.subject[0].x = 3.0;
+    CHECK_FALSE(caller.call("decide"));
+    CHECK(caller.runner.error().find("decide must return true or false, not a number") !=
+          std::string_view::npos);
+
+    // A script without decide can't be asked to.
+    Caller other("return { start = function(game) end }");
+    CHECK_FALSE(other.call("decide"));
+    CHECK(other.runner.error() == "the call doesn't match what the script declares");
 }

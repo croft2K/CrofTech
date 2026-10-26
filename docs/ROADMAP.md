@@ -249,15 +249,18 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    component. Trees are text files, `behaviours/<name>.behaviour` (fuzzed), named by each enemy
    type, and documented for designers in `docs/Behaviours.md`. The charger and gunner share one
    standard tree, in which their settings decide what each does, and play as before (the
-   existing enemy tests pass unchanged). Still to come with step 4: a Luau script as a node, for
-   an odd custom decision.
-4. **Behaviour graph editor.** *Graph done (2026-10-23).* The Behaviours window
+   existing enemy tests pass unchanged). A Luau script as a node, for an odd custom decision,
+   came with step 4.
+4. **Behaviour graph editor.** *Done (2026-10-26).* The Behaviours window
    (imgui-node-editor, MIT, from vcpkg) shows a tree laid out left to right as its file reads,
    and builds and edits it: nodes added by dragging from a node's edge, moved by linking,
    reordered by dragging, changed through their menu, copied and pasted as text. Edits go
    through the Game data window's undo and saving and play at once. Trees still being built open
    as drafts with their problems on the nodes. In play, the watched enemy's running nodes light
-   up. Still to come: a Luau script as a node.
+   up. A `script` node asks a behaviour script (`scripts/<name>.luau` with just a `decide`
+   function) about the enemy and its target; it answers yes or no and may send inputs to the
+   level's entities, and keeps no state (Tony's choice, 2026-10-26). Each call is a fresh
+   sandbox, about 10 microseconds, so the docs say to put cheaper conditions first.
 5. **Visual logic graph.** The level's wiring as nodes in the same graph window, with the outputs
    table as the text form.
 6. **Game data for the rest.** Weapons, movement and rules are already edited and tuned live in

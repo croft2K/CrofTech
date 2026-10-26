@@ -440,7 +440,7 @@ constexpr EntityPreset kPresets[] = {
 };
 
 const PropertyInfo& requireProperty(const EntityClassInfo& entityClass, std::string_view key,
-                                    PropertyType type) {
+                                    [[maybe_unused]] PropertyType type) {
     const PropertyInfo* property = findPropertyInfo(entityClass, key);
     CT_ASSERT(property != nullptr && property->type == type);
     return *property;

@@ -526,6 +526,7 @@ void LevelLogic::viewTarget(EnemyTick& think) {
     }
     think.viewDone = true;
     think.viewed = enemy.target;
+    think.living = false;
     think.visible = false;
     think.level = false;
     think.gap = 0.0f;
@@ -536,6 +537,7 @@ void LevelLogic::viewTarget(EnemyTick& think) {
     if (!isLivingPlayer(world, enemy.target)) {
         return;
     }
+    think.living = true;
     const Transform& target = *world.transforms.get(enemy.target);
     // Hunting, it sees all round.
     think.visible =
@@ -611,6 +613,8 @@ BehaviourStatus LevelLogic::runEnemyNode(EnemyTick& think, const BehaviourNode& 
         return search(think);
     case BehaviourNodeKind::Patrol:
         return patrol(think);
+    case BehaviourNodeKind::Script:
+        return decide(think, node);
     default:
         CT_ASSERT(false);
         return Failure;

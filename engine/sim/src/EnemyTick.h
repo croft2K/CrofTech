@@ -60,6 +60,7 @@ struct EnemyTick {
     // and again if the target changes.
     EntityId viewed;
     bool viewDone = false;
+    bool living = false; // the target is a living player
     bool visible = false;
     bool level = false;    // overlapping it in height
     float gap = 0.0f;      // between their boxes across the ground

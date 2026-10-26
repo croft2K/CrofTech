@@ -134,6 +134,68 @@ Some ideas:
                     chase
 ```
 
+## Script nodes
+
+For a decision no other node makes, a `script` node asks a Luau script (`scripts/<name>.luau`,
+written like the level's scripts in [Scripting.md](Scripting.md)). The script returns a table
+with just a `decide` function, which answers true (the node succeeds) or false (it fails):
+
+```lua
+-- Flanks only while a lone target is close and hurt.
+return {
+    decide = function(game, me)
+        local target = me.target
+        if target == nil or not target.visible then
+            return false
+        end
+        return target.distance < 15 and target.health < 50 and me.health > me.max_health / 2
+    end,
+}
+```
+
+```
+            sequence
+                has_target
+                script flank
+                strafe
+```
+
+In the Behaviours window, the chosen script node's panel picks its script, opens it in the
+Scripts window (**Edit**), or makes a new one from a template (**New**). The script plays as it
+is being edited, saved or not, from the next start of play.
+
+`me` is the enemy whose tree reached the node:
+
+| | |
+|---|---|
+| `me.type` | Its type's name, such as `"gunner"` |
+| `me.state` | What it is doing: `"idle"`, `"alerted"`, `"chase"`, `"attack"`, `"lost"`, `"search"`, `"cover"` or `"patrol"` |
+| `me.state_time` | Seconds since it went into that state |
+| `me.health`, `me.max_health` | Its health, and its type's |
+| `me.hurt_time` | Seconds since it was last hurt; -1 if never |
+| `me.position`, `me.yaw` | The middle of its box (`.x`, `.y`, `.z`, in metres), and the way it faces in degrees |
+| `me.post` | Where it stands guard (its feet) |
+| `me.ambush` | Whether it lies in ambush |
+| `me:setting(name)` | Any number setting of its type, as this enemy has it: `me:setting("speed")` |
+| `me.target` | While it is after a living player, that player; otherwise `nil` |
+| `me.target.position`, `.velocity` | The middle of their box, and how fast they move (m/s) |
+| `me.target.health`, `.armour` | |
+| `me.target.distance` | Metres between the two |
+| `me.target.visible`, `.in_reach`, `.in_range` | As `target_visible`, `target_in_reach` and `target_in_range` say |
+| `me.target.last_seen`, `.seen_time` | Where it last saw them, and how many seconds ago |
+
+`game.time`, `game:random()` and `print` work as in any script, and `game:send(name, input [,
+seconds])` sends an input to the level's entities with that name (an alarm, a door), as if from
+the enemy's own wiring; the input is sent only if `decide` finishes. A behaviour script keeps no
+state, and has no events or inputs: the tree's own nodes (`cooldown`, `wait`, `chance`) do the
+remembering.
+
+A script node costs far more than any other node, about 10 microseconds each time it is asked,
+which is every tick its tree reaches it. Put cheaper conditions before it, so it is asked only
+when it matters. If its script is missing, doesn't load or fails, the node fails; the window shows
+why on the node, and errors and what the script prints reach the console (each only once in a
+row, as the node is asked every tick).
+
 ## Nodes
 
 | Node | Setting | What it does |
@@ -152,6 +214,7 @@ Some ideas:
 | `target_within` | metres (5) | Whether that player is within this distance |
 | `health_below` | share (0.5) | Whether its health is below this share of its type's |
 | `chance` | share (0.5) | Succeeds with this chance, decided when first reached and kept while it keeps being reached |
+| `script` | a script's name | Asks the script's `decide` function (see Script nodes above); succeeds if it says yes |
 | `see` | | Calm or searching, notices the nearest player in its view cone. Always succeeds |
 | `hear` | | Calm, searching or having lost its target, notices players shooting or running nearby (unless it lies in ambush). Always succeeds |
 | `react` | | Just after noticing a player, stands and turns to them for `reaction_time`; fails otherwise |

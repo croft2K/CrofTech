@@ -21,6 +21,13 @@ namespace ct {
 //         start = function(game) ... end,        -- optional: once, when play begins
 //     }
 //
+// A script that a behaviour tree's script node names (sim/BehaviourTree.h) instead returns a table
+// with just a decide function, which answers for the enemy whose tree reached it:
+//
+//     return {
+//         decide = function(game, me) return me.health < 30 and me.target ~= nil end,
+//     }
+//
 // Every call runs in a fresh sandbox (ScriptRunner), so nothing survives a call except the
 // declared state, which the game keeps in the simulated state; that is how scripts are saved,
 // rewound and sent like everything else.
@@ -48,6 +55,7 @@ struct ScriptDeclarations {
     std::vector<std::string> events;   // as listed
     std::vector<std::string> inputs;   // sorted by name
     bool start = false;
+    bool decide = false; // a behaviour script's
 };
 
 // Whether the name is one a script may have: 1 to 64 lowercase letters, digits, '-' or '_', like

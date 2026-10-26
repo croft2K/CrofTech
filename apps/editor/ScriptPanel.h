@@ -18,6 +18,9 @@
 
 namespace ct {
 
+// What a new script starts as: one for script entities, or one for behaviour trees' script nodes.
+enum class ScriptTemplate : std::uint8_t { Entity, Behaviour };
+
 // The Scripts window: the scripts of the content folders, each opened in a tab of its own to edit,
 // beside what the script in front declares, the entities that run it, the wiring in and out of
 // them, and what doesn't line up (marked on its line where it has one). The text being edited is
@@ -34,7 +37,8 @@ public:
     void open(std::string_view name);
     // Writes scripts/<name>.luau into the game's content folder from a starting template and
     // opens it. Fails, saying why, for a bad name or one already taken.
-    bool create(std::string_view name, std::string& error);
+    bool create(std::string_view name, std::string& error,
+                ScriptTemplate kind = ScriptTemplate::Entity);
 
     bool hasKeyboard() const;
     bool hasUnsavedChanges() const;
@@ -42,6 +46,8 @@ public:
     bool saveAll(std::string& error);
     // Puts the text of open scripts in place of their files', for play.
     void applyOpenText(std::vector<ScriptSource>& scripts) const;
+    // The text of every script with changes not yet saved.
+    std::vector<ScriptSource> unsavedTexts() const;
     // The script in the front tab while the window shows it; empty otherwise.
     const std::string& frontScript() const { return m_front; }
 

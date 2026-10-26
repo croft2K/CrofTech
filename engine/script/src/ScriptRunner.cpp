@@ -357,7 +357,7 @@ public:
         }
         lua_call(L, 0, 1);
         if (!lua_istable(L, -1)) {
-            luaL_error(L, "%s must return a table (of state, events, inputs and start)",
+            luaL_error(L, "%s must return a table (of state, events, inputs and start, or decide)",
                        chunkName + 1);
         }
         run->body(L, run->data);
@@ -388,6 +388,63 @@ public:
         lua_setfield(L, -2, "send");
         lua_pushcfunction(L, gameRandom, "random");
         lua_setfield(L, -2, "random");
+    }
+
+    static int subjectSetting(lua_State* L) {
+        const ScriptCall* call = runner(L).m_call;
+        const char* name = luaL_checkstring(L, firstArgument(L));
+        if (call != nullptr) {
+            for (const ScriptValue& value : call->settings) {
+                if (value.name == name) {
+                    lua_pushnumber(L, value.x);
+                    return 1;
+                }
+            }
+        }
+        luaL_error(L, "me:setting: there is no setting '%s'", name);
+        return 0;
+    }
+
+    // The values as a table, on top of the stack.
+    static void pushValues(lua_State* L, std::span<const ScriptValue> values, int extra) {
+        lua_createtable(L, 0, static_cast<int>(values.size()) + extra);
+        for (const ScriptValue& value : values) {
+            switch (value.kind) {
+            case ScriptValueKind::Number:
+                lua_pushnumber(L, value.x);
+                break;
+            case ScriptValueKind::Flag:
+                lua_pushboolean(L, value.x != 0.0);
+                break;
+            case ScriptValueKind::Text:
+                lua_pushlstring(L, value.text.data(), value.text.size());
+                break;
+            case ScriptValueKind::Vector:
+                lua_createtable(L, 0, 3);
+                lua_pushnumber(L, value.x);
+                lua_setfield(L, -2, "x");
+                lua_pushnumber(L, value.y);
+                lua_setfield(L, -2, "y");
+                lua_pushnumber(L, value.z);
+                lua_setfield(L, -2, "z");
+                break;
+            }
+            // lua_setfield wants the name ended; the caller's names are short.
+            char name[64] = {};
+            std::copy_n(value.name.data(), std::min(value.name.size(), sizeof(name) - 1), name);
+            lua_setfield(L, -2, name);
+        }
+    }
+
+    // A decide call's me, on top of the stack.
+    static void pushSubject(lua_State* L, const ScriptCall& call) {
+        pushValues(L, call.subject, 2);
+        if (!call.target.empty()) {
+            pushValues(L, call.target, 0);
+            lua_setfield(L, -2, "target");
+        }
+        lua_pushcfunction(L, subjectSetting, "setting");
+        lua_setfield(L, -2, "setting");
     }
 
     // The values of game.state (on top of the stack) after a call, which must be the declared
@@ -430,6 +487,7 @@ public:
 
     struct CallResult {
         std::array<double, kMaxScriptState> values{};
+        bool decision = false;
     };
 
     static void callBody(lua_State* L, void* data) {
@@ -438,9 +496,14 @@ public:
         const int script = lua_gettop(L);
         pushGame(L, call);
         const int game = lua_gettop(L);
+        const char* function = "start";
         if (call.input == kScriptStart) {
             lua_rawgetfield(L, script, "start");
+        } else if (call.input == kScriptDecide) {
+            function = "decide";
+            lua_rawgetfield(L, script, "decide");
         } else {
+            function = declared.inputs[call.input].c_str();
             lua_rawgetfield(L, script, "inputs");
             if (!lua_istable(L, -1)) {
                 luaL_error(L, "inputs must be a table");
@@ -448,13 +511,23 @@ public:
             lua_rawgetfield(L, -1, declared.inputs[call.input].c_str());
         }
         if (!lua_isfunction(L, -1)) {
-            luaL_error(L, "%s must be a function",
-                       call.input == kScriptStart ? "start" : declared.inputs[call.input].c_str());
+            luaL_error(L, "%s must be a function", function);
         }
+        auto& result = *static_cast<CallResult*>(data);
         lua_pushvalue(L, game);
-        lua_call(L, 1, 0);
+        if (call.input == kScriptDecide) {
+            pushSubject(L, call);
+            lua_call(L, 2, 1);
+            if (!lua_isboolean(L, -1) && !lua_isnil(L, -1)) {
+                luaL_error(L, "decide must return true or false, not a %s", luaL_typename(L, -1));
+            }
+            result.decision = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+        } else {
+            lua_call(L, 1, 0);
+        }
         lua_rawgetfield(L, game, "state");
-        readState(L, declared, static_cast<CallResult*>(data)->values.data());
+        readState(L, declared, result.values.data());
     }
 
     static void readStateDeclaration(lua_State* L, ScriptDeclarations& declarations) {
@@ -565,10 +638,15 @@ public:
                     luaL_error(L, "start must be a function");
                 }
                 declarations.start = true;
+            } else if (field == "decide") {
+                if (!lua_isfunction(L, -1)) {
+                    luaL_error(L, "decide must be a function");
+                }
+                declarations.decide = true;
             } else {
                 luaL_error(L,
                            "the table it returns has '%s'; it may have state, events, inputs "
-                           "and start",
+                           "and start, or decide",
                            key);
             }
             lua_pop(L, 1);
@@ -617,9 +695,10 @@ bool ScriptRunner::protect(std::string_view name, std::string_view bytecode,
 
 bool ScriptRunner::run(ScriptCall& call) {
     const ScriptDeclarations& declared = call.program->declarations();
-    if (call.state.size() != declared.state.size() ||
-        (call.input != kScriptStart && call.input >= declared.inputs.size()) ||
-        (call.input == kScriptStart && !declared.start)) {
+    const bool known = call.input == kScriptStart    ? declared.start
+                       : call.input == kScriptDecide ? declared.decide
+                                                     : call.input < declared.inputs.size();
+    if (call.state.size() != declared.state.size() || !known) {
         m_effectCount = 0;
         m_printCount = 0;
         assign(m_error, "the call doesn't match what the script declares");
@@ -634,6 +713,7 @@ bool ScriptRunner::run(ScriptCall& call) {
     if (finished) {
         std::copy_n(result.values.begin(), call.state.size(), call.state.begin());
         call.random = m_random;
+        m_decision = result.decision;
     }
     return finished;
 }

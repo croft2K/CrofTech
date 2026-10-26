@@ -40,28 +40,6 @@ constexpr Vec3 kTargetColour{1.0f, 0.15f, 0.1f};
 constexpr Vec3 kLastSeenColour{1.0f, 0.55f, 0.1f};
 constexpr Vec3 kPostColour{0.35f, 0.5f, 1.0f};
 
-const char* stateName(EnemyState state) {
-    switch (state) {
-    case EnemyState::Idle:
-        return "idle";
-    case EnemyState::Alerted:
-        return "alerted";
-    case EnemyState::Chase:
-        return "chase";
-    case EnemyState::Attack:
-        return "attack";
-    case EnemyState::Lost:
-        return "lost";
-    case EnemyState::Search:
-        return "search";
-    case EnemyState::Cover:
-        return "cover";
-    case EnemyState::Patrol:
-        return "patrol";
-    }
-    return "?";
-}
-
 // Calm states pale, hunting ones warm, hiding cool.
 ImU32 stateColour(EnemyState state) {
     switch (state) {
@@ -239,10 +217,10 @@ void drawEnemyLabels(const LocalGame& game, LocalGame::Clock::time_point now, co
             return static_cast<double>(to > from ? to - from : 0u) *
                    static_cast<double>(kTickSeconds);
         };
-        const std::string title = dead
-                                      ? std::format("{} dead", type->name)
-                                      : std::format("{} {} {:.1f}s", type->name, stateName(current),
-                                                    seconds(enemy.stateTick, state->tick));
+        const std::string title =
+            dead ? std::format("{} dead", type->name)
+                 : std::format("{} {} {:.1f}s", type->name, enemyStateName(current),
+                               seconds(enemy.stateTick, state->tick));
         std::string details = std::format("{} hp", health != nullptr ? health->health : 0);
         if (!dead) {
             if (enemy.waitTick > state->tick) {

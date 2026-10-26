@@ -2,6 +2,7 @@
 
 #include "croftech/core/ConfigFile.h"
 #include "croftech/core/Content.h"
+#include "croftech/script/ScriptProgram.h"
 #include "croftech/sim/BehaviourTree.h"
 #include "croftech/sim/GameSettings.h"
 
@@ -86,6 +87,13 @@ TEST_CASE("a behaviour tree written out reads back the same") {
     CHECK(parse(text) == tree);
     CHECK(ct::formatBehaviourTree(ct::standardBehaviourTree()) == ct::standardBehaviourText());
 
+    // A script node's setting is a name.
+    const auto scripted = parse("fallback\n    script keep-back_2\n    patrol\n");
+    REQUIRE(scripted.has_value());
+    CHECK(scripted->nodes[1].kind == BehaviourNodeKind::Script);
+    CHECK(scripted->nodes[1].script == "keep-back_2");
+    CHECK(ct::formatBehaviourTree(*scripted) == "fallback\n    script keep-back_2\n    patrol\n");
+
     // Blank comment lines part a note's paragraphs but don't end it.
     const auto spaced = parse("sequence\n"
                               "    #\n"
@@ -115,6 +123,10 @@ TEST_CASE("malformed behaviour trees are refused, naming the line") {
     CHECK(problemWith("sequence\n    chance 2\n").starts_with("line 2: chance takes share"));
     CHECK(problemWith("sequence\n    see\n    fallback\n") ==
           "its fallback (node 3) has nothing under it");
+    CHECK(
+        problemWith("sequence\n    script\n").starts_with("line 2: script takes a script's name"));
+    CHECK(problemWith("sequence\n    script ../x\n")
+              .starts_with("line 2: script takes a script's name"));
 
     // The limits that keep an enemy's running state a fixed size.
     std::string wide = "sequence\n";
@@ -154,6 +166,13 @@ TEST_CASE("a draft tree opens with its problems on its nodes") {
     CHECK(problems[0] == ct::BehaviourProblem{1, "has nothing under it"});
     CHECK(problems[1] == ct::BehaviourProblem{2, "takes one node under it"});
     CHECK(problems[2] == ct::BehaviourProblem{5, "has nothing under it"});
+    // A script node yet to be given its script.
+    const auto unnamed = ct::parseBehaviourTree("sequence\n    script\n", "test", error,
+                                                ct::BehaviourReading::Draft);
+    REQUIRE(unnamed.has_value());
+    CHECK(ct::behaviourProblems(*unnamed) ==
+          std::vector<ct::BehaviourProblem>{{1, "names no script"}});
+    CHECK(ct::formatBehaviourTree(*unnamed) == "sequence\n    script\n");
     // Written out, a draft reads back the same draft.
     CHECK(ct::parseBehaviourTree(ct::formatBehaviourTree(*draft), "test", error,
                                  ct::BehaviourReading::Draft) == draft);
@@ -241,4 +260,52 @@ TEST_CASE("every node kind has its name, and only nodes that remember use memory
             CHECK(info.parameter.defaultValue <= info.parameter.maximum);
         }
     }
+}
+
+TEST_CASE("the scripts behaviours name are loaded once, and must be behaviour scripts") {
+    const ct::test::TempDirectory directory;
+    ct::test::writeFile(directory.path() / "game/behaviours/sneaky.behaviour",
+                        "fallback\n"
+                        "    script flank\n"
+                        "    script stateful\n"
+                        "    sequence\n"
+                        "        script missing\n"
+                        "        script flank\n"
+                        "    script broken\n"
+                        "    patrol\n");
+    ct::test::writeFile(directory.path() / "engine/scripts/flank.luau",
+                        "return { decide = function(game, me) return true end }");
+    ct::test::writeFile(directory.path() / "game/scripts/stateful.luau",
+                        "return { state = { n = 0 }, decide = function() return true end }");
+    ct::test::writeFile(directory.path() / "game/scripts/broken.luau", "return {");
+    ct::ContentPaths content;
+    content.addLayer(directory.path() / "engine");
+    content.addLayer(directory.path() / "game");
+
+    ct::GameSettings settings;
+    settings.enemies.resize(1);
+    settings.enemies[0].name = "a";
+    settings.enemies[0].behaviour = "sneaky";
+    const std::vector<std::string> problems = ct::loadBehaviourTrees(content, settings);
+    REQUIRE(problems.size() == 3);
+    CHECK(problems[0].starts_with("scripts/broken.luau: broken:1:"));
+    CHECK(problems[1] == "there is no scripts/missing.luau, which a behaviour names");
+    CHECK(problems[2] == "scripts/stateful.luau: a behaviour's script has only a decide "
+                         "function: no state, events, inputs or start");
+    CHECK(ct::behaviourScriptNames(settings) ==
+          std::vector<std::string>{"broken", "flank", "missing", "stateful"});
+    REQUIRE(settings.behaviourScripts.size() == 1);
+    CHECK(ct::behaviourScript(settings, "flank") == &settings.behaviourScripts[0]);
+    CHECK(ct::behaviourScript(settings, "missing") == nullptr);
+    CHECK(ct::behaviourScript(settings, "stateful") == nullptr);
+
+    // Texts being edited stand for the files, and files for the rest.
+    const ct::ScriptSource edited[] = {
+        {"missing", "return { decide = function(game, me) return false end }"},
+        {"broken", "return { decide = function(game, me) return me.health > 1 end }"}};
+    CHECK(ct::loadBehaviourScripts(content, settings, edited).size() == 1);
+    REQUIRE(settings.behaviourScripts.size() == 3);
+    CHECK(settings.behaviourScripts[0].name() == "broken");
+    CHECK(settings.behaviourScripts[1].name() == "flank");
+    CHECK(settings.behaviourScripts[2].name() == "missing");
 }

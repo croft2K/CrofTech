@@ -28,6 +28,9 @@ own.
 
 `content/scripts/combination.luau`, played in `--map script_test`, is a complete example.
 
+Scripts also make decisions for enemies: a behaviour tree's `script` node asks a script that
+returns just a `decide` function. [Behaviours.md](Behaviours.md) says how.
+
 ## What a script returns
 
 ```lua
@@ -75,7 +78,8 @@ return {
 - **A call that fails does nothing.** If it errors, it changes no state and fires nothing, and the
   error is logged with the script's name and line.
 - **A call has a budget**: 200,000 steps (loop turns and function calls) and 4 MB of memory. A
-  call that goes over fails; scripts react to events, they don't run every frame.
+  call that goes over fails; scripts react to events, they don't run every frame (behaviour
+  scripts, asked every tick, should be quick).
 - **The same everywhere.** The game must play the same on every machine, so a script can't use
   what differs between them: the `^` operator (multiply instead), maths functions other than
   `abs`, `ceil`, `clamp`, `floor`, `fmod`, `lerp`, `max`, `min`, `round`, `sign` and `sqrt` (and

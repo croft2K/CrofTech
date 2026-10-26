@@ -1,10 +1,12 @@
 #include "BehaviourPanel.h"
 
+#include "ScriptPanel.h"
 #include "SettingWidgets.h"
 
 #include "croftech/core/Camera.h"
 #include "croftech/core/ConfigFile.h"
 #include "croftech/core/Log.h"
+#include "croftech/script/ScriptLibrary.h"
 #include "croftech/sim/Enemies.h"
 #include "croftech/sim/Health.h"
 
@@ -87,6 +89,9 @@ BehaviourTree singleNode(BehaviourNodeKind kind) {
 
 std::string settingText(const BehaviourNode& node) {
     const BehaviourParameter& parameter = behaviourNodeInfo(node.kind).parameter;
+    if (parameter.script) {
+        return node.script;
+    }
     if (parameter.name.empty()) {
         return {};
     }
@@ -162,15 +167,18 @@ void BehaviourPanel::open(std::string_view name) {
 }
 
 void BehaviourPanel::refresh() {
-    if (m_seenChange == m_data.changeCount() && m_seenName == m_name) {
+    const std::uint64_t scripts = m_scripts != nullptr ? m_scripts->generation() : 0;
+    if (m_seenChange == m_data.changeCount() && m_seenName == m_name && m_seenScripts == scripts) {
         return;
     }
     const bool otherTree = m_seenName != m_name;
     m_seenChange = m_data.changeCount();
+    m_seenScripts = scripts;
     m_seenName = m_name;
     m_tree.reset();
     m_readError.clear();
     m_problems.clear();
+    m_scriptProblems.clear();
     const std::optional<std::string> text = m_data.behaviourText(m_name);
     if (!text) {
         m_readError = std::format("There is no behaviours/{}.behaviour.", m_name);
@@ -181,7 +189,30 @@ void BehaviourPanel::refresh() {
     if (m_tree) {
         m_problems = behaviourProblems(*m_tree);
         m_parents = behaviourParents(*m_tree);
+        for (std::uint32_t i = 0; i < count && m_scripts != nullptr; ++i) {
+            const std::string& script = m_tree->nodes[i].script;
+            if (!behaviourNodeInfo(m_tree->nodes[i].kind).parameter.script || script.empty()) {
+                continue;
+            }
+            std::string problem;
+            if (const ScriptProgram* program = m_scripts->find(script)) {
+                problem = behaviourScriptProblem(*program);
+            } else if (m_scripts->path(script).empty()) {
+                problem = std::format("there is no scripts/{}.luau", script);
+            } else {
+                problem = std::format("scripts/{}.luau doesn't load: {}", script,
+                                      m_scripts->error(script));
+            }
+            if (!problem.empty()) {
+                m_scriptProblems.push_back({i, std::move(problem)});
+            }
+        }
     }
+    m_shownProblems = m_problems;
+    m_shownProblems.insert(m_shownProblems.end(), m_scriptProblems.begin(), m_scriptProblems.end());
+    std::stable_sort(
+        m_shownProblems.begin(), m_shownProblems.end(),
+        [](const BehaviourProblem& a, const BehaviourProblem& b) { return a.node < b.node; });
     m_sizes.resize(count, kGuessedSize);
     m_placed.clear();
     m_litUntil.assign(count, 0.0);
@@ -354,6 +385,10 @@ void BehaviourPanel::drawToolbar(const PlaySession* play) {
                            "%zu problem%s: until they are put right, its types "
                            "use the standard tree.",
                            m_problems.size(), m_problems.size() == 1 ? "" : "s");
+    } else if (m_tree && !m_scriptProblems.empty()) {
+        ImGui::TextColored(kProblemColour,
+                           "%zu script problem%s: until they are put right, those nodes fail.",
+                           m_scriptProblems.size(), m_scriptProblems.size() == 1 ? "" : "s");
     } else if (m_tree) {
         ImGui::TextDisabled("Changes play at once.");
     }
@@ -541,7 +576,7 @@ void BehaviourPanel::drawGraph() {
         }
     }
     for (std::uint32_t node = 0; node < count; ++node) {
-        drawNode(node, m_problems);
+        drawNode(node, m_shownProblems);
     }
     drawLinks();
 
@@ -1032,7 +1067,7 @@ void BehaviourPanel::drawDetails(const PlaySession* play) {
                                       : "The engine's; a change is saved as the game's copy.");
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
-        for (const BehaviourProblem& problem : m_problems) {
+        for (const BehaviourProblem& problem : m_shownProblems) {
             const std::string label = std::format(
                 "{} (node {}): {}", behaviourNodeInfo(tree.nodes[problem.node].kind).name,
                 problem.node + 1, problem.text);
@@ -1066,11 +1101,13 @@ void BehaviourPanel::drawDetails(const PlaySession* play) {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(std::string(info.description).c_str());
     ImGui::PopTextWrapPos();
-    for (const BehaviourProblem& problem : m_problems) {
+    ImGui::PushTextWrapPos(0.0f);
+    for (const BehaviourProblem& problem : m_shownProblems) {
         if (problem.node == node) {
             ImGui::TextColored(kProblemColour, "%s", problem.text.c_str());
         }
     }
+    ImGui::PopTextWrapPos();
     if (play != nullptr && m_watched && node < m_lights.size()) {
         const NodeLight light = m_lights[node];
         ImGui::TextColored(light == NodeLight::Ran ? kRanColour
@@ -1085,7 +1122,9 @@ void BehaviourPanel::drawDetails(const PlaySession* play) {
     ImGui::Spacing();
 
     const BehaviourParameter& parameter = info.parameter;
-    if (!parameter.name.empty()) {
+    if (parameter.script) {
+        drawScriptSetting(node);
+    } else if (!parameter.name.empty()) {
         float value = shown.value;
         const std::string label = parameter.unit.empty()
                                       ? std::string(parameter.name)
@@ -1118,6 +1157,64 @@ void BehaviourPanel::drawDetails(const PlaySession* play) {
         m_mergeWith = id;
     }
     ImGui::TextDisabled("Written as # comments above it in the file.");
+}
+
+void BehaviourPanel::drawScriptSetting(std::uint32_t node) {
+    const BehaviourTree& tree = *m_tree;
+    const std::string& current = tree.nodes[node].script;
+    const auto name = [&](std::string script) {
+        BehaviourTree changed = tree;
+        changed.nodes[node].script = std::move(script);
+        edit(std::move(changed), "Set script", node);
+    };
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::BeginCombo("script", current.empty() ? "(none)" : current.c_str())) {
+        for (const std::string_view script :
+             m_scripts != nullptr ? m_scripts->names() : std::vector<std::string_view>{}) {
+            const ScriptProgram* program = m_scripts->find(script);
+            const bool usable = program != nullptr && behaviourScriptProblem(*program).empty();
+            if (!usable) {
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            }
+            if (ImGui::Selectable(std::string(script).c_str(), script == current)) {
+                name(std::string(script));
+            }
+            if (!usable) {
+                ImGui::PopStyleColor();
+                ImGui::SetItemTooltip("Not a behaviour script: one has a decide function and "
+                                      "nothing else");
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("scripts/<name>.luau, whose decide function this node asks");
+    if (m_scriptPanel != nullptr && m_scripts != nullptr && !current.empty() &&
+        !m_scripts->path(current).empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Edit")) {
+            m_scriptPanel->open(current);
+        }
+        ImGui::SetItemTooltip("Opens it in the Scripts window");
+    }
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputTextWithHint("##newscript", "new script's name", &m_newScript);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_newScript.empty() || m_scriptPanel == nullptr);
+    if (ImGui::Button("New")) {
+        std::string error;
+        if (m_scriptPanel->create(m_newScript, error, ScriptTemplate::Behaviour)) {
+            name(m_newScript);
+            m_newScript.clear();
+            m_problem.clear();
+        } else {
+            m_problem = error;
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Writes scripts/<name>.luau into the game's content folder with a "
+                          "decide function to start from, names it here and opens it");
+    ImGui::Spacing();
 }
 
 } // namespace ct

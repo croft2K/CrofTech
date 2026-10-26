@@ -363,6 +363,14 @@ int main(int argc, char** argv) {
     auto scriptsRefreshed = std::chrono::steady_clock::now();
     ct::ScriptPanel scriptPanel(content, scripts);
     panels.setScripts(&scripts, &scriptPanel);
+    behaviourPanel.setScripts(&scripts, &scriptPanel);
+    // The game's settings as play gets them: with the behaviour scripts read again, and those
+    // being edited as they are, saved or not.
+    const auto playSettings = [&](const ct::GameSettings& from) {
+        ct::GameSettings played = from;
+        ct::loadBehaviourScripts(content, played, scriptPanel.unsavedTexts());
+        return played;
+    };
     ct::OpenLevelDialog openDialog(window);
     std::filesystem::path openAfterAsking; // a level to open once unsaved changes are settled
     // Opens a level in place of the one being edited (whose changes are dealt with first).
@@ -442,8 +450,8 @@ int main(int argc, char** argv) {
         for (const std::string& warning : scriptWarnings) {
             ct::logWarning("{}", warning);
         }
-        play = ct::PlaySession::start(document.level(), gameSettings, settings.playConditions, from,
-                                      levelScripts, playError);
+        play = ct::PlaySession::start(document.level(), playSettings(gameSettings),
+                                      settings.playConditions, from, levelScripts, playError);
         if (!play) {
             ct::logError("Can't play: {}", playError);
             return;
@@ -571,7 +579,7 @@ int main(int argc, char** argv) {
             settings.bodies = bodySizes(gameSettings);
             sounds->setSettings(gameSettings);
             if (play && sameTypes(play->settings(), gameSettings)) {
-                play->setSettings(gameSettings);
+                play->setSettings(playSettings(gameSettings));
             } else if (play) {
                 ct::logWarning("Weapons or enemy types were added or taken away: they play from "
                                "the next start");

@@ -10,7 +10,9 @@
 namespace ct {
 
 class ContentPaths;
+class ScriptProgram;
 struct GameSettings;
+struct ScriptSource;
 
 // What an enemy decides to do each tick, as a tree of nodes (docs/Behaviours.md). Each enemy type
 // names one, behaviours/<name>.behaviour through the content layers. The tree is read again from
@@ -42,6 +44,7 @@ enum class BehaviourNodeKind : std::uint8_t {
     TargetWithin,
     HealthBelow,
     Chance,
+    Script,
     // Actions.
     See,
     Hear,
@@ -57,13 +60,15 @@ enum class BehaviourNodeKind : std::uint8_t {
     Wait,
 };
 
-// A node's one setting, if it has one: "cooldown 2" is two seconds.
+// A node's one setting, if it has one: "cooldown 2" is two seconds, "script flank" the script
+// scripts/flank.luau.
 struct BehaviourParameter {
     std::string_view name; // empty for none
     std::string_view unit;
     float minimum = 0.0f;
     float maximum = 0.0f;
     float defaultValue = 0.0f;
+    bool script = false; // a script's name (BehaviourNode::script) rather than a number
 };
 
 struct BehaviourNodeInfo {
@@ -92,7 +97,8 @@ struct BehaviourNode {
     BehaviourNodeKind kind = BehaviourNodeKind::Sequence;
     std::uint8_t memory = kNoBehaviourMemory; // its slot, for nodes that remember
     std::uint16_t end = 0;                    // the index just past its last descendant
-    float value = 0.0f;                       // its parameter
+    float value = 0.0f;                       // its parameter, if a number
+    std::string script;                       // its parameter, if a script's name
     // The comments on the lines above it and at the end of its own line, one a line.
     std::string note;
 
@@ -118,8 +124,8 @@ enum class BehaviourReading : std::uint8_t { Whole, Draft };
 // (or on its line); comments after the last node are dropped. Rejects anything malformed or past
 // the limits with an error naming the line; a tree that loads is safe to run. A draft may also
 // have composites and decorators with nothing under them, decorators with more than one node
-// under them, and more nodes, depth and nodes that remember than the limits allow (those past
-// the memory limit get no slot).
+// under them, more nodes, depth and nodes that remember than the limits allow (those past the
+// memory limit get no slot), and script nodes that name no script.
 std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::string_view name,
                                                 std::string& error,
                                                 BehaviourReading reading = BehaviourReading::Whole);
@@ -151,11 +157,24 @@ struct BehaviourText {
 };
 
 // Reads the tree each enemy type names into the settings (GameSettings::behaviours, and each
-// type's behaviourIndex), from the edited texts given or else the content. Types whose tree is
-// missing or won't load use the standard one; the problems are returned.
+// type's behaviourIndex), from the edited texts given or else the content, then the scripts the
+// trees name (loadBehaviourScripts). Types whose tree is missing or won't load use the standard
+// one; the problems are returned.
 std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSettings& settings,
                                             std::span<const BehaviourText> edited = {});
+// The scripts the settings' trees name, each once and in name order.
+std::vector<std::string> behaviourScriptNames(const GameSettings& settings);
+// Reads and compiles the scripts the settings' trees name into GameSettings::behaviourScripts, from
+// the edited texts given or else scripts/<name>.luau through the content layers. A script that is
+// missing, doesn't load, or isn't a behaviour script (a decide function and nothing else) is left
+// out, and the nodes naming it fail; the problems are returned.
+std::vector<std::string> loadBehaviourScripts(const ContentPaths& content, GameSettings& settings,
+                                              std::span<const ScriptSource> edited = {});
+// What keeps a loaded script from being a behaviour script; empty if nothing does.
+std::string behaviourScriptProblem(const ScriptProgram& program);
 // The tree an enemy type runs.
 const BehaviourTree& behaviourOf(const GameSettings& settings, std::uint32_t enemyType);
+// The behaviour script of that name, or null if it isn't one that loaded.
+const ScriptProgram* behaviourScript(const GameSettings& settings, std::string_view name);
 
 } // namespace ct

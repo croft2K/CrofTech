@@ -17,7 +17,7 @@ public:
 
     explicit SimHarness(const Level& level, MovementSettings movement = {},
                         RulesSettings rules = {})
-        : SimHarness(level, GameSettings{movement, rules, {}, {}, {}}) {}
+        : SimHarness(level, GameSettings{movement, rules, {}, {}, {}, {}}) {}
 
     SimHarness(const Level& level, const GameSettings& settings,
                std::span<const ScriptSource> scripts = {})

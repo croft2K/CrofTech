@@ -1,6 +1,7 @@
 #pragma once
 
 #include "croftech/core/Console.h"
+#include "croftech/script/ScriptProgram.h"
 #include "croftech/sim/BehaviourTree.h"
 #include "croftech/sim/PlayerMovement.h"
 #include "croftech/sim/UserCmd.h"
@@ -159,6 +160,8 @@ struct GameSettings {
     std::vector<WeaponSettings> weapons;   // at most kMaxWeapons, in number-key order
     std::vector<EnemySettings> enemies;    // at most kMaxEnemyTypes
     std::vector<BehaviourTree> behaviours; // the trees enemy types name (loadBehaviourTrees)
+    // The scripts those trees' script nodes name, sorted by name (loadBehaviourScripts).
+    std::vector<ScriptProgram> behaviourScripts;
 };
 
 inline constexpr std::string_view kRulesCVarPrefix = "rules.";

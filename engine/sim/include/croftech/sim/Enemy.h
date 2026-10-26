@@ -213,4 +213,12 @@ inline EnemyState enemyState(const Enemy& enemy) {
     return enemy.state < kEnemyStateCount ? static_cast<EnemyState>(enemy.state) : EnemyState::Idle;
 }
 
+// As tools show it and behaviour scripts read it: "idle", "chase".
+inline std::string_view enemyStateName(EnemyState state) {
+    constexpr std::array<std::string_view, kEnemyStateCount> kNames{
+        "idle", "alerted", "chase", "attack", "lost", "search", "cover", "patrol"};
+    const auto index = static_cast<std::uint32_t>(state);
+    return index < kNames.size() ? kNames[index] : "?";
+}
+
 } // namespace ct

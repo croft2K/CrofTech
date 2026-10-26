@@ -8,12 +8,14 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace ct {
 
 class CollisionScene;
 struct EnemyTick;
 class NavQueries;
+struct ScriptEffect;
 struct ScriptHost;
 class NavQuery;
 struct NavFilter;
@@ -131,6 +133,14 @@ private:
     // call asked for, if it finished.
     void runScript(std::uint32_t index, const GameLevel::Entity& entity, LogicInput input,
                    EntityId activator);
+    // A behaviour tree's script node: asks the script's decide function about the enemy, and
+    // sends the inputs it asked for if it finished. Fails if the script failed.
+    BehaviourStatus decide(EnemyTick& tick, const BehaviourNode& node);
+    // Sends an input a script asked for (game:send) to the entities with the name, from the
+    // source's wiring. A behaviour script's name, if given, keeps its problems from being
+    // reported every tick.
+    void sendFromScript(std::uint32_t source, const ScriptEffect& effect, EntityId activator,
+                        std::string_view behaviourScript = {});
     // An input to one entity, from a script: now, or as a PendingInput after the delay.
     void sendDirect(std::uint32_t source, std::uint32_t target, LogicInput input,
                     std::uint32_t delayTicks, EntityId activator);

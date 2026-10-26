@@ -145,7 +145,12 @@ imgui-node-editor) edits behaviour trees as graphs laid out left to right, throu
 behaviour texts (same undo and saving; enemy types play them as edited, via
 `loadBehaviourTrees`' edited texts); the tree changes and the layout are `BehaviourEditing` in
 `engine/editor`, on drafts (`BehaviourReading::Draft`, problems from `behaviourProblems`), and in
-play the watched enemy's `EnemyBehaviour` bits light the nodes. Every
+play the watched enemy's `EnemyBehaviour` bits light the nodes. A tree's `script` node names a
+behaviour script (`scripts/<name>.luau` returning only a `decide` function), which
+`loadBehaviourScripts` compiles into `GameSettings::behaviourScripts` (the editor's play adds the
+Scripts window's unsaved texts) and `LevelLogic::decide` (`sim/src/Scripts.cpp`) calls each time
+the node is reached: a `kScriptDecide` call given the enemy and its target as `me`
+(`ScriptValue`s), whose `game:send` effects go out through the enemy's wiring. Every
 edit is a command (`engine/editor`: `CommandStack`, `LevelCommands`), so undo covers everything;
 drags preview live and record one command when released, and edits of several selected items are
 one compound command. Moves, turns, flips and scales of any brush shape go through

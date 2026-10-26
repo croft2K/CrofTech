@@ -3,6 +3,7 @@
 #include "croftech/core/Assert.h"
 #include "croftech/core/ConfigFile.h"
 #include "croftech/core/Content.h"
+#include "croftech/script/ScriptProgram.h"
 #include "croftech/sim/GameSettings.h"
 
 #include <algorithm>
@@ -18,6 +19,7 @@ using enum BehaviourCategory;
 constexpr BehaviourParameter kNoParameter{};
 constexpr BehaviourParameter kSeconds{"seconds", "s", 0.0f, 600.0f, 1.0f};
 constexpr BehaviourParameter kShare{"share", "", 0.0f, 1.0f, 0.5f};
+constexpr BehaviourParameter kScript{"script", "", 0.0f, 0.0f, 0.0f, true};
 
 // Listed in the palette's order: composites, decorators, conditions, then actions.
 constexpr BehaviourNodeInfo kNodes[] = {
@@ -68,6 +70,10 @@ constexpr BehaviourNodeInfo kNodes[] = {
     {Chance, "chance", Condition, kShare, true,
      "Succeeds with this chance, decided when it is reached and kept while it keeps being "
      "reached every tick"},
+    {Script, "script", Condition, kScript, false,
+     "Asks the decide function of a script (scripts/<name>.luau), which sees the enemy and its "
+     "target and may send inputs to the level's entities: succeeds if it says yes. Costs far "
+     "more than other nodes, so put cheaper conditions before it"},
 
     {See, "see", Action, kNoParameter, false,
      "While it is calm or searching, notices the nearest player it can see in its view cone. "
@@ -241,8 +247,16 @@ std::optional<BehaviourTree> parseBehaviourTree(std::string_view text, std::stri
         BehaviourNode node;
         node.kind = info->kind;
         node.value = info->parameter.defaultValue;
-        if (!rest.empty()) {
-            const BehaviourParameter& parameter = info->parameter;
+        const BehaviourParameter& parameter = info->parameter;
+        if (parameter.script) {
+            if (!(rest.empty() ? !whole : isValidScriptName(rest))) {
+                error = std::format("line {}: {} takes a script's name (scripts/<name>.luau): "
+                                    "lowercase letters, digits, '-' and '_'",
+                                    lineNumber, word);
+                return std::nullopt;
+            }
+            node.script = std::string(rest);
+        } else if (!rest.empty()) {
             if (parameter.name.empty()) {
                 error = std::format("line {}: {} takes no setting", lineNumber, word);
                 return std::nullopt;
@@ -374,6 +388,9 @@ std::vector<BehaviourProblem> behaviourProblems(const BehaviourTree& tree) {
                 problem("takes one node under it");
             }
         }
+        if (info.parameter.script && node.script.empty()) {
+            problem("names no script");
+        }
         ends.push_back(node.end);
     }
     return problems;
@@ -412,7 +429,12 @@ std::string formatBehaviourTree(const BehaviourTree& tree) {
         const BehaviourNodeInfo& info = behaviourNodeInfo(node.kind);
         text += indent;
         text += info.name;
-        if (!info.parameter.name.empty()) {
+        if (info.parameter.script) {
+            if (!node.script.empty()) {
+                text += ' ';
+                text += node.script;
+            }
+        } else if (!info.parameter.name.empty()) {
             text += ' ';
             text += formatFloat(node.value);
         }
@@ -485,7 +507,76 @@ std::vector<std::string> loadBehaviourTrees(const ContentPaths& content, GameSet
         enemy.behaviourIndex = static_cast<std::uint32_t>(settings.behaviours.size());
         settings.behaviours.push_back(std::move(*tree));
     }
+    for (std::string& problem : loadBehaviourScripts(content, settings)) {
+        problems.push_back(std::move(problem));
+    }
     return problems;
+}
+
+std::vector<std::string> behaviourScriptNames(const GameSettings& settings) {
+    std::vector<std::string> names;
+    for (const BehaviourTree& tree : settings.behaviours) {
+        for (const BehaviourNode& node : tree.nodes) {
+            if (behaviourNodeInfo(node.kind).parameter.script && !node.script.empty()) {
+                names.push_back(node.script);
+            }
+        }
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
+std::vector<std::string> loadBehaviourScripts(const ContentPaths& content, GameSettings& settings,
+                                              std::span<const ScriptSource> edited) {
+    std::vector<std::string> problems;
+    settings.behaviourScripts.clear();
+    for (const std::string& name : behaviourScriptNames(settings)) {
+        const std::string path = std::format("scripts/{}.luau", name);
+        std::optional<std::string> text;
+        if (const auto own =
+                std::find_if(edited.begin(), edited.end(),
+                             [&](const ScriptSource& script) { return script.name == name; });
+            own != edited.end()) {
+            text = own->text;
+        } else {
+            const std::optional<std::filesystem::path> found = content.find(path);
+            if (!found) {
+                problems.push_back(std::format("there is no {}, which a behaviour names", path));
+                continue;
+            }
+            text = readTextFile(*found, kMaxScriptBytes);
+            if (!text) {
+                problems.push_back(std::format("couldn't read {}", path));
+                continue;
+            }
+        }
+        std::string error;
+        std::optional<ScriptProgram> program = ScriptProgram::load(name, *text, error);
+        if (!program) {
+            problems.push_back(std::format("{}: {}", path, error));
+            continue;
+        }
+        if (const std::string problem = behaviourScriptProblem(*program); !problem.empty()) {
+            problems.push_back(std::format("{}: {}", path, problem));
+            continue;
+        }
+        settings.behaviourScripts.push_back(std::move(*program));
+    }
+    return problems;
+}
+
+std::string behaviourScriptProblem(const ScriptProgram& program) {
+    const ScriptDeclarations& declared = program.declarations();
+    if (!declared.decide) {
+        return "a behaviour's script needs a decide function";
+    }
+    if (!declared.state.empty() || !declared.events.empty() || !declared.inputs.empty() ||
+        declared.start) {
+        return "a behaviour's script has only a decide function: no state, events, inputs or "
+               "start";
+    }
+    return {};
 }
 
 const BehaviourTree& behaviourOf(const GameSettings& settings, std::uint32_t enemyType) {
@@ -494,6 +585,14 @@ const BehaviourTree& behaviourOf(const GameSettings& settings, std::uint32_t ene
         return settings.behaviours[settings.enemies[enemyType].behaviourIndex];
     }
     return standardBehaviourTree();
+}
+
+const ScriptProgram* behaviourScript(const GameSettings& settings, std::string_view name) {
+    const std::vector<ScriptProgram>& scripts = settings.behaviourScripts;
+    const auto found = std::lower_bound(
+        scripts.begin(), scripts.end(), name,
+        [](const ScriptProgram& script, std::string_view key) { return script.name() < key; });
+    return found != scripts.end() && found->name() == name ? &*found : nullptr;
 }
 
 } // namespace ct
