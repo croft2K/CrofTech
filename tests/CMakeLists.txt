@@ -17,6 +17,7 @@ add_executable(ct_unit_tests
     unit/editor/EntityLinksTests.cpp
     unit/editor/GameDataTests.cpp
     unit/editor/GroupTests.cpp
+    unit/editor/LogicGraphTests.cpp
     unit/editor/LuauHighlightTests.cpp
     unit/editor/ScriptLinksTests.cpp
     unit/editor/SelectionTests.cpp

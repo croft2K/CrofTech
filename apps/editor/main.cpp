@@ -21,6 +21,7 @@
 #include "GameEffects.h"
 #include "GameSounds.h"
 #include "LevelViewport.h"
+#include "LogicPanel.h"
 #include "NavMeshView.h"
 #include "OpenLevelDialog.h"
 #include "PlaySession.h"
@@ -166,6 +167,7 @@ void buildDefaultLayout(ImGuiID dockspace) {
     ImGui::DockBuilderDockWindow("Scripts", bottom);
     ImGui::DockBuilderDockWindow("Game data", bottom);
     ImGui::DockBuilderDockWindow("Behaviours", bottom);
+    ImGui::DockBuilderDockWindow("Logic", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderFinish(dockspace);
 }
@@ -364,6 +366,8 @@ int main(int argc, char** argv) {
     ct::ScriptPanel scriptPanel(content, scripts);
     panels.setScripts(&scripts, &scriptPanel);
     behaviourPanel.setScripts(&scripts, &scriptPanel);
+    ct::LogicPanel logicPanel;
+    logicPanel.setScripts(&scripts);
     // The game's settings as play gets them: with the behaviour scripts read again, and those
     // being edited as they are, saved or not.
     const auto playSettings = [&](const ct::GameSettings& from) {
@@ -569,6 +573,7 @@ int main(int argc, char** argv) {
         panels.drawHierarchy(document);
         panels.drawInspector(document, settings);
         const bool frameScriptUser = scriptPanel.draw(document);
+        const bool frameLogicNode = logicPanel.draw(document);
         ImGui::EndDisabled();
         // Open in play too, to tune the game as it runs.
         gameDataPanel.draw(document, playing);
@@ -620,7 +625,7 @@ int main(int argc, char** argv) {
         }
 
         // Shortcuts, unless a text field has the keyboard.
-        bool frameSelection = menu.frameSelection || frameScriptUser;
+        bool frameSelection = menu.frameSelection || frameScriptUser || frameLogicNode;
         bool startPlaying = menu.play;
         bool startPlayingHere = menu.playFromHere;
         // Not on the frame play stops either: its Esc is not for the editor.
@@ -651,6 +656,12 @@ int main(int argc, char** argv) {
                        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) {
                 viewport.cancelDrag(document);
                 document.redo();
+            } else if (logicPanel.hasFocus()) {
+                // The Logic window has Delete and F of its own, and the level's other keys
+                // (moving, tools) would act out of sight.
+                if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+                    (io.KeyShift ? startPlayingHere : startPlaying) = true;
+                }
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) {
                 ct::duplicateSelection(document, {grid, grid, 0.0f});
             } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_A)) {

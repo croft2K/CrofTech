@@ -9,6 +9,7 @@ add_library(ct_editor STATIC
     include/croftech/editor/GameData.h
     include/croftech/editor/LevelCommands.h
     include/croftech/editor/LevelItem.h
+    include/croftech/editor/LogicGraph.h
     include/croftech/editor/LuauHighlight.h
     include/croftech/editor/ScriptLinks.h
     include/croftech/editor/SelectionDrag.h
@@ -25,6 +26,7 @@ add_library(ct_editor STATIC
     src/GameData.cpp
     src/LevelCommands.cpp
     src/LevelItem.cpp
+    src/LogicGraph.cpp
     src/LuauHighlight.cpp
     src/ScriptLinks.cpp
     src/SelectionDrag.cpp

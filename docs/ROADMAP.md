@@ -261,8 +261,13 @@ own, and everything a step adds to play is simulation state, so it saves, rewind
    function) about the enemy and its target; it answers yes or no and may send inputs to the
    level's entities, and keeps no state (Tony's choice, 2026-10-26). Each call is a fresh
    sandbox, about 10 microseconds, so the docs say to put cheaper conditions first.
-5. **Visual logic graph.** The level's wiring as nodes in the same graph window, with the outputs
-   table as the text form.
+5. **Visual logic graph.** *Done (2026-10-26).* The Logic window (imgui-node-editor, as the
+   Behaviours window) shows the level's wiring as a graph: entities as nodes with inputs on the
+   left and events on the right, outputs as links with their delays. Dragging between pins wires
+   entities (naming an unnamed target), links are edited or deleted beside the graph, and the
+   graph's selection is the level's. Nodes are laid out by the wiring until moved; then each keeps
+   its place in the level as an editor-only `graph` property (Tony's choice). The inspector's
+   outputs table stays the text form. Written up for designers in `docs/Wiring.md`.
 6. **Game data for the rest.** Weapons, movement and rules are already edited and tuned live in
    the Game data window (step 1); still to come are new weapons made from others.
 7. **The remaining editor tools.** Texture and material assignment with face alignment, editable

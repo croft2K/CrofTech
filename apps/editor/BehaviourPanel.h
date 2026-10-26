@@ -106,7 +106,9 @@ private:
     std::vector<BehaviourBox> m_boxes;
     // Where each node was put last frame; one not there is being dragged.
     std::vector<ImVec2> m_placed;
-    int m_frameAll = 3; // frames until the whole tree is shown (kFramesToShowAll)
+    int m_frameAll = 3;      // frames until the whole tree is shown (kFramesToShowAll)
+    bool m_shownAll = false; // once, at the graph's settled size
+    ImVec2 m_screenSize{0.0f, 0.0f};
 
     std::optional<PendingEdit> m_pending;
     std::optional<std::uint32_t> m_select;

@@ -537,6 +537,14 @@ void BehaviourPanel::watch(const PlaySession* play) {
 
 void BehaviourPanel::drawGraph() {
     ed::SetCurrentEditor(m_editor);
+    const ImVec2 room = ImGui::GetContentRegionAvail();
+    // imgui-node-editor 0.9.3 moves into place only the draw commands that start after its Begin;
+    // begun on an empty draw list, the graph would join the list's first command and keep a clip
+    // rectangle in graph space, and show nothing. Its background, drawn first, keeps them apart.
+    const ImVec2 corner = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        corner, {corner.x + room.x, corner.y + room.y},
+        ImGui::GetColorU32(ed::GetStyle().Colors[ed::StyleColor_Bg]));
     ed::Begin("behaviour graph");
     const BehaviourTree& tree = *m_tree;
     const std::uint32_t count = static_cast<std::uint32_t>(tree.nodes.size());
@@ -623,8 +631,15 @@ void BehaviourPanel::drawGraph() {
     handleDelete();
     handleShortcuts();
     drawMenus();
+    // A graph first shown in a window still finding its size waits for it to settle.
+    const ImVec2 screen = ed::GetScreenSize();
+    if (!m_shownAll && (screen.x != m_screenSize.x || screen.y != m_screenSize.y)) {
+        m_frameAll = kFramesToShowAll;
+    }
+    m_screenSize = screen;
     if (m_frameAll > 0 && --m_frameAll == 0) {
         ed::NavigateToContent(0.0f);
+        m_shownAll = true;
     }
     ed::End();
     ed::SetCurrentEditor(nullptr);

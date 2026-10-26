@@ -6,6 +6,7 @@
 #include "croftech/editor/EditorActions.h"
 #include "croftech/editor/EntityLinks.h"
 #include "croftech/editor/LevelCommands.h"
+#include "croftech/editor/LogicGraph.h"
 #include "croftech/editor/ScriptLinks.h"
 #include "croftech/sim/Enemy.h"
 
@@ -112,39 +113,6 @@ std::vector<std::string> entityNames(const Level& level,
     return names;
 }
 
-// The program a script entity runs, if it names one that loaded.
-const ScriptProgram* scriptOf(const LevelEntity& entity, const ScriptLibrary* scripts) {
-    const EntityClassInfo* entityClass = findEntityClass(entity.className);
-    if (scripts == nullptr || entityClass == nullptr || !entityClass->scripted ||
-        findPropertyInfo(*entityClass, "script") == nullptr) {
-        return nullptr;
-    }
-    return scripts->find(textProperty(entity, *entityClass, "script"));
-}
-
-// The events (or inputs) of an entity: its class's, or a script entity's script's. The names of
-// a script's stay valid until the library next refreshes.
-std::vector<SignalInfo> signalsOf(const LevelEntity& entity, const ScriptLibrary* scripts,
-                                  bool events) {
-    const EntityClassInfo* entityClass = findEntityClass(entity.className);
-    if (entityClass == nullptr) {
-        return {};
-    }
-    if (!entityClass->scripted) {
-        const std::span<const SignalInfo> signals =
-            events ? entityClass->events : entityClass->inputs;
-        return {signals.begin(), signals.end()};
-    }
-    std::vector<SignalInfo> signals;
-    if (const ScriptProgram* program = scriptOf(entity, scripts)) {
-        const ScriptDeclarations& declared = program->declarations();
-        for (const std::string& name : events ? declared.events : declared.inputs) {
-            signals.push_back({name, events ? "Fired by its script" : "Calls its script"});
-        }
-    }
-    return signals;
-}
-
 // The inputs of the entities with the name, each once.
 std::vector<SignalInfo> inputsOf(const Level& level, std::string_view name,
                                  const ScriptLibrary* scripts) {
@@ -154,7 +122,7 @@ std::vector<SignalInfo> inputsOf(const Level& level, std::string_view name,
         if (entityName == nullptr || *entityName != name) {
             continue;
         }
-        for (const SignalInfo& input : signalsOf(entity, scripts, false)) {
+        for (const SignalInfo& input : entitySignals(entity, scripts, false)) {
             if (findSignal(inputs, input.name) == nullptr) {
                 inputs.push_back(input);
             }
@@ -1357,14 +1325,16 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
             ImGui::PopID();
         }
         // Properties the class doesn't define, or all of them for a class the engine doesn't know.
-        // An enemy's own settings have a section of their own.
+        // An enemy's own settings have a section of their own, and the Logic window keeps its
+        // node's place.
         const bool ownSettings =
             entity.className == kEnemyClass || entity.className == kSpawnerClass;
         for (std::size_t i = 0; i < entity.properties.size(); ++i) {
             const EntityProperty& property = entity.properties[i];
             if ((entityClass != nullptr &&
                  findPropertyInfo(*entityClass, property.key) != nullptr) ||
-                (ownSettings && findEnemySetting(property.key))) {
+                (ownSettings && findEnemySetting(property.key)) ||
+                property.key == kGraphPositionKey) {
                 continue;
             }
             ImGui::PushID(static_cast<int>(i));
@@ -1419,7 +1389,7 @@ void EditorPanels::drawEntityProperties(EditorDocument& document, std::size_t in
 void EditorPanels::drawEntityOutputs(EditorDocument& document, std::size_t index) {
     const Level& level = document.level();
     const LevelEntity& entity = level.entities[index];
-    const std::vector<SignalInfo> events = signalsOf(entity, m_scripts, true);
+    const std::vector<SignalInfo> events = entitySignals(entity, m_scripts, true);
     if (events.empty() && entity.outputs.empty()) {
         return;
     }

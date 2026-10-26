@@ -1,6 +1,8 @@
 add_executable(croftech_editor
     BehaviourPanel.cpp
     BehaviourPanel.h
+    LogicPanel.cpp
+    LogicPanel.h
     CodeEditor.cpp
     CodeEditor.h
     EditorPanels.cpp

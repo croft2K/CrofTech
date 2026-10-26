@@ -200,7 +200,11 @@ polygon references. In the editor a click in the view
 picks a whole group or entity, Alt-click one brush; Ctrl+G groups the selection, Ctrl+Shift+G
 ungroups. The hierarchy shows groups and entities as trees and selects exactly the row clicked
 (Ctrl toggles, Shift selects a range); F2 or a double-click renames a brush, entity or group; a selected mover shows a see-through copy at its end with a drag handle, and
-selected entities show their wires (`editor/EntityLinks.h`). A level name is looked up as
+selected entities show their wires (`editor/EntityLinks.h`). The Logic window
+(`apps/editor/LogicPanel`, `docs/Wiring.md`) shows all the wiring as a graph over `LogicGraph` in
+`engine/editor` (`entitySignals`, `layoutLogicGraph`, `connectEntities`): drags between pins add
+outputs, and a node's place, once moved, is the entity's `graph` property, which only the editor
+reads (the inspector hides it). A level name is looked up as
 `levels/<name>.level`, then `levels/<name>.map` (TrenchBroom, imported on load), through the
 content layers; a name with an extension is a path. Shipped games will later cook levels and
 assets into packed binary files; the text file stays the source.
